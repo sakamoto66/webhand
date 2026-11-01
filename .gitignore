@@ -1,0 +1,32 @@
+# 秘密情報
+.env
+.env.*
+!.env.example
+
+# 実行時の生成物（ページ本文やプロファイルを含む）
+runs/
+.browser-lab/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ローカルツール
+.serena/
+.claude/settings.local.json
+.claude/worktrees/
+
+# エディタ / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*:Zone.Identifier

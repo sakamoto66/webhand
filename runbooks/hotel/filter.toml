@@ -1,0 +1,34 @@
+# Written from the fixture's code. It stays a draft until a person approves it.
+service = "hotel"
+name = "filter"
+goal = "Find a stay in {city} in the {category} category with free cancellation, then open the page for {stay}. Stop on that page."
+start_url = "https://example.invalid/"  # Run with --task hotel_filter, which supplies the local fixture.
+status = "draft"
+sources = ["code:tasks/fixtures/hotel.html"]
+
+[params.city]
+description = "Destination"
+
+[params.category]
+description = "Stay category"
+
+[params.stay]
+description = "Name of the stay to open"
+
+[[steps]]
+instruction = "Enter {city} as the Destination and press Find stays"
+hints = ["A typed destination is not applied until Find stays is pressed."]
+done_when = "The result count reads \"places in {city}\". Stays listed before the search do not count."
+
+[[steps]]
+instruction = "Set the category filter to {category}"
+done_when = "The category control shows {category}"
+
+[[steps]]
+instruction = "Turn on the Free cancellation filter"
+hints = ["Do not click it again if it is already on."]
+done_when = "Free cancellation is shown as on"
+
+[[steps]]
+instruction = "Open the page for {stay}"
+done_when = "The page heading is {stay}"
