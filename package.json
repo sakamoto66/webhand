@@ -37,6 +37,7 @@
     "knip": "knip",
     "check": "npm run lint && npm run typecheck && npm run knip",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "smoke": "node src/run.ts",
     "prepare": "husky",
     "prepublishOnly": "npm run check && npm run build"
@@ -49,6 +50,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.6.4",
     "@types/node": "^24.19.2",
+    "@vitest/coverage-v8": "^5.1.0",
     "husky": "^9.1.7",
     "knip": "^6.44.1",
     "typescript": "^7.0.2",
