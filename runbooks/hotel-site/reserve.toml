@@ -1,0 +1,63 @@
+# Reserve a stay on HOTEL PLANISPHERE without signing in. Nothing is sent to a server.
+# Written from a demonstration and the site's source. Approved by the user after a verified trial (runs/20261103T134530).
+service = "hotel-site"
+name = "reserve"
+goal = "Reserve the お得な特典付きプラン: check-in {check_in}, {term} nights, {head_count} guests, with 朝食バイキング and no other additional plans. Name {username}. Confirmation by email to {email}. Leave the request field empty. Review the confirmation page, then press この内容で予約する. Stop when 予約を完了しました is shown. Do not close that dialog."
+start_url = "https://hotel-example-site.takeyaqa.dev/ja/reserve.html?plan-id=0"
+status = "approved"
+sources = [
+  "demo:runs/20261103T133551/learn-hotel-site-reserve.jsonl",
+  "code:https://hotel-example-site.takeyaqa.dev/src/reserve.js",
+  "code:https://hotel-example-site.takeyaqa.dev/src/confirm.js",
+]
+
+[params.check_in]
+description = "Check-in date as YYYY/MM/DD, from tomorrow to 90 days ahead"
+
+[params.term]
+description = "Number of nights"
+
+[params.head_count]
+description = "Number of guests"
+
+[params.username]
+description = "Guest name (use a dummy value)"
+
+[params.email]
+description = "Email address for the confirmation (use a dummy value)"
+
+[[steps]]
+instruction = "Set 宿泊日 to {check_in}"
+hints = [
+  "Focusing 宿泊日 opens a calendar that covers 宿泊数, 人数 and the additional plans.",
+  "The date can be typed as YYYY/MM/DD or picked as a day in the calendar. Picking a day closes the calendar; after typing, press 閉じる.",
+]
+done_when = "宿泊日 shows {check_in} and the calendar is closed"
+
+[[steps]]
+instruction = "Set 宿泊数 to {term} and 人数 to {head_count}"
+done_when = "宿泊数 shows {term} and 人数 shows {head_count}"
+
+[[steps]]
+instruction = "Turn on 朝食バイキング only"
+hints = ["Do not click it again if it is already on. 昼からチェックインプラン and お得な観光プラン stay off."]
+done_when = "朝食バイキング is checked and the other additional plans are not"
+
+[[steps]]
+instruction = "Enter {username} as 氏名"
+done_when = "氏名 shows {username}"
+
+[[steps]]
+instruction = "Choose メールでのご連絡 for 確認のご連絡 and enter {email} as メールアドレス"
+hints = ["メールアドレス appears only after メールでのご連絡 is chosen."]
+done_when = "確認のご連絡 shows メールでのご連絡 and メールアドレス shows {email}"
+
+[[steps]]
+instruction = "Press 予約内容を確認する"
+hints = ["The button is in the right-hand column near the top, under the total. Scroll up if it is not visible."]
+done_when = "The page heading is 宿泊予約確認"
+
+[[steps]]
+instruction = "Press この内容で予約する"
+hints = ["Closing the dialog that follows closes the window, so leave it open."]
+done_when = "The dialog 予約を完了しました is shown"
