@@ -31,15 +31,16 @@ class Budget:
 
 
 MISSING = "missing"  # A history entry for a NOT_VISIBLE choice: nothing ran, but Jev must see it happened.
+STALE = "stale"  # A history entry for a choice the browser refused as stale: nothing ran.
 
 
 def actions_in(history: list[dict], attempt: int) -> list[dict]:
     """Executed actions only; they count against the budget."""
-    return [h for h in history if h.get("attempt", 1) == attempt and h["kind"] not in {"human", MISSING}]
+    return [h for h in history if h.get("attempt", 1) == attempt and h["kind"] not in {"human", MISSING, STALE}]
 
 
 def stuck(history: list[dict], attempt: int = 1) -> bool:
-    """Three entries without progress: unchanged pages, or targets Jev could not see."""
+    """Three entries without progress: unchanged pages, targets Jev could not see, or refused stale choices."""
     recent = [h for h in history if h.get("attempt", 1) == attempt and h["kind"] != "human"][-3:]
     return len(recent) == 3 and all(s["page_changed"] is False and s["kind"] != "wait" for s in recent)
 
@@ -121,6 +122,7 @@ def run_agent(
             return finish(STUCK, "three actions without a page change")
         if len(actions_in(history, attempt)) >= budget.max_actions or decisions >= budget.max_decisions:
             return finish(ATTEMPT_BUDGET, f"{len(actions_in(history, attempt))} actions, {decisions} decisions")
+        decision, executed = None, len(history)
         try:
             if not browser.fresh(page):
                 page = browser.observe()
@@ -154,8 +156,30 @@ def run_agent(
             page = execute(
                 browser, page, decision, history, recorder, decided_by=policy.name, attempt=attempt, on_change=on_change
             )
-        except StalePage:
-            page = browser.observe()
+        except StalePage as error:
+            observed, page = page, browser.observe()
+            # Only a refused action is noted. A step that ran is already in history, whatever failed after it.
+            if decision is not None and decision.action is not None and len(history) == executed:
+                entry = {
+                    "step": len(history) + 1,
+                    "attempt": attempt,
+                    "operation": "STALE",
+                    "kind": STALE,
+                    "action": f"{decision.operation} {decision.action['label']!r} did not run: {error}",
+                    "text": None,
+                    "url": observed["url"],
+                    # Unchanged: the same choice would be refused again, so it counts toward STUCK.
+                    "page_changed": page["marker"] != observed["marker"],
+                }
+                history.append(entry)
+                recorder.event(
+                    "stale",
+                    attempt=attempt,
+                    wanted=decision.operation,
+                    target=decision.action["label"],
+                    reason=str(error),
+                    page_changed=entry["page_changed"],
+                )
             on_change(page)
         except PolicyError as error:
             return finish(JEV_FAILED, str(error))

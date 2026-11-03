@@ -1,5 +1,7 @@
 """Offline loop behaviour with a fake browser. No model or Chrome."""
 
+import json
+
 import pytest
 
 from browser_lab.agent import Budget, run_agent
@@ -81,6 +83,50 @@ def test_stale_page_chooses_again(recorder):
     assert result["outcome"] == "GOAL_REPORTED"
     assert result["actions"] == 1
     assert result["decisions"] == 3
+
+
+def test_a_refused_stale_choice_is_noted_without_counting_as_an_action(recorder):
+    browser = FakeBrowser([StalePage("moved")])
+    history = []
+    result = run_agent(
+        browser, FakePolicy([Decision("CLICK", CLICK), Decision("DONE")]), PLAN, recorder, history=history
+    )
+    assert result["outcome"] == "GOAL_REPORTED"
+    assert result["actions"] == 0
+    assert history[0]["operation"] == "STALE" and "did not run: moved" in history[0]["action"]
+    assert history[0]["page_changed"] is True  # The page moved on, so this is not being stuck.
+    events = [json.loads(line) for line in recorder.path.read_text().splitlines()]
+    stale = [(e["wanted"], e["target"], e["reason"]) for e in events if e["type"] == "stale"]
+    assert stale == [("CLICK", "Go", "moved")]
+
+
+def test_a_target_refused_on_an_unchanged_page_is_stuck_after_three_tries(recorder):
+    class Covered(FakeBrowser):
+        def observe(self):
+            return page("same")
+
+    browser = Covered([StalePage("Target changed or is covered")] * 5)
+    result = run(browser, [Decision("CLICK", CLICK)] * 5, recorder)
+    assert result["outcome"] == "STUCK"
+    assert result["decisions"] == 3
+    assert result["actions"] == 0
+
+
+def test_a_stale_observation_after_an_action_ran_is_not_noted_as_refused(recorder):
+    class SlowToSettle(FakeBrowser):
+        def observe(self):
+            if self.acts and self.observes == 1:
+                self.observes += 1
+                raise StalePage("Page did not settle")
+            return super().observe()
+
+    browser = SlowToSettle()
+    history = []
+    result = run_agent(
+        browser, FakePolicy([Decision("CLICK", CLICK), Decision("DONE")]), PLAN, recorder, history=history
+    )
+    assert result["outcome"] == "GOAL_REPORTED"
+    assert [h["operation"] for h in history] == ["CLICK"]
 
 
 def test_uncertain_mutation_stops_and_is_never_retried(recorder):
