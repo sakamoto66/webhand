@@ -22,10 +22,7 @@ class ScriptedPolicy:
     def config(self) -> dict:
         return {"chooser": "scripted"}
 
-    def text(self, context: dict) -> str:
-        return self.script[self.position]["text"]
-
-    def choose(self, page: Page, goal: str, history: list[dict]) -> Decision:
+    def choose(self, page: Page, plan: dict, history: list[dict]) -> Decision:
         if self.pending is not None and len(history) > self.pending:
             self.position += 1
         self.pending = None
@@ -40,7 +37,9 @@ class ScriptedPolicy:
         for target, action in targets.get(step["operation"], {}).items():
             if action["kind"] == kind and step["label"] in action["label"]:
                 self.pending = len(history)
-                return resolve(page, step["operation"], target)
+                decision = resolve(page, step["operation"], target)
+                decision.text = step.get("text")
+                return decision
         if "SCROLL_DOWN" in controls:
             return resolve(page, "SCROLL_DOWN", None)
         raise PolicyError(f"Scripted step not found: {step}")

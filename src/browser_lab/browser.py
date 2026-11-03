@@ -62,10 +62,16 @@ class Browser:
             if self.attached:
                 self.browser = self.playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
                 self.context = self.browser.contexts[0]
-                self.page = self.context.pages[0]
-                self.cdp = self.context.new_cdp_session(self.page)
                 if url:
+                    # A saved profile may restore old tabs. The run owns exactly one fresh tab.
+                    stale = list(self.context.pages)
+                    self.page = self.context.new_page()
+                    for page in stale:
+                        page.close()
                     self.page.goto(url, wait_until="load")
+                else:
+                    self.page = self.context.pages[0]
+                self.cdp = self.context.new_cdp_session(self.page)
                 return
             # launch() uses a throwaway profile. Never point this at a signed-in profile.
             self.browser = self.playwright.chromium.launch(channel="chrome", headless=headless)

@@ -1,4 +1,4 @@
-"""Jev's role: choose the next operation and target inside the step Claude assigned.
+"""Jev's role: choose the next operation, target, and value toward Claude's goal, one page at a time.
 
 Adapted from jev-ultrafast (MIT); see THIRD_PARTY_LICENSE_jev-ultrafast.txt.
 """
@@ -10,7 +10,20 @@ import time
 import httpx
 
 from ..types import Decision, ModelCall, Page, PolicyError
-from .base import NEXT_ACTION, OPERATION_HELP, TARGET, TERMINAL_HELP, action_space, model_state, resolve
+from .base import (
+    NEXT_ACTION,
+    NOT_VISIBLE,
+    NOT_VISIBLE_HELP,
+    OPERATION_HELP,
+    TARGET,
+    TERMINAL_HELP,
+    VALUE,
+    action_space,
+    model_state,
+    plan_text,
+    resolve,
+    value_choices,
+)
 
 URL = "https://api.typesafe.ai/v1/systemone"
 
@@ -48,12 +61,26 @@ def validate_choice(answer, ids) -> dict:
     return answer
 
 
-def build_questions(goal: str, targets: dict, controls: dict) -> tuple[dict, dict]:
+NO_VALUE = "NONE"
+
+
+def task_brief(plan: dict) -> dict:
+    """Claude's plan travels with every question, not only in the state."""
+    brief = {"goal": plan["goal"]}
+    if plan.get("steps"):
+        brief["plan"] = plan_text(plan)
+    if plan.get("notes"):
+        brief["notes_from_earlier_attempts"] = plan["notes"]
+    return brief
+
+
+def build_questions(plan: dict, targets: dict, controls: dict, values: dict) -> tuple[dict, dict]:
+    brief = task_brief(plan)
     operations = {key: OPERATION_HELP[key] for key in targets}
     operations.update({key: value["label"] for key, value in controls.items()})
     operations.update(TERMINAL_HELP)
     questions = {
-        "operation": {"type": "choice", "criteria": operations, "instructions": {"goal": goal, "rules": NEXT_ACTION}}
+        "operation": {"type": "choice", "criteria": operations, "instructions": {**brief, "rules": NEXT_ACTION}}
     }
     for operation, candidates in targets.items():
         questions[operation.lower() + "_target"] = {
@@ -65,8 +92,17 @@ def build_questions(goal: str, targets: dict, controls: dict) -> tuple[dict, dic
                     **{k: a[k] for k in ("role", "checked", "selected", "expanded") if k in a},
                 }
                 for index, a in candidates.items()
-            },
-            "instructions": {"goal": goal, "operation": operation, "rules": [NEXT_ACTION, TARGET]},
+            }
+            | {NOT_VISIBLE: NOT_VISIBLE_HELP},
+            "instructions": {**brief, "operation": operation, "rules": [NEXT_ACTION, TARGET]},
+        }
+    if "TYPE_TEXT" in targets:
+        criteria = {key: f"{v['label']}: {v['value']}" for key, v in values.items()}
+        criteria[NO_VALUE] = "No listed value belongs in the field"
+        questions["type_text_value"] = {
+            "type": "choice",
+            "criteria": criteria,
+            "instructions": {**brief, "operation": "TYPE_TEXT", "rules": [VALUE]},
         }
     return questions, operations
 
@@ -86,10 +122,11 @@ class JevPolicy:
     def config(self) -> dict:
         return {"chooser": self.served_model or self.model}
 
-    def choose(self, page: Page, goal: str, history: list[dict]) -> Decision:
+    def choose(self, page: Page, plan: dict, history: list[dict]) -> Decision:
         _, targets, controls = action_space(page["actions"])
-        questions, operations = build_questions(goal, targets, controls)
-        body = {"model": self.model, "state": model_state(page, history), "questions": questions}
+        values = value_choices(plan)
+        questions, operations = build_questions(plan, targets, controls, values)
+        body = {"model": self.model, "state": model_state(page, history, plan), "questions": questions}
         started = time.perf_counter()
         result = post_json(self.client, self.key, body)
         usage = result.get("usage") or {}
@@ -112,9 +149,18 @@ class JevPolicy:
         target = None
         if operation in targets:
             # Unused target heads cannot cause an action. Validate only the selected head.
-            target_answer = validate_choice(answers.get(operation.lower() + "_target", {}), targets[operation])
+            choices = {**targets[operation], NOT_VISIBLE: None}
+            target_answer = validate_choice(answers.get(operation.lower() + "_target", {}), choices)
             target = target_answer["choice"]
             confidences.append(target_answer["confidence"])
+            if target == NOT_VISIBLE:
+                # Jev looked for a target it cannot see. Nothing runs; the loop asks again with this noted.
+                return Decision(NOT_VISIBLE, confidence=min(confidences), wanted=operation)
         decision = resolve(page, operation, target)
+        if operation == "TYPE_TEXT":
+            value_answer = validate_choice(answers.get("type_text_value", {}), {**values, NO_VALUE: None})
+            confidences.append(value_answer["confidence"])
+            if value_answer["choice"] != NO_VALUE:
+                decision.text = values[value_answer["choice"]]["value"]
         decision.confidence = min(confidences)
         return decision

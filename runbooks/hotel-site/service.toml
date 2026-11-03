@@ -1,0 +1,31 @@
+# HOTEL PLANISPHERE, a public practice site for test automation. Reservations stay in the browser.
+# Rewritten from a demonstration on 2026-11-03.
+service = "hotel-site"
+description = "A hotel reservation practice site: choose a plan, fill the reservation form, review it, and confirm."
+base_url = "https://hotel-example-site.takeyaqa.dev/ja/"
+sources = ["demo:runs/20261103T145531/learn-hotel-site-reserve.jsonl"]
+
+facts = [
+  "このプランで予約 on the plan list opens the reservation form in a new tab, which the agent cannot follow. Start from reserve.html with the plan's plan-id instead.",
+  "plan-id=0 is お得な特典付きプラン, the first plan on the list.",
+  "宿泊日 has a calendar; picking a day in it sets the date and closes it.",
+  "追加プラン are checkboxes: 朝食バイキング, 昼からチェックインプラン, お得な観光プラン.",
+  "メールアドレス appears only after メールでのご連絡 is chosen for 確認のご連絡.",
+  "予約内容を確認する opens 宿泊予約確認, where この内容で予約する completes the reservation and shows 予約を完了しました in a dialog.",
+]
+
+[login]
+required = false
+url = "https://hotel-example-site.takeyaqa.dev/ja/login.html"
+
+[[pages]]
+url = "https://hotel-example-site.takeyaqa.dev/ja/plans.html"
+purpose = "宿泊プラン一覧: the list of plans"
+
+[[pages]]
+url = "https://hotel-example-site.takeyaqa.dev/ja/reserve.html?plan-id=0"
+purpose = "宿泊予約: the reservation form for お得な特典付きプラン"
+
+[[pages]]
+url = "https://hotel-example-site.takeyaqa.dev/ja/confirm.html"
+purpose = "宿泊予約確認: review the reservation, then この内容で予約する"

@@ -1,97 +1,165 @@
-"""The loop: observe, choose, execute. It stops; it never claims success. Tasks verify outcomes."""
+"""Jev's loop toward Claude's goal: observe, choose, execute. It stops; it never claims success.
+
+The loop returns to Claude only when it cannot continue on its own. The task's verify() decides success.
+"""
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from .metrics import Recorder
-from .policies.base import field_context
-from .types import MutationUncertain, Policy, PolicyError, StalePage
+from .types import Decision, MutationUncertain, Page, Policy, PolicyError, StalePage
 
-
-def stuck(history: list[dict]) -> bool:
-    recent = history[-3:]
-    return len(recent) == 3 and all(s["page_changed"] is False and s["kind"] != "wait" for s in recent)
+# Why the loop handed control back to Claude.
+GOAL_REPORTED = "GOAL_REPORTED"  # Jev chose DONE. Claude checks the page; finish verifies.
+BLOCKED = "BLOCKED"
+STUCK = "STUCK"  # Three actions in a row did not change the page.
+ATTEMPT_BUDGET = "ATTEMPT_BUDGET"
+NEEDS_HUMAN = "NEEDS_HUMAN"  # A person acts in the window: sign-in, codes, CAPTCHA, [person] steps.
+NEEDS_VALUE = "NEEDS_VALUE"  # A field needs text and none of Claude's values fits.
+JEV_FAILED = "JEV_FAILED"  # No usable decision. Nothing was executed.
+UNCERTAIN = "UNCERTAIN"  # A mutation may have happened. Never retried, never replanned.
+REPLANNABLE = {GOAL_REPORTED, BLOCKED, STUCK, ATTEMPT_BUDGET, NEEDS_VALUE, JEV_FAILED}
 
 
 @dataclass
 class Budget:
+    """Per attempt. A replan starts a new attempt with a fresh budget."""
+
     max_actions: int = 30
     max_decisions: int = 60
 
 
-def run_agent(browser, policy: Policy, goal: str, recorder: Recorder, budget: Budget | None = None) -> dict:
-    """Returns status: done, blocked, budget, or error. Only the task's verifier decides success."""
+MISSING = "missing"  # A history entry for a NOT_VISIBLE choice: nothing ran, but Jev must see it happened.
+
+
+def actions_in(history: list[dict], attempt: int) -> list[dict]:
+    """Executed actions only; they count against the budget."""
+    return [h for h in history if h.get("attempt", 1) == attempt and h["kind"] not in {"human", MISSING}]
+
+
+def stuck(history: list[dict], attempt: int = 1) -> bool:
+    """Three entries without progress: unchanged pages, or targets Jev could not see."""
+    recent = [h for h in history if h.get("attempt", 1) == attempt and h["kind"] != "human"][-3:]
+    return len(recent) == 3 and all(s["page_changed"] is False and s["kind"] != "wait" for s in recent)
+
+
+def execute(
+    browser,
+    page: Page,
+    decision: Decision,
+    history: list[dict],
+    recorder: Recorder,
+    *,
+    decided_by: str,
+    attempt: int,
+    on_change: Callable[[Page], None] = lambda _page: None,
+) -> Page:
+    """Runs once. Logged before the next observation so a navigation cannot erase it."""
+    action = decision.action
+    browser.act(action, page, text=decision.text)
+    step = {
+        "step": len(history) + 1,
+        "attempt": attempt,
+        "decided_by": decided_by,
+        "confidence": decision.confidence,
+        "operation": decision.operation,
+        "kind": action["kind"],
+        "action": action["label"],
+        "text": decision.text,
+        "url": page["url"],
+        "page_changed": None,
+    }
+    history.append(step)
+    recorder.event("step", **step)
+    on_change(page)
+    new_page = browser.observe()
+    step["page_changed"] = new_page["marker"] != page["marker"]
+    recorder.event("step_result", step=step["step"], page_changed=step["page_changed"])
+    on_change(new_page)
+    return new_page
+
+
+def run_agent(
+    browser,
+    policy: Policy,
+    plan: dict,
+    recorder: Recorder,
+    budget: Budget | None = None,
+    *,
+    history: list[dict] | None = None,
+    page: Page | None = None,
+    decisions: int = 0,
+    on_change: Callable[[Page], None] = lambda _page: None,
+    on_decision: Callable[[int], None] = lambda _n: None,
+) -> dict:
+    """Runs one attempt until an outcome above. history is extended in place."""
     budget = budget or Budget()
+    attempt = plan.get("attempt", 1)
+    history = [] if history is None else history
     started = time.perf_counter()
-    history: list[dict] = []
-    decisions = 0
-    pending_text = None
-    page = browser.observe()
+    page = page or browser.observe()
 
     def flush_calls():
         for call in policy.calls:
             recorder.call(call)
         policy.calls.clear()
 
-    def finish(status, reason=None):
+    def finish(outcome, detail=None, **extra):
         return {
-            "status": status,
-            "reason": reason,
-            "actions": len(history),
+            "outcome": outcome,
+            "detail": detail,
+            "page": page,
+            "actions": len(actions_in(history, attempt)),
             "decisions": decisions,
             "elapsed_ms": round((time.perf_counter() - started) * 1000),
+            **extra,
         }
 
     while True:
-        if len(history) >= budget.max_actions or decisions >= budget.max_decisions:
-            return finish("budget", f"{len(history)} actions, {decisions} decisions")
+        if stuck(history, attempt):
+            return finish(STUCK, "three actions without a page change")
+        if len(actions_in(history, attempt)) >= budget.max_actions or decisions >= budget.max_decisions:
+            return finish(ATTEMPT_BUDGET, f"{len(actions_in(history, attempt))} actions, {decisions} decisions")
         try:
             if not browser.fresh(page):
                 page = browser.observe()
             decisions += 1
-            decision = policy.choose(page, goal, history)
+            on_decision(decisions)
+            decision = policy.choose(page, plan, history)
+            flush_calls()
+            if decision.operation == "NOT_VISIBLE":
+                entry = {
+                    "step": len(history) + 1,
+                    "attempt": attempt,
+                    "operation": "NOT_VISIBLE",
+                    "kind": MISSING,
+                    "action": f"Wanted to {decision.wanted}, but the needed element was not listed. Nothing ran",
+                    "text": None,
+                    "url": page["url"],
+                    "page_changed": False,
+                }
+                history.append(entry)
+                recorder.event("not_visible", attempt=attempt, wanted=decision.wanted, confidence=decision.confidence)
+                on_change(page)
+                continue
             if decision.action is None:
                 if not browser.fresh(page):
                     continue
-                return finish("done" if decision.operation == "DONE" else "blocked")
-
-            action, text = decision.action, None
-            if action["kind"] == "fill":
-                if not browser.fresh(page):
-                    continue
-                context = field_context(goal, action, page, history)
-                if pending_text and pending_text[0] == context:
-                    text = pending_text[1]
-                else:
-                    text = policy.text(context)
-                    pending_text = (context, text)
-            browser.act(action, page, text=text)
+                outcome = {"DONE": GOAL_REPORTED, "NEEDS_HUMAN": NEEDS_HUMAN}.get(decision.operation, BLOCKED)
+                return finish(outcome, f"Jev chose {decision.operation}")
+            if decision.action["kind"] == "fill" and decision.text is None:
+                field = {k: decision.action.get(k) for k in ("label", "role", "value")}
+                return finish(NEEDS_VALUE, "no value from the plan fits this field", field=field)
+            page = execute(
+                browser, page, decision, history, recorder, decided_by=policy.name, attempt=attempt, on_change=on_change
+            )
         except StalePage:
             page = browser.observe()
-            continue
+            on_change(page)
         except PolicyError as error:
-            return finish("error", str(error))
+            return finish(JEV_FAILED, str(error))
         except MutationUncertain as error:
-            return finish("error", f"mutation uncertain: {error}")
+            return finish(UNCERTAIN, f"mutation uncertain: {error}")
         finally:
             flush_calls()
-
-        # Logged before observing, so a navigation during observe cannot erase the action.
-        pending_text = None
-        step = {
-            "step": len(history) + 1,
-            "operation": decision.operation,
-            "kind": action["kind"],
-            "action": action["label"],
-            "text": text,
-            "url": page["url"],
-            "page_changed": None,
-        }
-        history.append(step)
-        recorder.event("step", **step)
-        previous = page["marker"]
-        page = browser.observe()
-        step["page_changed"] = page["marker"] != previous
-        recorder.event("step_result", step=step["step"], page_changed=step["page_changed"])
-        if stuck(history):
-            return finish("blocked", "three actions without a page change")

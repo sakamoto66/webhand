@@ -1,4 +1,7 @@
-"""Runbooks: reviewed procedures for a service. They guide Claude and Jev; they are never replayed."""
+"""What browser-lab has learned: service information and reviewed procedures (runbooks).
+
+Both guide Claude's plan and Jev's choices. Procedures are never replayed.
+"""
 
 import hashlib
 import re
@@ -10,6 +13,8 @@ NAME = re.compile(r"[\w-]+(/[\w-]+)?")
 PARAM = re.compile(r"\{([A-Za-z_]\w*)\}")
 ACTORS = {"jev", "human"}
 STATUSES = {"draft", "approved"}
+SERVICE_FILE = "service"  # runbooks/<service>/service.toml holds the service information, not a procedure.
+ROOT = Path("runbooks")
 
 
 class RunbookError(ValueError):
@@ -17,9 +22,68 @@ class RunbookError(ValueError):
 
 
 def path(name: str) -> Path:
-    if not NAME.fullmatch(name):
+    if not NAME.fullmatch(name) or name.split("/")[-1] == SERVICE_FILE:
         raise RunbookError(f"Invalid runbook name: {name!r}")
-    return Path("runbooks") / f"{name}.toml"
+    return ROOT / f"{name}.toml"
+
+
+def service_path(service: str) -> Path:
+    if not re.fullmatch(r"[\w-]+", service):
+        raise RunbookError(f"Invalid service name: {service!r}")
+    return ROOT / service / f"{SERVICE_FILE}.toml"
+
+
+def read_toml(file: Path) -> tuple[bytes, dict]:
+    raw = file.read_bytes()
+    try:
+        return raw, tomllib.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+        raise RunbookError(f"{file}: {error}") from error
+
+
+def load_service(service: str) -> dict | None:
+    """Service information for Claude's plan and Jev's state. None when nothing was learned."""
+    file = service_path(service)
+    if not file.is_file():
+        return None
+    _, data = read_toml(file)
+    missing = [key for key in ("service", "description", "base_url", "sources") if not data.get(key)]
+    if missing:
+        raise RunbookError(f"{file}: missing {', '.join(missing)}")
+    login = data.get("login", {})
+    return {
+        "service": data["service"],
+        "description": data["description"].strip(),
+        "base_url": data["base_url"],
+        "login": {"required": bool(login.get("required")), "url": login.get("url")},
+        "pages": [{"url": p.get("url", ""), "purpose": p.get("purpose", "")} for p in data.get("pages", [])],
+        "facts": [str(fact) for fact in data.get("facts", [])],
+    }
+
+
+def catalog() -> list[dict]:
+    """Everything learned, without filling parameters. Claude reads this to plan."""
+    services = []
+    folders = sorted(p for p in ROOT.iterdir() if p.is_dir()) if ROOT.is_dir() else []
+    for folder in folders:
+        info = load_service(folder.name)
+        procedures = []
+        for file in sorted(folder.glob("*.toml")):
+            if file.stem == SERVICE_FILE:
+                continue
+            _, data = read_toml(file)
+            procedures.append(
+                {
+                    "name": f"{folder.name}/{file.stem}",
+                    "status": data.get("status"),
+                    "goal": data.get("goal"),
+                    "start_url": data.get("start_url"),
+                    "params": {k: v.get("description", "") for k, v in data.get("params", {}).items()},
+                    "human_steps": sum(1 for s in data.get("steps", []) if s.get("actor") == "human"),
+                }
+            )
+        services.append({"service": folder.name, "info": info, "procedures": procedures})
+    return services
 
 
 def parse_values(pairs: list[str]) -> dict[str, str]:
@@ -48,11 +112,7 @@ def load(name: str, values: dict[str, str] | None = None) -> dict:
     file = path(name)
     if not file.is_file():
         raise RunbookError(f"Unknown runbook: {name}")
-    raw = file.read_bytes()
-    try:
-        data = tomllib.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
-        raise RunbookError(f"{file}: {error}") from error
+    raw, data = read_toml(file)
 
     required = ("service", "name", "goal", "start_url", "status", "sources", "steps")
     missing = [key for key in required if not data.get(key)]
@@ -94,6 +154,7 @@ def load(name: str, values: dict[str, str] | None = None) -> dict:
         )
     return {
         "name": name,
+        "service": data["service"],
         "status": data["status"],
         "digest": hashlib.sha256(raw).hexdigest()[:16],
         "goal": fill(data["goal"]),

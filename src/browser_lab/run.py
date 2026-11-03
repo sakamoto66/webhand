@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .agent import Budget, run_agent
+from .agent import GOAL_REPORTED, Budget, run_agent
 from .browser import Browser
 from .metrics import Recorder, git_state, summarize
 from .policies.scripted import ScriptedPolicy
@@ -43,7 +43,10 @@ def run_once(task_name: str, task, repeat: int, folder: Path, args) -> bool:
             git=git_state(),
             started_at=datetime.now(timezone.utc).isoformat(),
         )
-        result = run_agent(browser, policy, task.GOAL, recorder, Budget(args.max_actions, args.max_decisions))
+        plan = {"goal": task.GOAL, "steps": [], "values": []}
+        outcome = run_agent(browser, policy, plan, recorder, Budget(args.max_actions, args.max_decisions))
+        outcome.pop("page")
+        result = {**outcome, "status": "done" if outcome["outcome"] == GOAL_REPORTED else "blocked"}
         verdict = task.verify(browser)
     except Exception as error:  # A failed run is data: keep it and move to the next one.
         result = {**result, "reason": f"{type(error).__name__}: {error}"}
@@ -53,7 +56,8 @@ def run_once(task_name: str, task, repeat: int, folder: Path, args) -> bool:
     summary = summarize(recorder.calls)
     recorder.event("run_end", **result, verified=verdict["success"], evidence=verdict["evidence"], **summary)
     recorder.close()
-    print(f"{task_name}#{repeat}: {result['status']} verified={verdict['success']} reason={result.get('reason')}")
+    reason = result.get("reason") or result.get("detail")
+    print(f"{task_name}#{repeat}: {result['status']} verified={verdict['success']} reason={reason}")
     return verdict["success"]
 
 

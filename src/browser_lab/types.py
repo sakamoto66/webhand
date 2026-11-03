@@ -23,7 +23,7 @@ class MutationUncertain(RuntimeError):
 class ModelCall:
     provider: str
     model: str
-    purpose: str  # "choose" or "text"
+    purpose: str  # "choose"
     latency_ms: int
     input_tokens: int | None = None
     output_tokens: int | None = None
@@ -32,8 +32,10 @@ class ModelCall:
 @dataclass
 class Decision:
     operation: str
-    action: Action | None = None  # None only for DONE and BLOCKED
+    action: Action | None = None  # None only for DONE, NEEDS_HUMAN, BLOCKED, and NOT_VISIBLE
     confidence: float | None = None  # Lowest confidence behind this choice, when the chooser reports one
+    text: str | None = None  # For TYPE_TEXT: one of Claude's values, never model-written. None: no value fits
+    wanted: str | None = None  # For NOT_VISIBLE: the operation whose target was not observed
 
 
 class Policy(Protocol):
@@ -42,6 +44,4 @@ class Policy(Protocol):
 
     def config(self) -> dict: ...
 
-    def choose(self, page: Page, goal: str, history: list[dict]) -> Decision: ...
-
-    def text(self, context: dict) -> str: ...
+    def choose(self, page: Page, plan: dict, history: list[dict]) -> Decision: ...

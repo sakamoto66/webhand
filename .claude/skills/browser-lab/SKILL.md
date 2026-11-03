@@ -1,75 +1,90 @@
 ---
 name: browser-lab
-description: Operate a disposable Chrome through the browser-lab CLI, with Claude planning and reviewing while Jev chooses operations. Use when asked to do something on a web page in this project, or to run a browser-lab task.
-argument-hint: "--task NAME, or --url URL --goal GOAL"
-allowed-tools: Bash(uv run --env-file .env browser-lab:*)
+description: Do something on a web page through the browser-lab CLI. Claude plans the goal from what browser-lab has learned, asks for missing information, lets Jev operate the browser toward the goal, and replans when an attempt falls short. Use when asked to do something on a web page in this project, or to run a browser-lab task.
+argument-hint: "what you want done, or --task NAME"
+allowed-tools: Bash(uv run --env-file .env browser-lab:*), AskUserQuestion
 ---
 
 # browser-lab
 
-You and Jev work together on one run. Use only this command prefix: `uv run --env-file .env browser-lab`, written as `browser-lab` below. Run one command at a time. Do not read project files, take screenshots, or write scripts.
+You plan and judge; Jev operates the browser toward your goal. Use only this command prefix: `uv run --env-file .env browser-lab`, written as `browser-lab` below. Run one command at a time. Do not read project files, take screenshots, or write scripts.
 
 | Role | Owns |
 | --- | --- |
-| Claude (you) | The plan, field text, reviewing each step, resolving escalations, ending the run |
-| Jev | Choosing the next operation inside the current step |
+| Claude (you) | The goal, the plan, the values to type, checking the result, replanning, ending the run |
+| Jev | Every operation toward the goal: which element, and which of your values |
 
-Let Jev do the clicking. Spend your own effort only where a decision needs judgment.
+## 1. Plan from what was learned
 
-## 1. Plan
+Run `browser-lab catalog`. It lists learned services (description, login, pages, facts), their procedures (goal template, params, status), and saved profiles.
 
-Run `browser-lab start $ARGUMENTS`. For a free-form request, pass `--url` and `--goal`, with values in quotes.
+From the request and the catalog, write:
 
-If `start` printed a `RUNBOOK`, compare its steps with the goal and first page. If they fit, run `browser-lab plan --runbook`. If not, write your own plan and say why. Runbooks with `human` steps need `--headed`. Before starting one that signs in, tell the user that the signed-in pages are sent to Jev (TypeSafe).
+- **GOAL**: one sentence with every requirement and its exact values, ending in a visible stopping point ("Stop when ... is shown").
+- **Start URL**: from the procedure's `start_url` or the service's pages. Never guess a URL for an unknown service; ask.
+- **Steps**: ordered, each ending in something visible. Start from a matching procedure (`--runbook NAME --param k=v`; only `approved` ones, or `--allow-draft` for a trial the user asked for). Otherwise write your own with `--step`. Put easy-to-skip requirements in a step, such as submitting a search. Mark a step a person does as `[person] Sign in`. Do not name element indices.
+- **Values**: every text Jev may type, as `--value "LABEL=VALUE"`. Runbook params become values automatically.
 
-Otherwise, from the goal and first page, write ordered steps that each end in something visible:
+If a needed value is missing, ask the user with AskUserQuestion. Never invent personal information. Never ask for passwords, codes, or card numbers: make that a `[person]` step.
+
+If the goal changes data on a real service (booking, sending, purchasing, deleting), show the plan and get the user's agreement before starting.
+
+## 2. Choose the session
+
+Ask the user with AskUserQuestion, unless the request already says:
+
+- **new**: a temporary profile, signed out, deleted at the end. The default.
+- **profile:NAME**: a saved browser-lab profile that keeps its sign-in. List the saved profiles from the catalog. If the service needs a login and no profile has it, offer to create one: run `browser-lab profile login NAME --url LOGIN_URL` as a background job, tell the user to sign in directly in the Chrome window and close it, and wait for the job to end.
+
+Before using a signed-in profile, tell the user that the signed-in pages are sent to Jev (TypeSafe). This is never the user's everyday Chrome profile.
+
+On WSL, `--chrome auto` uses the Windows Chrome when it is reachable. If `start` prints a `NOTE` about falling back to Linux, pass it on once.
+
+## 3. Start and run
 
 ```
-browser-lab plan "Search for Lisbon and submit the search" "Filter to the Design category" ...
+browser-lab start --goal "..." --url "..." --step "..." --step "[person] Sign in" --value "氏名=..." --service SERVICE --session new
+browser-lab run
 ```
 
-Put each requirement in a step, including ones that are easy to skip, such as submitting a search. Use the goal's exact values. Do not name element indices, because they change.
+Add `--headed` when there are `[person]` steps or the user wants to watch. With `--runbook`, `--goal`, `--url`, and the steps come from the runbook unless you give them.
 
-## 2. Advance
+`run` returns only on one of these:
 
-Run `browser-lab advance`. Jev works on the current step and returns only on an escalation:
-
-| Escalation | Your move |
+| Outcome | Your move |
 | --- | --- |
-| `HUMAN_STEP` | Ask the user to do the step in the Chrome window, and wait for them to say it is done. Then run `browser-lab observe`, and `browser-lab advance --next` if the step is complete |
-| `NEEDS_TEXT` | `browser-lab advance --text "VALUE"`, the exact string inferred from the goal |
-| `STEP_DONE` | Review the printed page. If the step is really complete, `browser-lab advance --next` |
-| `LOW_CONFIDENCE` | `browser-lab advance --accept` if the proposal is right, otherwise override with `act` |
-| `JEV_BLOCKED`, `JEV_FAILED`, `STUCK` | Override with `act`, replace the plan, or finish with `blocked` |
+| `GOAL_REPORTED` | Check the printed page against every requirement of the goal. If it is met, finish `done`. If not, replan |
+| `NEEDS_VALUE` | `run --value "LABEL=VALUE"` with a value the goal or the user gave. Ask the user if you do not have it |
+| `NEEDS_HUMAN` | Ask the user to do it in the Chrome window, wait for them, then `run --human-done` |
+| `BLOCKED`, `STUCK`, `ATTEMPT_BUDGET` | Replan (section 4), or `act` once and `run` again |
+| `JEV_FAILED` | Nothing ran. `run` again once; if it repeats, replan or `act` |
+| `UNCERTAIN` | The action may have happened. Never repeat it or replan. Finish `error` |
 
-If `STEP_DONE` is wrong, do not advance to the next step. Fix it with `act`, or run `browser-lab advance` again.
+## 4. Replan
 
-Never ask for passwords or codes, and never pass them to a command. The user types them directly into Chrome.
+When an attempt falls short, read the actions and page printed, decide why, and start the next attempt:
 
-Never invent personal information. If the goal does not supply a needed value, finish with `blocked`.
+```
+browser-lab replan --reason "Search was never submitted; Find stays must be pressed" [--step ...] [--value ...] [--restart]
+browser-lab run
+```
 
-## 3. Override
+`--reason` reaches Jev, so state the fact it missed. Replace the steps when the plan itself was wrong. Use `--restart` to open the start URL again when the page is in a bad state; leave it out to continue from the current page. Do not restart after something was submitted on a real service. `replan` refuses after the attempt limit (3 by default); then finish `blocked`.
 
-Use `act` only after an escalation, with indices from the latest output:
+## 5. Override
+
+Use `act` only when one operation clearly unblocks Jev, with indices from the latest output:
 
 - `browser-lab act CLICK 3`
 - `browser-lab act TYPE_TEXT 2 --text "Lisbon"`
 - `browser-lab act SELECT 4:2`
 - `browser-lab act SCROLL_DOWN`, `SCROLL_UP`, or `WAIT`
 
-Then continue with `browser-lab advance`. To change course, run `browser-lab plan` again with the remaining steps.
+Then `run` again. `STALE` means nothing ran; decide again from the new page printed.
 
-## 4. Finish
+## 6. Finish
 
-After the last step prints `ALL STEPS CONFIRMED`, review the page against the original goal, not only the steps.
-
-Always end with exactly one `browser-lab finish --status done|blocked|budget|error`, even after a failure. Use `done` only with visible evidence that every requirement is satisfied. `finish` verifies independently when the run has a task. Report its `status`, `verified`, and log path in one line. Your own belief is not the result.
-
-## Output codes
-
-- `STALE`: nothing ran. Decide again from the new page printed.
-- `UNCERTAIN`: the action may have happened. Never repeat it. Finish with `error`.
-- `BUDGET EXHAUSTED`: finish with `budget`.
+Always end with exactly one `browser-lab finish --status done|blocked|budget|error`, even after a failure. Use `done` only with visible evidence that every requirement is satisfied. `finish` verifies independently when the run has a task. Report `status`, `verified`, `attempts`, and the log path in one line. Your own belief is not the result.
 
 ## Safety
 

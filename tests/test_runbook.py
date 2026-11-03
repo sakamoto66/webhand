@@ -81,8 +81,8 @@ def test_names_stay_inside_the_runbook_folder(name):
 HOTEL = ["--param", "city=Lisbon", "--param", "category=Design", "--param", "stay=Casa Flora"]
 
 
-def test_a_relative_start_url_is_a_local_file(capsys):
-    cli.main(["start", "--runbook", "hotel/filter", "--allow-draft", *HOTEL])
+def test_a_relative_start_url_is_a_local_file():
+    cli.main(["start", "--runbook", "hotel/filter", "--allow-draft", "--chrome", "linux", *HOTEL])
     assert "Forma" in session.load()["page"]["title"]
     assert session.load()["page"]["url"].endswith("tasks/fixtures/hotel.html?scenario=travel")
 
@@ -98,34 +98,40 @@ def test_a_draft_needs_explicit_permission():
     assert session.load() is None
 
 
-def test_claude_adopts_the_runbook_and_jev_gets_only_the_current_notes(tmp_path):
-    cli.main(["start", "--task", "hotel_filter", "--runbook", "hotel/filter", "--allow-draft", *HOTEL])
-    assert session.load()["plan"] == []  # Starting does not plan; Claude adopts the steps.
-    assert cli.main(["plan", "--runbook"]) == cli.OK
-    ScriptedJev.moves = [("DONE", None, 0.9), ("DONE", None, 0.9)]
-    cli.main(["advance"])
-    assert "not applied until Find stays" in ScriptedJev.goals[0]
-    assert "places in Lisbon" in ScriptedJev.goals[0]
-    cli.main(["advance", "--next"])
-    assert "not applied until Find stays" not in ScriptedJev.goals[1]
+def test_jev_gets_the_runbook_plan_service_facts_and_params_as_values(tmp_path):
+    cli.main(
+        ["start", "--task", "hotel_filter", "--runbook", "hotel/filter", "--allow-draft", "--chrome", "linux", *HOTEL]
+    )
+    ScriptedJev.moves = [("DONE", None, None)]
+    cli.main(["run"])
+    state = ScriptedJev.states[0]
+    assert state["plan"]["steps"][0].startswith("1. Enter Lisbon as the Destination")
+    assert "places in Lisbon" in state["plan"]["steps"][0]
+    facts = state["service"]["facts"]
+    assert any("not applied until Find stays" in fact for fact in facts)
+    assert {"label": "city", "value": "Lisbon"} in ScriptedJev.plans[0]["values"]
     log = events(tmp_path)
     assert next(e for e in log if e["type"] == "run_start")["runbook"]["name"] == "hotel/filter"
     assert next(e for e in log if e["type"] == "plan")["source"] == "runbook"
 
 
-def test_a_plan_from_claude_drops_runbook_notes():
-    cli.main(["start", "--task", "hotel_filter", "--runbook", "hotel/filter", "--allow-draft", *HOTEL])
-    cli.main(["plan", "--runbook"])
-    cli.main(["plan", "Search for Lisbon"])
-    ScriptedJev.moves = [("DONE", None, 0.9)]
-    cli.main(["advance"])
-    assert "Hint:" not in ScriptedJev.goals[0]
-
-
-def test_plan_needs_steps_or_runbook():
-    cli.main(["start", "--task", "hotel_filter"])
-    assert cli.main(["plan"]) == cli.FAILED
-    assert cli.main(["plan", "--runbook"]) == cli.FAILED
+def test_steps_from_claude_replace_the_runbook_steps():
+    cli.main(
+        [
+            "start",
+            "--task",
+            "hotel_filter",
+            "--runbook",
+            "hotel/filter",
+            "--allow-draft",
+            "--chrome",
+            "linux",
+            "--step",
+            "Search for Lisbon",
+            *HOTEL,
+        ]
+    )
+    assert [s["instruction"] for s in session.load()["plan"]["steps"]] == ["Search for Lisbon"]
 
 
 def test_human_steps_need_a_visible_window(book):
@@ -135,30 +141,58 @@ def test_human_steps_need_a_visible_window(book):
     assert session.load() is None
 
 
-def test_nothing_acts_during_a_human_step(book, tmp_path, monkeypatch, capsys):
+def test_person_steps_are_marked_in_jev_state(book, tmp_path, monkeypatch):
     start_chrome = session.start_chrome
-    monkeypatch.setattr(session, "start_chrome", lambda headed: start_chrome(headed=False))
-    url = "file://" + str(tmp_path / "page.html")
+    monkeypatch.setattr(session, "start_chrome", lambda **kw: start_chrome(**{**kw, "headed": False}))
     (tmp_path / "page.html").write_text("<h1>Home</h1><button>Reports</button>")
+    url = (tmp_path / "page.html").as_uri()
     book.write_text(HUMAN)
-    cli.main(["start", "--runbook", "demo", "--headed", "--param", "section=Reports", "--param", f"url={url}"])
-    cli.main(["plan", "--runbook"])
-    capsys.readouterr()
+    cli.main(
+        [
+            "start",
+            "--runbook",
+            "demo",
+            "--headed",
+            "--chrome",
+            "linux",
+            "--param",
+            "section=Reports",
+            "--param",
+            f"url={url}",
+        ]
+    )
+    ScriptedJev.moves = [("NEEDS_HUMAN", None, None)]
+    cli.main(["run"])
+    assert ScriptedJev.states[0]["plan"]["steps"][0].startswith("1. [person] Log in")
 
-    ScriptedJev.moves = [("CLICK", "Reports", 0.9), ("DONE", None, 0.9)]
-    assert cli.main(["advance"]) == cli.OK
-    assert "ESCALATION HUMAN_STEP" in capsys.readouterr().out
-    assert ScriptedJev.goals == []
-    assert cli.main(["act", "CLICK", "1"]) == cli.FAILED
-    assert session.load()["history"] == []
 
-    # The person changes the page. Jev must then work from the page as it is now.
-    from browser_lab.browser import Browser
+SERVICE = """
+service = "demo"
+description = "A demo service"
+base_url = "https://demo.test/"
+sources = ["code:test"]
+facts = ["Reports live under the top menu"]
 
-    browser = Browser(port=session.load()["port"])
-    browser.page.evaluate("document.querySelector('h1').textContent = 'Signed in'")
-    browser.close()
-    assert cli.main(["advance", "--next"]) == cli.OK
-    assert session.load()["history"][0]["action"] == "Reports"
-    statuses = [e["status"] for e in events(tmp_path) if e["type"] == "human_step"]
-    assert statuses == ["requested", "done"]
+[login]
+required = true
+url = "https://demo.test/login"
+"""
+
+
+def test_service_information_and_catalog(tmp_path, monkeypatch):
+    monkeypatch.setattr(runbook, "ROOT", tmp_path)
+    (tmp_path / "demo").mkdir()
+    (tmp_path / "demo" / "service.toml").write_text(SERVICE)
+    (tmp_path / "demo" / "login.toml").write_text(HUMAN)
+    info = runbook.load_service("demo")
+    assert info["login"] == {"required": True, "url": "https://demo.test/login"}
+    assert info["facts"] == ["Reports live under the top menu"]
+    [entry] = runbook.catalog()
+    assert [p["name"] for p in entry["procedures"]] == ["demo/login"]
+    assert entry["procedures"][0]["human_steps"] == 1
+    assert runbook.load_service("missing") is None
+
+
+def test_service_is_not_a_procedure_name():
+    with pytest.raises(runbook.RunbookError):
+        runbook.path("hotel/service")

@@ -26,9 +26,10 @@ def browser():
 
 def test_scripted_run_passes_independent_verification(browser, tmp_path):
     recorder = Recorder(tmp_path / "run.jsonl")
-    result = run_agent(browser, ScriptedPolicy(task.SCRIPT), task.GOAL, recorder)
+    plan = {"goal": task.GOAL, "steps": [], "values": []}
+    result = run_agent(browser, ScriptedPolicy(task.SCRIPT), plan, recorder)
     recorder.close()
-    assert result["status"] == "done"
+    assert result["outcome"] == "GOAL_REPORTED"
     assert task.verify(browser)["success"] is True
 
 

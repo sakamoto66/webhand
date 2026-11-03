@@ -1,11 +1,10 @@
 """Model contracts with stubbed transports. Tests must never call a paid API."""
 
-
 import httpx
 import pytest
 
 from browser_lab.metrics import summarize
-from browser_lab.policies.base import action_space, resolve
+from browser_lab.policies.base import action_space, model_state, resolve
 from browser_lab.policies.jev import JevPolicy, validate_choice
 from browser_lab.policies.scripted import ScriptedPolicy
 from browser_lab.types import ModelCall, PolicyError
@@ -40,6 +39,13 @@ def test_resolve_rejects_anything_unobserved(operation, target):
         resolve(PAGE, operation, target)
 
 
+PLAN = {
+    "goal": "goal",
+    "steps": [{"instruction": "Go", "actor": "jev"}],
+    "values": [{"label": "City", "value": "Lisbon"}],
+}
+
+
 def jev_answer():
     return {
         "model": "jev-1",
@@ -54,13 +60,14 @@ def jev_answer():
                     "SELECT": 0.0,
                     "WAIT": 0.0,
                     "DONE": 0.0,
+                    "NEEDS_HUMAN": 0.0,
                     "BLOCKED": 0.0,
                 },
             },
             "click_target": {
                 "choice": "2",
                 "confidence": 0.9,
-                "probabilities": {"1": 0.0, "2": 1.0},
+                "probabilities": {"1": 0.0, "2": 1.0, "NOT_VISIBLE": 0.0},
             },
         },
     }
@@ -74,7 +81,7 @@ def jev_policy(monkeypatch, handler):
 
 def test_jev_records_tokens(monkeypatch):
     policy = jev_policy(monkeypatch, lambda _request: httpx.Response(200, json=jev_answer()))
-    decision = policy.choose(PAGE, "goal", [])
+    decision = policy.choose(PAGE, PLAN, [])
     assert decision.action["id"] == "e3"
     call = policy.calls[0]
     assert (call.provider, call.input_tokens, call.output_tokens) == ("typesafe", 50, 5)
@@ -86,13 +93,13 @@ def test_jev_invalid_target_is_rejected(monkeypatch):
     answer["answers"]["click_target"]["choice"] = "99"
     policy = jev_policy(monkeypatch, lambda _request: httpx.Response(200, json=answer))
     with pytest.raises(PolicyError):
-        policy.choose(PAGE, "goal", [])
+        policy.choose(PAGE, PLAN, [])
 
 
 def test_jev_http_error_is_a_policy_error(monkeypatch):
     policy = jev_policy(monkeypatch, lambda _request: httpx.Response(401))
     with pytest.raises(PolicyError):
-        policy.choose(PAGE, "goal", [])
+        policy.choose(PAGE, PLAN, [])
 
 
 def test_validate_choice_rejects_wrong_probabilities():
@@ -110,19 +117,97 @@ def test_scripted_step_is_retried_until_it_reaches_the_history():
         [{"operation": "CLICK", "label": "Go"}, {"operation": "TYPE_TEXT", "label": "City", "text": "Lisbon"}]
     )
     history = []
-    assert policy.choose(PAGE, "goal", history).action["id"] == "e3"
+    assert policy.choose(PAGE, PLAN, history).action["id"] == "e3"
     # The click raised StalePage, so nothing was recorded: the same step comes back.
-    assert policy.choose(PAGE, "goal", history).action["id"] == "e3"
+    assert policy.choose(PAGE, PLAN, history).action["id"] == "e3"
     history.append({"action": "Go"})
-    decision = policy.choose(PAGE, "goal", history)
+    decision = policy.choose(PAGE, PLAN, history)
     assert decision.action["id"] == "e1"
-    assert policy.text({}) == "Lisbon"
+    assert decision.text == "Lisbon"
     history.append({"action": "City"})
-    assert policy.choose(PAGE, "goal", history).operation == "DONE"
+    assert policy.choose(PAGE, PLAN, history).operation == "DONE"
 
 
 def test_scripted_control_step_without_a_label():
     policy = ScriptedPolicy([{"operation": "WAIT"}])
-    assert policy.choose(PAGE, "goal", []).operation == "WAIT"
+    assert policy.choose(PAGE, PLAN, []).operation == "WAIT"
     with pytest.raises(PolicyError):
-        ScriptedPolicy([{"operation": "SCROLL_UP"}]).choose(PAGE, "goal", [])
+        ScriptedPolicy([{"operation": "SCROLL_UP"}]).choose(PAGE, PLAN, [])
+
+
+def type_answer(value_choice):
+    answer = jev_answer()
+    ops = answer["answers"]["operation"]
+    ops["choice"] = "TYPE_TEXT"
+    ops["probabilities"] = {**{k: 0.0 for k in ops["probabilities"]}, "TYPE_TEXT": 1.0}
+    answer["answers"]["type_text_target"] = {
+        "choice": "1",
+        "confidence": 0.8,
+        "probabilities": {"1": 1.0, "NOT_VISIBLE": 0.0},
+    }
+    answer["answers"]["type_text_value"] = {
+        "choice": value_choice,
+        "confidence": 0.7,
+        "probabilities": {"1": 1.0 if value_choice == "1" else 0.0, "NONE": 1.0 if value_choice == "NONE" else 0.0},
+    }
+    return answer
+
+
+def test_jev_chooses_one_of_claudes_values_by_number(monkeypatch):
+    sent = []
+
+    def handler(request):
+        sent.append(request)
+        return httpx.Response(200, json=type_answer("1"))
+
+    decision = jev_policy(monkeypatch, handler).choose(PAGE, PLAN, [])
+    assert (decision.action["id"], decision.text, decision.confidence) == ("e1", "Lisbon", 0.7)
+    import json
+
+    body = json.loads(sent[0].content)
+    assert body["questions"]["type_text_value"]["criteria"] == {
+        "1": "City: Lisbon",
+        "NONE": "No listed value belongs in the field",
+    }
+    assert body["state"]["plan"]["steps"] == ["1. Go"]
+    assert "NEEDS_HUMAN" in body["questions"]["operation"]["criteria"]
+
+
+def test_jev_choosing_no_value_leaves_the_text_empty(monkeypatch):
+    decision = jev_policy(monkeypatch, lambda _r: httpx.Response(200, json=type_answer("NONE"))).choose(PAGE, PLAN, [])
+    assert decision.operation == "TYPE_TEXT" and decision.text is None
+
+
+def test_jev_cannot_invent_a_value(monkeypatch):
+    answer = type_answer("1")
+    answer["answers"]["type_text_value"]["choice"] = "Porto"
+    with pytest.raises(PolicyError):
+        jev_policy(monkeypatch, lambda _r: httpx.Response(200, json=answer)).choose(PAGE, PLAN, [])
+
+
+def test_jev_is_told_how_much_of_the_page_is_offscreen():
+    page = {**PAGE, "h": 780, "scroll": {"y": 444, "height": 1310}}
+    assert model_state(page, [], PLAN)["page"]["offscreen"] == {"above_px": 444, "below_px": 86}
+    top = {**PAGE, "h": 780, "scroll": {"y": 0, "height": 500}}
+    assert model_state(top, [], PLAN)["page"]["offscreen"] == {"above_px": 0, "below_px": 0}
+
+
+def test_jev_can_say_the_needed_target_is_not_visible(monkeypatch):
+    answer = jev_answer()
+    answer["answers"]["click_target"] = {
+        "choice": "NOT_VISIBLE",
+        "confidence": 0.8,
+        "probabilities": {"1": 0.0, "2": 0.0, "NOT_VISIBLE": 1.0},
+    }
+    sent = []
+
+    def handler(request):
+        sent.append(request)
+        return httpx.Response(200, json=answer)
+
+    decision = jev_policy(monkeypatch, handler).choose(PAGE, PLAN, [])
+    assert (decision.operation, decision.action, decision.wanted) == ("NOT_VISIBLE", None, "CLICK")
+    import json
+
+    criteria = json.loads(sent[0].content)["questions"]["click_target"]["criteria"]
+    assert "NOT_VISIBLE" in criteria

@@ -1,0 +1,18 @@
+# The local hotel search fixture (tasks/fixtures/hotel.html). No network, no bookings.
+service = "hotel"
+description = "A local stay search: enter a destination, search, filter the results, and open a stay's page."
+base_url = "tasks/fixtures/hotel.html?scenario=travel"
+sources = ["code:tasks/fixtures/hotel.html"]
+
+facts = [
+  "A typed destination is not applied until Find stays is pressed.",
+  "The result count reads \"places in <city>\" only after a search.",
+  "Filters (category, Free cancellation) apply to the current result list.",
+]
+
+[login]
+required = false
+
+[[pages]]
+url = "tasks/fixtures/hotel.html?scenario=travel"
+purpose = "Search form, filters, and the result list on one page"

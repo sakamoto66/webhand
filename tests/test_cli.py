@@ -1,34 +1,44 @@
 """The role split across separate CLI calls, on real Chrome. Jev is replaced; no paid API."""
 
+import copy
 import json
 from pathlib import Path
 
 import pytest
 
 from browser_lab import cli, session
-from browser_lab.policies.base import action_space, resolve
+from browser_lab.policies.base import action_space, model_state, resolve, value_choices
 from browser_lab.types import Decision, ModelCall
 
 
 class ScriptedJev:
-    """Plays Jev: chooses from the observed page and records the goal text it was given."""
+    """Plays Jev: chooses from the observed page and records the plan and state it was given.
 
+    A move is (operation, element label, value label). The value label picks one of Claude's
+    values by its label, as Jev picks a value number; None means no value fits.
+    """
+
+    name = "jev"
     moves: list = []
-    goals: list = []
+    plans: list = []
+    states: list = []
 
     def __init__(self):
         self.calls = []
 
-    def choose(self, page, goal, _history):
-        self.goals.append(goal)
+    def choose(self, page, plan, history):
+        self.plans.append(copy.deepcopy(plan))
+        self.states.append(model_state(page, history, plan))
         self.calls.append(ModelCall("typesafe", "jev", "choose", 1, 10, 1))
-        operation, label, confidence = self.moves.pop(0)
+        operation, label, value = self.moves.pop(0)
         if label is None:
-            return Decision(operation, confidence=confidence)
+            return Decision(operation, confidence=0.9)
         _, targets, _ = action_space(page["actions"])
         index = next(i for i, a in targets[operation].items() if label in a["label"])
         decision = resolve(page, operation, index)
-        decision.confidence = confidence
+        decision.confidence = 0.9
+        if operation == "TYPE_TEXT" and value is not None:
+            decision.text = next(v["value"] for v in value_choices(plan).values() if v["label"] == value)
         return decision
 
 
@@ -38,7 +48,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("BROWSER_LAB_LOG", str(tmp_path / "run.jsonl"))
     monkeypatch.setenv("TYPESAFE_API_KEY", "test")
     monkeypatch.setattr(cli, "JevPolicy", ScriptedJev)
-    ScriptedJev.moves, ScriptedJev.goals = [], []
+    ScriptedJev.moves, ScriptedJev.plans, ScriptedJev.states = [], [], []
     yield
     state = session.load()
     if state:
@@ -51,138 +61,189 @@ def events(tmp_path):
 
 
 def begin(*options):
-    cli.main(["start", "--task", "hotel_filter", *options])
-    cli.main(["plan", "Search for Lisbon", "Open Casa Flora"])
+    assert (
+        cli.main(
+            [
+                "start",
+                "--task",
+                "hotel_filter",
+                "--chrome",
+                "linux",
+                "--step",
+                "Search for Lisbon",
+                "--step",
+                "Open Casa Flora",
+                "--value",
+                "Destination=Lisbon",
+                *options,
+            ]
+        )
+        == cli.OK
+    )
 
 
-def test_advance_requires_a_plan_from_claude():
-    cli.main(["start", "--task", "hotel_filter"])
-    assert cli.main(["advance"]) == cli.FAILED
+FULL = [
+    ("TYPE_TEXT", "Destination", "Destination"),
+    ("CLICK", "Find stays", None),
+    ("SELECT", "Design", None),
+    ("CLICK", "Free cancellation", None),
+    ("CLICK", "View Casa Flora", None),
+    ("DONE", None, None),
+]
 
 
-def test_jev_acts_alone_until_text_is_needed(tmp_path, capsys):
+def test_jev_runs_to_the_goal_in_one_call_and_verification_passes(tmp_path, capsys):
     begin()
-    ScriptedJev.moves = [("CLICK", "Free cancellation", 0.9), ("TYPE_TEXT", "Destination", 0.9), ("DONE", None, 0.9)]
+    ScriptedJev.moves = list(FULL)
     capsys.readouterr()
-    assert cli.main(["advance"]) == cli.OK
+    assert cli.main(["run"]) == cli.OK
     output = capsys.readouterr().out
-    assert "ESCALATION NEEDS_TEXT" in output
-    assert "ELEMENTS:" not in output  # Text handoffs stay small.
-    assert cli.main(["advance"]) == cli.FAILED
-    assert cli.main(["advance", "--text", "Lisbon"]) == cli.OK
-    assert "ESCALATION STEP_DONE" in capsys.readouterr().out
-    steps = session.load()["history"]
-    assert [(s["operation"], s["decided_by"], s["text"]) for s in steps] == [
-        ("CLICK", "jev", None),
+    assert "OUTCOME GOAL_REPORTED (attempt 1/3)" in output
+    history = session.load()["history"]
+    assert [(s["operation"], s["decided_by"], s["text"]) for s in history][:2] == [
         ("TYPE_TEXT", "jev", "Lisbon"),
+        ("CLICK", "jev", None),
     ]
-
-
-def test_jev_is_scoped_to_the_current_step():
-    begin()
-    ScriptedJev.moves = [("DONE", None, 0.9), ("DONE", None, 0.9)]
-    cli.main(["advance"])
-    assert ScriptedJev.goals[0].startswith("Current step: Search for Lisbon")
-    cli.main(["advance", "--next"])
-    assert ScriptedJev.goals[1].startswith("Current step: Open Casa Flora")
-
-
-def test_jev_done_does_not_move_the_plan_without_claude():
-    begin()
-    ScriptedJev.moves = [("DONE", None, 0.9)]
-    cli.main(["advance"])
-    assert session.load()["step_index"] == 0
-
-
-def test_low_confidence_waits_for_claude(capsys):
-    begin()
-    ScriptedJev.moves = [("CLICK", "Find stays", 0.2), ("DONE", None, 0.9)]
-    capsys.readouterr()
-    cli.main(["advance"])
-    output = capsys.readouterr().out
-    assert "ESCALATION LOW_CONFIDENCE" in output
-    assert "Find stays" in output
-    assert session.load()["history"] == []
-    assert cli.main(["advance"]) == cli.FAILED
-    cli.main(["advance", "--accept"])
-    assert len(session.load()["history"]) == 1
-
-
-def test_claude_override_replaces_the_proposal():
-    begin()
-    ScriptedJev.moves = [("CLICK", "Find stays", 0.2)]
-    cli.main(["advance"])
-    _, targets, _ = action_space(session.load()["page"]["actions"])
-    index = next(i for i, a in targets["CLICK"].items() if "Free cancellation" in a["label"])
-    assert cli.main(["act", "CLICK", index]) == cli.OK
-    state = session.load()
-    assert state["pending"] is None
-    assert [(s["decided_by"], s["action"]) for s in state["history"]] == [("claude", "Free cancellation")]
-
-
-def test_threshold_is_configurable():
-    begin("--min-confidence", "0.1")
-    ScriptedJev.moves = [("CLICK", "Find stays", 0.2), ("DONE", None, 0.9)]
-    cli.main(["advance"])
-    assert session.load()["history"][0]["confidence"] == 0.2
-
-
-def test_stuck_jev_escalates_instead_of_looping(tmp_path, capsys):
-    begin()
-    state = session.load()
-    state["history"] = [{"page_changed": False, "kind": "click"}] * 3
-    session.save(state)
-    capsys.readouterr()
-    cli.main(["advance"])
-    assert "ESCALATION STUCK" in capsys.readouterr().out
-    assert ScriptedJev.goals == []
-
-
-def test_all_steps_confirmed_then_claude_finishes(capsys):
-    begin()
-    ScriptedJev.moves = [("DONE", None, 0.9), ("DONE", None, 0.9)]
-    cli.main(["advance"])
-    cli.main(["advance", "--next"])
-    capsys.readouterr()
-    cli.main(["advance", "--next"])
-    assert "ALL STEPS CONFIRMED" in capsys.readouterr().out
-    assert session.load() is not None
-
-
-def test_replanning_replaces_steps_and_drops_a_pending_proposal():
-    begin()
-    ScriptedJev.moves = [("CLICK", "Find stays", 0.2)]
-    cli.main(["advance"])
-    cli.main(["plan", "A different step"])
-    state = session.load()
-    assert (state["plan"], state["step_index"], state["pending"]) == (["A different step"], 0, None)
-
-
-def test_full_run_passes_independent_verification_and_logs_the_split(tmp_path):
-    begin()
-    ScriptedJev.moves = [
-        ("TYPE_TEXT", "Destination", 0.9),
-        ("CLICK", "Find stays", 0.9),
-        ("SELECT", "Design", 0.9),
-        ("CLICK", "Free cancellation", 0.9),
-        ("DONE", None, 0.9),
-    ]
-    cli.main(["advance"])
-    cli.main(["advance", "--text", "Lisbon"])
-    ScriptedJev.moves = [("CLICK", "View Casa Flora", 0.9), ("DONE", None, 0.9)]
-    cli.main(["advance", "--next"])
     cli.main(["finish", "--status", "done"])
     assert session.load() is None
     end = events(tmp_path)[-1]
     assert end["verified"] is True
-    assert end["escalations"] == {"NEEDS_TEXT": 1, "STEP_DONE": 2}
+    assert end["escalations"] == {"GOAL_REPORTED": 1}
     assert end["decided_by"] == {"jev": 5}
-    assert end["providers"]["typesafe"]["calls"] == 7
+    assert end["attempts"] == 1
+    assert end["providers"]["typesafe"]["calls"] == 6
     assert end["handoffs"] > 0 and end["handoff_chars"] > 0
 
 
+def test_jev_sees_the_goal_plan_page_and_full_history():
+    begin()
+    ScriptedJev.moves = [("CLICK", "Free cancellation", None), ("DONE", None, None)]
+    cli.main(["run"])
+    state = ScriptedJev.states[-1]
+    assert state["plan"]["goal"].startswith("Find a stay in Lisbon")
+    assert state["plan"]["steps"] == ["1. Search for Lisbon", "2. Open Casa Flora"]
+    assert state["page"]["url"].endswith("hotel.html?scenario=travel")
+    assert [h["action"] for h in state["action_history"]] == ["Free cancellation"]
+
+
+def test_a_field_without_a_fitting_value_returns_to_claude(capsys):
+    begin()
+    ScriptedJev.moves = [("TYPE_TEXT", "Destination", None)]
+    capsys.readouterr()
+    cli.main(["run"])
+    output = capsys.readouterr().out
+    assert "OUTCOME NEEDS_VALUE" in output
+    assert "ELEMENTS:" not in output  # Value handoffs stay small.
+    assert session.load()["history"] == []
+    assert cli.main(["run"]) == cli.FAILED
+    ScriptedJev.moves = [("TYPE_TEXT", "Destination", "City"), ("DONE", None, None)]
+    assert cli.main(["run", "--value", "City=Porto"]) == cli.OK
+    assert session.load()["history"][0]["text"] == "Porto"
+
+
+def test_a_person_acts_while_nothing_else_does(tmp_path, capsys):
+    begin()
+    ScriptedJev.moves = [("NEEDS_HUMAN", None, None)]
+    capsys.readouterr()
+    cli.main(["run"])
+    assert "OUTCOME NEEDS_HUMAN" in capsys.readouterr().out
+    assert cli.main(["run"]) == cli.FAILED
+    assert cli.main(["act", "WAIT"]) == cli.FAILED
+    ScriptedJev.moves = [("DONE", None, None)]
+    assert cli.main(["run", "--human-done"]) == cli.OK
+    assert ScriptedJev.states[-1]["action_history"][-1]["kind"] == "human"
+    statuses = [e["status"] for e in events(tmp_path) if e["type"] == "human_step"]
+    assert statuses == ["requested", "done"]
+
+
+def test_person_steps_need_a_visible_window():
+    with pytest.raises(SystemExit, match="--headed"):
+        cli.main(["start", "--task", "hotel_filter", "--chrome", "linux", "--step", "[person] Sign in"])
+    assert session.load() is None
+
+
+def test_stuck_attempt_is_replanned_from_the_start_url(tmp_path, capsys):
+    begin()
+    state = session.load()
+    state["history"] = [
+        {
+            "step": i,
+            "attempt": 1,
+            "kind": "click",
+            "operation": "CLICK",
+            "action": "Find stays",
+            "text": None,
+            "url": "u",
+            "page_changed": False,
+        }
+        for i in (1, 2, 3)
+    ]
+    session.save(state)
+    cli.main(["run"])
+    assert ScriptedJev.states == []  # Stuck is detected before Jev is asked.
+    assert session.load()["outcome"] == "STUCK"
+    assert cli.main(["run"]) == cli.FAILED
+    capsys.readouterr()
+    assert cli.main(["replan", "--reason", "Search did nothing; type first", "--restart"]) == cli.OK
+    assert "ATTEMPT 2/3" in capsys.readouterr().out
+    ScriptedJev.moves = list(FULL)
+    cli.main(["run"])
+    plan = ScriptedJev.plans[-1]
+    assert plan["attempt"] == 2
+    assert plan["notes"] == ["Attempt 1 ended with STUCK. Claude: Search did nothing; type first"]
+    assert ScriptedJev.states[0]["action_history"][0]["attempt"] == 1  # Earlier attempts stay visible.
+    cli.main(["finish", "--status", "done"])
+    end = events(tmp_path)[-1]
+    assert (end["verified"], end["attempts"]) == (True, 2)
+    assert [o["outcome"] for o in end["attempt_outcomes"]] == ["STUCK", "GOAL_REPORTED"]
+
+
+def test_replanning_stops_at_the_attempt_limit():
+    begin("--max-attempts", "2")
+    assert cli.main(["replan", "--reason", "x"]) == cli.OK
+    assert cli.main(["replan", "--reason", "y"]) == cli.BUDGET
+
+
+def test_replan_can_replace_steps_and_values():
+    begin()
+    cli.main(["replan", "--reason", "x", "--step", "A different step", "--value", "Destination=Porto"])
+    plan = session.load()["plan"]
+    assert [s["instruction"] for s in plan["steps"]] == ["A different step"]
+    assert plan["values"] == [{"label": "Destination", "value": "Porto"}]
+
+
+def test_an_uncertain_action_cannot_be_replanned():
+    begin()
+    state = session.load()
+    state["outcome"] = "UNCERTAIN"
+    session.save(state)
+    assert cli.main(["replan", "--reason", "x"]) == cli.UNCERTAIN
+    assert cli.main(["run"]) == cli.UNCERTAIN
+
+
+def test_claude_override_lets_jev_continue_the_attempt():
+    begin()
+    ScriptedJev.moves = [("BLOCKED", None, None)]
+    cli.main(["run"])
+    _, targets, _ = action_space(session.load()["page"]["actions"])
+    index = next(i for i, a in targets["CLICK"].items() if "Free cancellation" in a["label"])
+    assert cli.main(["act", "CLICK", index]) == cli.OK
+    state = session.load()
+    assert state["outcome"] is None
+    assert [(s["decided_by"], s["action"]) for s in state["history"]] == [("claude", "Free cancellation")]
+
+
+def test_attempt_budget_returns_to_claude(capsys):
+    begin("--max-actions", "1")
+    ScriptedJev.moves = [("CLICK", "Free cancellation", None)]
+    capsys.readouterr()
+    cli.main(["run"])
+    assert "OUTCOME ATTEMPT_BUDGET" in capsys.readouterr().out
+    assert cli.main(["act", "WAIT"]) == cli.BUDGET
+
+
 def test_claimed_done_does_not_pass_verification(tmp_path):
-    cli.main(["start", "--task", "hotel_filter"])
+    cli.main(["start", "--task", "hotel_filter", "--chrome", "linux"])
     cli.main(["finish", "--status", "done"])
     end = events(tmp_path)[-1]
     assert (end["status"], end["verified"]) == ("done", False)
@@ -194,22 +255,55 @@ def test_invalid_override_is_rejected_without_a_step():
     assert session.load()["history"] == []
 
 
-def test_budget_stops_both_roles():
-    begin("--max-actions", "0")
-    assert cli.main(["act", "WAIT"]) == cli.BUDGET
-    assert cli.main(["advance"]) == cli.BUDGET
-
-
 def test_missing_jev_key_is_reported_before_chrome_starts(monkeypatch):
     monkeypatch.delenv("TYPESAFE_API_KEY")
     with pytest.raises(SystemExit):
-        cli.main(["start", "--task", "hotel_filter"])
+        cli.main(["start", "--task", "hotel_filter", "--chrome", "linux"])
     assert session.load() is None
 
 
-def test_session_chrome_uses_a_temporary_profile():
-    cli.main(["start", "--task", "hotel_filter"])
+def test_a_new_session_uses_a_temporary_profile():
+    cli.main(["start", "--task", "hotel_filter", "--chrome", "linux"])
     state = session.load()
     assert Path(state["profile"]).name.startswith("browser-lab-")
     cli.main(["finish", "--status", "abandoned"])
     assert not Path(state["profile"]).exists()
+
+
+def test_a_saved_profile_keeps_its_sign_in_between_runs(tmp_path):
+    page = tmp_path / "site.html"
+    page.write_text("<title>Site</title><h1>Site</h1>")
+    url = page.as_uri()
+    options = ["--goal", "Open the site", "--url", url, "--chrome", "linux", "--session", "profile:demo"]
+    cli.main(["start", *options])
+    from browser_lab.browser import Browser
+
+    browser = Browser(port=session.load()["port"])
+    browser.context.add_cookies(
+        [{"name": "signed_in", "value": "yes", "url": "https://example.test/", "expires": 2_000_000_000}]
+    )
+    browser.close()
+    profile = session.load()["profile"]
+    cli.main(["finish", "--status", "abandoned"])
+    assert Path(profile).is_dir()
+
+    cli.main(["start", *options])
+    browser = Browser(port=session.load()["port"])
+    cookies = browser.context.cookies("https://example.test/")
+    browser.close()
+    assert [c["value"] for c in cookies if c["name"] == "signed_in"] == ["yes"]
+    assert session.load()["profile"] == profile
+
+
+def test_a_task_keeps_its_own_goal():
+    with pytest.raises(SystemExit, match="own goal"):
+        cli.main(["start", "--task", "hotel_filter", "--goal", "Something else"])
+
+
+def test_catalog_lists_learned_services_and_procedures(capsys):
+    assert cli.main(["catalog", "--chrome", "linux"]) == cli.OK
+    output = capsys.readouterr().out
+    assert "SERVICE hotel-site" in output
+    assert "PROCEDURE hotel-site/reserve [" in output
+    assert "param check_in:" in output
+    assert "SAVED PROFILES: (none)" in output
