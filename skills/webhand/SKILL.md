@@ -26,6 +26,8 @@ From the request and the catalog, write:
 - **Values**: every text Jev may type, as `--value "LABEL=VALUE"`. Runbook params become values automatically.
 - **Regions** (optional): the catalog lists each page's learned regions and each procedure's `focus` / `skip`, which apply automatically with `--runbook` and `--service`. Add `--focus REGION` for the parts of a page the goal works in and `--skip REGION` for parts that crowd them out, using keys from the catalog or from `REGIONS` in earlier output. A bare kind such as `form` matches any form. Leave them out when nothing was learned and nothing was cut.
 
+For a request with `--task NAME` (research repository only), also pass `--task NAME` to `start`. The task supplies the GOAL and start URL in place of `--goal` and `--url`, and `finish` checks it independently. Write the steps and values as above.
+
 If a needed value is missing, ask the user with AskUserQuestion. Never invent personal information. Never ask for passwords, codes, or card numbers: make that a `[person]` step.
 
 If the goal changes data on a real service (booking, sending, purchasing, deleting), show the plan and get the user's agreement before starting.
