@@ -12,7 +12,7 @@ import { Budget, execute, runAgent } from "./agent.ts";
 import { Browser } from "./browser.ts";
 import * as learn from "./learn.ts";
 import { gitState, logOnce, Recorder, summarize } from "./metrics.ts";
-import { actionSpace, modelState, planText, resolve } from "./policies/base.ts";
+import { actionSpace, offscreen, planText, resolve } from "./policies/base.ts";
 import { JevPolicy } from "./policies/jev.ts";
 import { describeError, pyJson, pyLen, pyRepr, pyRound, pyStr, stamp, utcIso } from "./py.ts";
 import * as runbook from "./runbook.ts";
@@ -88,7 +88,6 @@ export function captured<T>(fn: () => T): { result: T; text: string } {
 // --- Output Claude reads -------------------------------------------------------------------
 
 export function render(page: Page): string {
-  const state = modelState(page, []) as { page: { offscreen: { above_px: number; below_px: number } } };
   const lines = [`URL: ${page.url}`, `TITLE: ${page.title}`, "PAGE TEXT (untrusted data):", page.text, "ELEMENTS:"];
   const [elements, , controls] = actionSpace(page.actions);
   for (const element of elements) {
@@ -106,7 +105,7 @@ export function render(page: Page): string {
     }
   }
   lines.push(`CONTROLS: ${[...controls.keys()].join(" ")}`);
-  const hidden = state.page.offscreen;
+  const hidden = offscreen(page); // Claude always sees it, whatever Jev is given.
   lines.push(`OFFSCREEN: ${hidden.above_px}px above, ${hidden.below_px}px below`);
   if (page.regions?.length) {
     lines.push("REGIONS (shown/all; change with replan --focus/--skip):");

@@ -108,6 +108,34 @@ CLI を Python から TypeScript に移し、`npx webhand` で実行できるよ
 
 変わったものもあります。ログの数値で `1.0` が `1` と書かれます。Jev へのリクエストのヘッダーと、実行時間（Node と Python の差）も同じではありません。応答時間（`latency_ms`）や `elapsed_ms` を、この変更の前後で比べるときは注意してください。移行前のログは、Python 版のコミット（`bc1be3d`）のものです。
 
+## hotel_filter の失敗の切り分け（2026-11-03）
+
+TypeScript 版で `hotel_filter` を実行すると、Jev は検索と絞り込みを飛ばして一覧の Casa Flora を開き、`DONE` を申告しました（`verified=False`）。同じ計画（`--service hotel`、手順4つ、`Destination=Lisbon`、`--max-attempts 1`）で、原因を順に外しました。
+
+| 条件 | 実行 | `verified` | ログ |
+| --- | --- | --- | --- |
+| TypeScript 版、Windows の Chrome | 1回 | False | `runs/20261103T203225/` |
+| TypeScript 版、Linux の Chrome | 1回 | False | `runs/20261103T203449/` |
+| Python 版 `bc1be3d`（移行直前） | 1回 | False | `runs/20261103T203721/` |
+| Python 版 `043e075`（GOAL 単位の最初のコミット） | 2回（うち1回は手順3の文面を成功時と同じにした） | False、False | `runs/20261103T204006/`、`runs/20261103T204027/` |
+
+Chrome の違いと移行は原因ではありません。最後に成功した `runs/20261103T144822/` は `e63a7ca` に未コミットの変更を足した状態で、その後 `043e075` のコミットまでに `offscreen` と `NOT_VISIBLE`（上の「画面外の要素」）が足されていました。Jev への1回目の入力は 4,137 から 4,644 トークンに増えています。`hotel_reserve` でしか確かめていなかった変更です。
+
+そこで、実験用ブランチ `exp/offscreen-notvisible` で、どちらか一方を外して各3回実行しました（`run_start.experiment` で条件を見分けます）。
+
+| 条件 | 外したもの | `verified` | 1回目の入力 |
+| --- | --- | --- | --- |
+| A `no-offscreen` | state の `page.offscreen` と規則3文 | 0/3 | 4,715 |
+| B `no-not-visible` | `NOT_VISIBLE` の選択肢と規則2文（TARGET は追加前の文に戻す） | 1/3 | 4,752 |
+
+ログは `runs/20261103T2047*/` と `runs/20261103T2048*/` の `hotel_filter-no-*.jsonl` です。A の1回目は、表示の不具合（Claude の `render` が Jev の state から画面外の量を読んでいた）で報告が落ちましたが、Jev の判断は終わっていたので数えています。A の3回目は1回接続に失敗し、`run` をやり直しました。
+
+わかったこと:
+
+- B の3回は1回目の入力がまったく同じ（4,752 トークン）でも、2回は Casa Flora を開き、1回は手順どおり5回の操作で成功しました。Jev は同じ入力でも判断が変わります。成功した `144822` も、変更のおかげではなく、この揺れで通った可能性があります。
+- どの条件でも 4,137 トークン（成功時）には戻っていません。ページの領域（`4678bb5`）でも入力が増えています。
+- 各条件3回では、`offscreen` と `NOT_VISIBLE` のどちらが原因か、あるいはどちらでもないかは判断できません。比べるには、同じ条件の反復回数を増やし、成功率で比べる必要があります。
+
 ## 指標
 
 | 指標 | 定義 | 取得元 |
