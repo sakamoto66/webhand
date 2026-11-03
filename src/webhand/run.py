@@ -1,4 +1,4 @@
-"""Harness smoke test: the fixed script, no model. Agent runs go through the browser-lab CLI."""
+"""Harness smoke test: the fixed script, no model. Agent runs go through the webhand CLI."""
 
 import argparse
 import importlib.util

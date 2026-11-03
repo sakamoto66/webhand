@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from browser_lab.agent import run_agent
-from browser_lab.browser import Browser
-from browser_lab.metrics import Recorder
-from browser_lab.policies.scripted import ScriptedPolicy
-from browser_lab.types import StalePage
+from webhand.agent import run_agent
+from webhand.browser import Browser
+from webhand.metrics import Recorder
+from webhand.policies.scripted import ScriptedPolicy
+from webhand.types import StalePage
 
 ROOT = Path(__file__).parents[1]
 spec = importlib.util.spec_from_file_location("hotel_filter", ROOT / "tasks" / "hotel_filter.py")
@@ -151,7 +151,7 @@ def test_observe_waits_for_content_rendered_after_load(tmp_path):
 def test_observe_returns_at_the_cap_on_a_page_that_never_settles(tmp_path):
     import time
 
-    from browser_lab.browser import SETTLE_CAP_MS
+    from webhand.browser import SETTLE_CAP_MS
 
     page = tmp_path / "busy.html"
     page.write_text(

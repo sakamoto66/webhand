@@ -17,7 +17,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import agent, learn, runbook, session
+from . import agent, learn, runbook, session, workspace
 from .agent import Budget, execute, run_agent
 from .browser import Browser
 from .metrics import Recorder, git_state, summarize
@@ -122,7 +122,7 @@ def parse_steps(texts: list[str]) -> list[dict]:
 def require_session(args) -> dict:
     state = session.load()
     if state is None:
-        raise SystemExit("No active session. Run: browser-lab start")
+        raise SystemExit("No active session. Run: webhand start")
     args.log = state["log"]
     return state
 
@@ -151,8 +151,9 @@ def log_event(state: dict, kind: str, **fields) -> None:
 def command_catalog(args) -> int:
     """Everything learned, for Claude to plan from."""
     services = runbook.catalog()
+    print(f"RUNBOOKS {runbook.root()}")
     if not services:
-        print("NOTHING LEARNED. Plan from the request, or teach a service with /browser-lab-learn")
+        print("NOTHING LEARNED. Plan from the request, or teach a service with /webhand-learn")
     for entry in services:
         info = entry["info"]
         print(f"SERVICE {entry['service']}")
@@ -191,7 +192,7 @@ def command_catalog(args) -> int:
 
 def command_start(args) -> int:
     if session.load():
-        raise SystemExit("A session is active. Run: browser-lab finish --status abandoned")
+        raise SystemExit("A session is active. Run: webhand finish --status abandoned")
     task = load_task(args.task) if args.task else None
     if task and args.goal:
         raise SystemExit("A task supplies its own goal. Drop --goal")
@@ -226,7 +227,7 @@ def command_start(args) -> int:
     if any(step["actor"] == "human" for step in steps) and not args.headed:
         raise SystemExit("This plan has [person] steps. Add --headed so the person can see the window")
     if not os.environ.get("TYPESAFE_API_KEY"):
-        raise SystemExit("TYPESAFE_API_KEY is not set. Run through: uv run --env-file .env browser-lab ...")
+        raise SystemExit(f"TYPESAFE_API_KEY is not set. Put it in {workspace.home() / '.env'}")
     plan = {
         "goal": goal,
         "steps": steps,
@@ -239,7 +240,7 @@ def command_start(args) -> int:
         chrome_state = session.start_chrome(headed=args.headed, profile=profile, chrome=chrome)
     except session.SessionError as error:
         raise SystemExit(str(error)) from None
-    default_log = Path("runs") / time.strftime("%Y%m%dT%H%M%S") / f"{args.task or 'adhoc'}.jsonl"
+    default_log = workspace.home() / "runs" / time.strftime("%Y%m%dT%H%M%S") / f"{args.task or 'adhoc'}.jsonl"
     learned = runbook.view(runbook.service_view(service), book)
     claude_view = {"focus": args.focus, "skip": args.skip}
     state = {
@@ -260,7 +261,7 @@ def command_start(args) -> int:
         "max_actions": args.max_actions,
         "max_decisions": args.max_decisions,
         "started": time.time(),
-        "log": os.environ.get("BROWSER_LAB_LOG") or str(default_log),
+        "log": os.environ.get("WEBHAND_LOG") or str(default_log),
     }
     args.log = state["log"]
     recorder = Recorder(Path(state["log"]))
@@ -301,7 +302,7 @@ def command_start(args) -> int:
     if note:
         print(f"NOTE: {note}")
     print(f"{describe_plan(plan, state['view'])}\nSESSION: {args.session} ({chrome} Chrome)\n{headline(state['page'])}")
-    print("NEXT: browser-lab run")
+    print("NEXT: webhand run")
     return OK
 
 
@@ -310,7 +311,7 @@ def report(state: dict, result: dict) -> int:
     outcome = result["outcome"]
     print(f"OUTCOME {outcome} ({attempt_label(state)}): {result['detail']}")
     if outcome == agent.UNCERTAIN:
-        print("Do not repeat or replan. Run: browser-lab finish --status error")
+        print("Do not repeat or replan. Run: webhand finish --status error")
         return UNCERTAIN
     if outcome == agent.NEEDS_HUMAN:
         print(f"{headline(state['page'])}\nAsk the person to do this in the Chrome window, then: run --human-done")
@@ -334,7 +335,7 @@ def command_run(args) -> int:
     state = require_session(args)
     outcome = state["outcome"]
     if outcome == agent.UNCERTAIN:
-        print("REJECTED: the last action may have happened. Run: browser-lab finish --status error")
+        print("REJECTED: the last action may have happened. Run: webhand finish --status error")
         return UNCERTAIN
     if outcome == agent.NEEDS_HUMAN and not args.human_done:
         print("REJECTED: a person is acting. When they are done: run --human-done")
@@ -416,7 +417,7 @@ def command_replan(args) -> int:
         print("REJECTED: the last action may have happened, so the run cannot continue. Run: finish --status error")
         return UNCERTAIN
     if plan["attempt"] >= state["max_attempts"]:
-        print(f"ATTEMPTS EXHAUSTED ({state['max_attempts']}). Run: browser-lab finish --status blocked")
+        print(f"ATTEMPTS EXHAUSTED ({state['max_attempts']}). Run: webhand finish --status blocked")
         return BUDGET
     if args.step:
         steps = parse_steps(args.step)
@@ -453,7 +454,7 @@ def command_replan(args) -> int:
         f"{describe_plan(plan, state.get('view'))}\nATTEMPT {plan['attempt']}/{state['max_attempts']}\n"
         f"{headline(state['page'])}"
     )
-    print("NEXT: browser-lab run")
+    print("NEXT: webhand run")
     return OK
 
 
@@ -471,7 +472,7 @@ def command_act(args) -> int:
         print("REJECTED: a person is acting. When they are done: run --human-done")
         return FAILED
     if state["outcome"] == agent.UNCERTAIN:
-        print("REJECTED: the last action may have happened. Run: browser-lab finish --status error")
+        print("REJECTED: the last action may have happened. Run: webhand finish --status error")
         return UNCERTAIN
     if len(agent.actions_in(state["history"], state["plan"]["attempt"])) >= state["max_actions"]:
         print("BUDGET EXHAUSTED for this attempt. Run replan or finish --status budget")
@@ -520,7 +521,7 @@ def command_act(args) -> int:
     except MutationUncertain as error:
         state["outcome"] = agent.UNCERTAIN
         session.save(state)
-        print(f"UNCERTAIN, do not repeat this action: {error}. Run: browser-lab finish --status error")
+        print(f"UNCERTAIN, do not repeat this action: {error}. Run: webhand finish --status error")
         return UNCERTAIN
     finally:
         browser.close()
@@ -558,7 +559,7 @@ def command_finish(args) -> int:
     """Verifies the page independently. The status is what the agent claims, nothing more."""
     state = session.load()
     if state is None:
-        raise SystemExit("No active session. Run: browser-lab start")
+        raise SystemExit("No active session. Run: webhand start")
     verdict = {"success": None, "evidence": "no verifier"}
     try:
         if state["task"]:
@@ -604,8 +605,8 @@ def command_learn(args) -> int:
     except (runbook.RunbookError, session.SessionError) as error:
         raise SystemExit(str(error)) from None
     stem = args.name.replace("/", "-")
-    default_log = Path("runs") / time.strftime("%Y%m%dT%H%M%S") / f"learn-{stem}.jsonl"
-    args.log = os.environ.get("BROWSER_LAB_LOG") or str(default_log)
+    default_log = workspace.home() / "runs" / time.strftime("%Y%m%dT%H%M%S") / f"learn-{stem}.jsonl"
+    args.log = os.environ.get("WEBHAND_LOG") or str(default_log)
     chrome_state = session.start_chrome(headed=not args.headless, profile=profile, chrome=chrome)
     deadline = time.monotonic() + args.max_minutes * 60
     browser, recorder = None, Recorder(Path(args.log))
@@ -641,7 +642,7 @@ def command_learn(args) -> int:
 
 
 def command_profile(args) -> int:
-    """Saved browser-lab profiles. A person signs in here directly; nothing is recorded or sent to Jev."""
+    """Saved webhand profiles. A person signs in here directly; nothing is recorded or sent to Jev."""
     try:
         chrome, note = session.choose_chrome(args.chrome)
         if note:
@@ -686,9 +687,9 @@ def command_profile(args) -> int:
 
 
 def parser() -> argparse.ArgumentParser:
-    root = argparse.ArgumentParser(prog="browser-lab", description=__doc__)
+    root = argparse.ArgumentParser(prog="webhand", description=__doc__)
     commands = root.add_subparsers(dest="command", required=True)
-    chrome_default = os.environ.get("BROWSER_LAB_CHROME", "auto")
+    chrome_default = os.environ.get("WEBHAND_CHROME", "auto")
 
     def chrome_option(command):
         command.add_argument(
@@ -773,6 +774,7 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    workspace.load_env()
     args = parser().parse_args(argv)
     args.log = None
     # What Claude must read is a real cost of this design, so every handoff is sized and logged.

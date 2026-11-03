@@ -2,7 +2,7 @@
 
 import pytest
 
-from browser_lab import session
+from webhand import session
 
 
 def test_session_spec():
@@ -54,7 +54,7 @@ def test_local_files_go_through_wsl_localhost(monkeypatch):
 
 
 def test_saved_profiles_live_under_home(tmp_path, monkeypatch):
-    monkeypatch.setenv("BROWSER_LAB_HOME", str(tmp_path))
+    monkeypatch.setenv("WEBHAND_HOME", str(tmp_path))
     assert session.list_profiles("linux") == []
     session.profile_dir("linux", "work").mkdir(parents=True)
     assert session.list_profiles("linux") == ["work"]

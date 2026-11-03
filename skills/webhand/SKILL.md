@@ -1,13 +1,13 @@
 ---
-name: browser-lab
-description: Do something on a web page through the browser-lab CLI. Claude plans the goal from what browser-lab has learned, asks for missing information, lets Jev operate the browser toward the goal, and replans when an attempt falls short. Use when asked to do something on a web page in this project, or to run a browser-lab task.
+name: webhand
+description: Do something on a web page through the webhand CLI. Claude plans the goal from what webhand has learned, asks for missing information, lets Jev operate the browser toward the goal, and replans when an attempt falls short. Use when asked to do something on a web page with webhand, or to run a webhand task.
 argument-hint: "what you want done, or --task NAME"
-allowed-tools: Bash(uv run --env-file .env browser-lab:*), AskUserQuestion
+allowed-tools: Bash(webhand:*), AskUserQuestion
 ---
 
-# browser-lab
+# webhand
 
-You plan and judge; Jev operates the browser toward your goal. Use only this command prefix: `uv run --env-file .env browser-lab`, written as `browser-lab` below. Run one command at a time. Do not read project files, take screenshots, or write scripts.
+You plan and judge; Jev operates the browser toward your goal. Use only the `webhand` command. If it is not installed, tell the user to run `uv tool install git+https://github.com/sakamoto66/webhand` and put `TYPESAFE_API_KEY` in `~/.webhand/.env`, then stop. Run one command at a time. Do not read project files, take screenshots, or write scripts.
 
 | Role | Owns |
 | --- | --- |
@@ -16,7 +16,7 @@ You plan and judge; Jev operates the browser toward your goal. Use only this com
 
 ## 1. Plan from what was learned
 
-Run `browser-lab catalog`. It lists learned services (description, login, pages, facts), their procedures (goal template, params, status), and saved profiles.
+Run `webhand catalog`. It lists learned services (description, login, pages, facts), their procedures (goal template, params, status), and saved profiles.
 
 From the request and the catalog, write:
 
@@ -35,7 +35,7 @@ If the goal changes data on a real service (booking, sending, purchasing, deleti
 Ask the user with AskUserQuestion, unless the request already says:
 
 - **new**: a temporary profile, signed out, deleted at the end. The default.
-- **profile:NAME**: a saved browser-lab profile that keeps its sign-in. List the saved profiles from the catalog. If the service needs a login and no profile has it, offer to create one: run `browser-lab profile login NAME --url LOGIN_URL` as a background job, tell the user to sign in directly in the Chrome window and close it, and wait for the job to end.
+- **profile:NAME**: a saved webhand profile that keeps its sign-in. List the saved profiles from the catalog. If the service needs a login and no profile has it, offer to create one: run `webhand profile login NAME --url LOGIN_URL` as a background job, tell the user to sign in directly in the Chrome window and close it, and wait for the job to end.
 
 Before using a signed-in profile, tell the user that the signed-in pages are sent to Jev (TypeSafe). This is never the user's everyday Chrome profile.
 
@@ -44,8 +44,8 @@ On WSL, `--chrome auto` uses the Windows Chrome when it is reachable. If `start`
 ## 3. Start and run
 
 ```
-browser-lab start --goal "..." --url "..." --step "..." --step "[person] Sign in" --value "氏名=..." --service SERVICE --session new
-browser-lab run
+webhand start --goal "..." --url "..." --step "..." --step "[person] Sign in" --value "氏名=..." --service SERVICE --session new
+webhand run
 ```
 
 Add `--headed` when there are `[person]` steps or the user wants to watch. With `--runbook`, `--goal`, `--url`, and the steps come from the runbook unless you give them.
@@ -66,8 +66,8 @@ Add `--headed` when there are `[person]` steps or the user wants to watch. With 
 When an attempt falls short, read the actions and page printed, decide why, and start the next attempt:
 
 ```
-browser-lab replan --reason "Search was never submitted; Find stays must be pressed" [--step ...] [--value ...] [--focus ...] [--skip ...] [--restart]
-browser-lab run
+webhand replan --reason "Search was never submitted; Find stays must be pressed" [--step ...] [--value ...] [--focus ...] [--skip ...] [--restart]
+webhand run
 ```
 
 `--reason` reaches Jev, so state the fact it missed. When `REGIONS` shows that the region a step needs was cut (`actions 0/141`) or skipped, add `--focus` for it or `--skip` for what crowded it out; this replaces your earlier `--focus` / `--skip`. Replace the steps when the plan itself was wrong. Use `--restart` to open the start URL again when the page is in a bad state; leave it out to continue from the current page. Do not restart after something was submitted on a real service. `replan` refuses after the attempt limit (3 by default); then finish `blocked`.
@@ -76,16 +76,16 @@ browser-lab run
 
 Use `act` only when one operation clearly unblocks Jev, with indices from the latest output:
 
-- `browser-lab act CLICK 3`
-- `browser-lab act TYPE_TEXT 2 --text "Lisbon"`
-- `browser-lab act SELECT 4:2`
-- `browser-lab act SCROLL_DOWN`, `SCROLL_UP`, or `WAIT`
+- `webhand act CLICK 3`
+- `webhand act TYPE_TEXT 2 --text "Lisbon"`
+- `webhand act SELECT 4:2`
+- `webhand act SCROLL_DOWN`, `SCROLL_UP`, or `WAIT`
 
 Then `run` again. `STALE` means nothing ran; decide again from the new page printed.
 
 ## 6. Finish
 
-Always end with exactly one `browser-lab finish --status done|blocked|budget|error`, even after a failure. Use `done` only with visible evidence that every requirement is satisfied. `finish` verifies independently when the run has a task. Report `status`, `verified`, `attempts`, and the log path in one line. Your own belief is not the result.
+Always end with exactly one `webhand finish --status done|blocked|budget|error`, even after a failure. Use `done` only with visible evidence that every requirement is satisfied. `finish` verifies independently when the run has a task. Report `status`, `verified`, `attempts`, and the log path in one line. Your own belief is not the result.
 
 ## Safety
 

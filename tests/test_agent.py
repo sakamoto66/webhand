@@ -4,9 +4,9 @@ import json
 
 import pytest
 
-from browser_lab.agent import Budget, run_agent
-from browser_lab.metrics import Recorder
-from browser_lab.types import Decision, ModelCall, MutationUncertain, PolicyError, StalePage
+from webhand.agent import Budget, run_agent
+from webhand.metrics import Recorder
+from webhand.types import Decision, ModelCall, MutationUncertain, PolicyError, StalePage
 
 FILL = {"id": "e1", "kind": "fill", "label": "Destination", "node": 1, "value": ""}
 CLICK = {"id": "e2", "kind": "click", "label": "Go", "node": 2}

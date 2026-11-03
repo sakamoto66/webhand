@@ -1,0 +1,14 @@
+{
+  "name": "webhand",
+  "owner": {
+    "name": "sakamoto66"
+  },
+  "description": "webhand: a browser agent skill where Claude plans and Jev operates.",
+  "plugins": [
+    {
+      "name": "webhand",
+      "source": "./",
+      "description": "Claude plans, asks, checks, and replans; Jev operates the browser toward the goal."
+    }
+  ]
+}

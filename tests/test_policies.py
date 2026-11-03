@@ -3,11 +3,11 @@
 import httpx
 import pytest
 
-from browser_lab.metrics import summarize
-from browser_lab.policies.base import action_space, model_state, resolve
-from browser_lab.policies.jev import JevPolicy, validate_choice
-from browser_lab.policies.scripted import ScriptedPolicy
-from browser_lab.types import ModelCall, PolicyError
+from webhand.metrics import summarize
+from webhand.policies.base import action_space, model_state, resolve
+from webhand.policies.jev import JevPolicy, validate_choice
+from webhand.policies.scripted import ScriptedPolicy
+from webhand.types import ModelCall, PolicyError
 
 PAGE = {
     "url": "http://local",

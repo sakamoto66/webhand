@@ -4,9 +4,9 @@ import json
 
 import pytest
 
-from browser_lab import learn, session
-from browser_lab.browser import Browser
-from browser_lab.metrics import Recorder
+from webhand import learn, session
+from webhand.browser import Browser
+from webhand.metrics import Recorder
 
 SECRET = "hunter2-do-not-keep"
 FORM = """<title>Sign in</title><h1>Sign in</h1>

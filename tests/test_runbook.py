@@ -3,7 +3,7 @@
 import pytest
 from test_cli import ScriptedJev, events, isolated  # noqa: F401
 
-from browser_lab import cli, runbook, session
+from webhand import cli, runbook, session
 
 HUMAN = """
 service = "demo"
@@ -180,7 +180,7 @@ url = "https://demo.test/login"
 
 
 def test_service_information_and_catalog(tmp_path, monkeypatch):
-    monkeypatch.setattr(runbook, "ROOT", tmp_path)
+    monkeypatch.setattr(runbook, "root", lambda: tmp_path)
     (tmp_path / "demo").mkdir()
     (tmp_path / "demo" / "service.toml").write_text(SERVICE)
     (tmp_path / "demo" / "login.toml").write_text(HUMAN)
@@ -218,7 +218,7 @@ default = "skip"
 
 
 def test_regions_and_their_defaults_are_learned(tmp_path, monkeypatch):
-    monkeypatch.setattr(runbook, "ROOT", tmp_path)
+    monkeypatch.setattr(runbook, "root", lambda: tmp_path)
     (tmp_path / "demo").mkdir()
     (tmp_path / "demo" / "service.toml").write_text(REGION_SERVICE)
     info = runbook.load_service("demo")
@@ -227,7 +227,7 @@ def test_regions_and_their_defaults_are_learned(tmp_path, monkeypatch):
 
 
 def test_an_unknown_region_default_is_an_error(tmp_path, monkeypatch):
-    monkeypatch.setattr(runbook, "ROOT", tmp_path)
+    monkeypatch.setattr(runbook, "root", lambda: tmp_path)
     (tmp_path / "demo").mkdir()
     (tmp_path / "demo" / "service.toml").write_text(REGION_SERVICE.replace('"skip"', '"hide"'))
     with pytest.raises(runbook.RunbookError, match="hide"):

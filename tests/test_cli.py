@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from browser_lab import cli, session
-from browser_lab.policies.base import action_space, model_state, resolve, value_choices
-from browser_lab.types import Decision, ModelCall
+from webhand import cli, runbook, session
+from webhand.policies.base import action_space, model_state, resolve, value_choices
+from webhand.types import Decision, ModelCall
 
 
 class ScriptedJev:
@@ -44,9 +44,10 @@ class ScriptedJev:
 
 @pytest.fixture(autouse=True)
 def isolated(tmp_path, monkeypatch):
-    monkeypatch.setenv("BROWSER_LAB_HOME", str(tmp_path / "home"))
-    monkeypatch.setenv("BROWSER_LAB_LOG", str(tmp_path / "run.jsonl"))
+    monkeypatch.setenv("WEBHAND_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("WEBHAND_LOG", str(tmp_path / "run.jsonl"))
     monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setattr(runbook, "root", lambda: Path(__file__).parents[1] / "runbooks")
     monkeypatch.setattr(cli, "JevPolicy", ScriptedJev)
     ScriptedJev.moves, ScriptedJev.plans, ScriptedJev.states = [], [], []
     yield
@@ -265,7 +266,7 @@ def test_missing_jev_key_is_reported_before_chrome_starts(monkeypatch):
 def test_a_new_session_uses_a_temporary_profile():
     cli.main(["start", "--task", "hotel_filter", "--chrome", "linux"])
     state = session.load()
-    assert Path(state["profile"]).name.startswith("browser-lab-")
+    assert Path(state["profile"]).name.startswith("webhand-")
     cli.main(["finish", "--status", "abandoned"])
     assert not Path(state["profile"]).exists()
 
@@ -276,7 +277,7 @@ def test_a_saved_profile_keeps_its_sign_in_between_runs(tmp_path):
     url = page.as_uri()
     options = ["--goal", "Open the site", "--url", url, "--chrome", "linux", "--session", "profile:demo"]
     cli.main(["start", *options])
-    from browser_lab.browser import Browser
+    from webhand.browser import Browser
 
     browser = Browser(port=session.load()["port"])
     browser.context.add_cookies(

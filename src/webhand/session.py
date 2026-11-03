@@ -2,7 +2,7 @@
 
 Two kinds of profile:
 - new: a temporary folder, deleted when the run ends. Nothing is signed in.
-- profile:NAME: a saved browser-lab profile. A person signs in once with `profile login`, and later
+- profile:NAME: a saved webhand profile. A person signs in once with `profile login`, and later
   runs reuse that sign-in. It is never the person's everyday Chrome profile.
 
 On WSL, Chrome can be the Windows one. It is reachable only with mirrored networking, because
@@ -21,6 +21,8 @@ from pathlib import Path
 
 import httpx
 
+from . import workspace
+
 STARTUP_SECONDS = 15
 PROFILE_NAME = re.compile(r"[\w-]+")
 CHROMES = {"auto", "linux", "windows"}
@@ -35,7 +37,7 @@ class SessionError(RuntimeError):
 
 
 def home() -> Path:
-    return Path(os.environ.get("BROWSER_LAB_HOME", ".browser-lab"))
+    return workspace.home() / "state"
 
 
 def path() -> Path:
@@ -127,7 +129,7 @@ def choose_chrome(choice: str) -> tuple[str, str | None]:
 
 def profiles_root(chrome: str) -> Path:
     if chrome == "windows":
-        return windows_local_app_data() / "browser-lab" / "profiles"
+        return windows_local_app_data() / "webhand" / "profiles"
     return home() / "profiles"
 
 
@@ -192,11 +194,11 @@ def start_chrome(*, headed: bool = False, profile: str | None = None, chrome: st
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "DevToolsActivePort").unlink(missing_ok=True)
     elif chrome == "windows":
-        temporary = windows_local_app_data() / "browser-lab" / "tmp"
+        temporary = windows_local_app_data() / "webhand" / "tmp"
         temporary.mkdir(parents=True, exist_ok=True)
-        folder = Path(tempfile.mkdtemp(prefix="browser-lab-", dir=temporary))
+        folder = Path(tempfile.mkdtemp(prefix="webhand-", dir=temporary))
     else:
-        folder = Path(tempfile.mkdtemp(prefix="browser-lab-"))
+        folder = Path(tempfile.mkdtemp(prefix="webhand-"))
     user_data_dir = to_windows(folder) if chrome == "windows" else str(folder)
     process = subprocess.Popen(
         chrome_args(executable, user_data_dir, headed=headed),

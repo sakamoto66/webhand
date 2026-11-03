@@ -1,4 +1,4 @@
-"""What browser-lab has learned: service information and reviewed procedures (runbooks).
+"""What webhand has learned: service information and reviewed procedures (runbooks).
 
 Both guide Claude's plan and Jev's choices. Procedures are never replayed.
 """
@@ -9,13 +9,18 @@ import tomllib
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from . import workspace
+
 NAME = re.compile(r"[\w-]+(/[\w-]+)?")
 PARAM = re.compile(r"\{([A-Za-z_]\w*)\}")
 ACTORS = {"jev", "human"}
 STATUSES = {"draft", "approved"}
 DEFAULTS = {"focus", "skip"}  # A region's default in service.toml. Without one, the region is observed as usual.
 SERVICE_FILE = "service"  # runbooks/<service>/service.toml holds the service information, not a procedure.
-ROOT = Path("runbooks")
+
+
+def root() -> Path:
+    return workspace.home() / "runbooks"
 
 
 class RunbookError(ValueError):
@@ -25,13 +30,13 @@ class RunbookError(ValueError):
 def path(name: str) -> Path:
     if not NAME.fullmatch(name) or name.split("/")[-1] == SERVICE_FILE:
         raise RunbookError(f"Invalid runbook name: {name!r}")
-    return ROOT / f"{name}.toml"
+    return root() / f"{name}.toml"
 
 
 def service_path(service: str) -> Path:
     if not re.fullmatch(r"[\w-]+", service):
         raise RunbookError(f"Invalid service name: {service!r}")
-    return ROOT / service / f"{SERVICE_FILE}.toml"
+    return root() / service / f"{SERVICE_FILE}.toml"
 
 
 def read_toml(file: Path) -> tuple[bytes, dict]:
@@ -115,7 +120,7 @@ def load_service(service: str) -> dict | None:
 def catalog() -> list[dict]:
     """Everything learned, without filling parameters. Claude reads this to plan."""
     services = []
-    folders = sorted(p for p in ROOT.iterdir() if p.is_dir()) if ROOT.is_dir() else []
+    folders = sorted(p for p in root().iterdir() if p.is_dir()) if root().is_dir() else []
     for folder in folders:
         info = load_service(folder.name)
         procedures = []

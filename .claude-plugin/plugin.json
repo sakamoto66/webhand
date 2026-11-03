@@ -1,0 +1,17 @@
+{
+  "name": "webhand",
+  "version": "0.1.0",
+  "description": "Claude plans, asks, checks, and replans; Jev operates the browser toward the goal. Learns services from demonstrations or source code.",
+  "author": {
+    "name": "sakamoto66"
+  },
+  "homepage": "https://github.com/sakamoto66/webhand",
+  "repository": "https://github.com/sakamoto66/webhand",
+  "license": "MIT",
+  "keywords": [
+    "browser",
+    "agent",
+    "automation",
+    "runbook"
+  ]
+}
