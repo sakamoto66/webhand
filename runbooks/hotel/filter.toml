@@ -2,7 +2,7 @@
 service = "hotel"
 name = "filter"
 goal = "Find a stay in {city} in the {category} category with free cancellation, then open the page for {stay}. Stop on that page."
-start_url = "https://example.invalid/"  # Run with --task hotel_filter, which supplies the local fixture.
+start_url = "tasks/fixtures/hotel.html?scenario=travel"
 status = "draft"
 sources = ["code:tasks/fixtures/hotel.html"]
 

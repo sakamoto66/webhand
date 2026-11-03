@@ -4,6 +4,7 @@ import hashlib
 import re
 import tomllib
 from pathlib import Path
+from urllib.parse import urlsplit
 
 NAME = re.compile(r"[\w-]+(/[\w-]+)?")
 PARAM = re.compile(r"\{([A-Za-z_]\w*)\}")
@@ -29,6 +30,17 @@ def parse_values(pairs: list[str]) -> dict[str, str]:
             raise RunbookError(f"Expected KEY=VALUE, got {pair!r}")
         values[key] = value
     return values
+
+
+def resolve_url(url: str) -> str:
+    """A URL without a scheme is a local file, relative to the project root."""
+    parts = urlsplit(url)
+    if parts.scheme:
+        return url
+    file = Path(parts.path).resolve()
+    if not file.is_file():
+        raise RunbookError(f"start_url file not found: {parts.path}")
+    return file.as_uri() + (f"?{parts.query}" if parts.query else "")
 
 
 def load(name: str, values: dict[str, str] | None = None) -> dict:
@@ -85,6 +97,6 @@ def load(name: str, values: dict[str, str] | None = None) -> dict:
         "status": data["status"],
         "digest": hashlib.sha256(raw).hexdigest()[:16],
         "goal": fill(data["goal"]),
-        "start_url": fill(data["start_url"]),
+        "start_url": resolve_url(fill(data["start_url"])),
         "steps": steps,
     }

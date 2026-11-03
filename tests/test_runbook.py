@@ -63,7 +63,7 @@ def test_an_unknown_parameter_is_an_error(book):
 
 def test_a_parameter_value_is_not_expanded_again(book):
     book.write_text(HUMAN)
-    assert runbook.load("demo", {"section": "{url}", "url": "u"})["goal"] == "Open {url}"
+    assert runbook.load("demo", {"section": "{url}", "url": "about:blank"})["goal"] == "Open {url}"
 
 
 def test_an_unknown_actor_is_an_error(book):
@@ -79,6 +79,17 @@ def test_names_stay_inside_the_runbook_folder(name):
 
 
 HOTEL = ["--param", "city=Lisbon", "--param", "category=Design", "--param", "stay=Casa Flora"]
+
+
+def test_a_relative_start_url_is_a_local_file(capsys):
+    cli.main(["start", "--runbook", "hotel/filter", "--allow-draft", *HOTEL])
+    assert "Forma" in session.load()["page"]["title"]
+    assert session.load()["page"]["url"].endswith("tasks/fixtures/hotel.html?scenario=travel")
+
+
+def test_a_missing_local_start_url_is_an_error():
+    with pytest.raises(runbook.RunbookError, match="not found"):
+        runbook.resolve_url("tasks/fixtures/missing.html")
 
 
 def test_a_draft_needs_explicit_permission():

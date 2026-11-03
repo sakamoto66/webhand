@@ -43,6 +43,7 @@ hints = ["A fact Jev could get wrong here"]
 done_when = "The visible result"
 ```
 
+- `start_url` must be a page that really exists: the service's URL, or a path relative to the project root for a local file. Never write a placeholder.
 - Merge low-level events into steps that each end in something visible. Do not name element indices.
 - Make every sign-in, multi-factor, and CAPTCHA step `actor = "human"`, including `<redacted>` values and everything around them.
 - Replace values that vary between runs with `params`. The file gets committed, so it must hold no passwords, tokens, names, addresses, account identifiers, or query strings copied from a record.
