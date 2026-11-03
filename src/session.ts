@@ -48,7 +48,7 @@ export function home(): string {
   return join(workspace.home(), "state");
 }
 
-export function path(): string {
+function path(): string {
   return join(home(), "session.json");
 }
 
@@ -190,7 +190,7 @@ export function chromeArgs(executable: string, userDataDir: string, options: { h
   return args;
 }
 
-export async function reachable(port: number): Promise<boolean> {
+async function reachable(port: number): Promise<boolean> {
   try {
     const response = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(2000) });
     await response.body?.cancel();
@@ -315,7 +315,7 @@ function alive(pid: number): boolean {
   }
 }
 
-export async function exited(pid: number, ms: number): Promise<boolean> {
+async function exited(pid: number, ms: number): Promise<boolean> {
   const deadline = performance.now() + ms;
   while (performance.now() < deadline) {
     if (!alive(pid)) return true;

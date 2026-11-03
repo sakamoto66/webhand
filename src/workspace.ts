@@ -18,8 +18,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 export type Scope = "project" | "user";
-export const SCOPES: Scope[] = ["project", "user"];
-export const FOLDER = ".webhand";
+const FOLDER = ".webhand";
 
 function expandUser(path: string): string {
   if (path === "~") return homedir();

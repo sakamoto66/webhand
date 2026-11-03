@@ -35,7 +35,7 @@ import {
   valueChoices,
 } from "./base.ts";
 
-export const URL = "https://api.typesafe.ai/v1/systemone";
+const URL = "https://api.typesafe.ai/v1/systemone";
 const TIMEOUT_MS = 25_000;
 
 /** The subset of fetch that JevPolicy uses, so tests can answer without a network. */
@@ -100,7 +100,7 @@ export function validateChoice(answer: Json, ids: Iterable<string>): Json {
   return answer;
 }
 
-export const NO_VALUE = "NONE";
+const NO_VALUE = "NONE";
 
 /** Claude's plan travels with every question, not only in the state. */
 function taskBrief(plan: Plan): Record<string, unknown> {
