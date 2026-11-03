@@ -234,6 +234,8 @@ npm run build && npm link   # point the webhand command at the working tree's bu
 claude --plugin-dir .
 ```
 
+Inside this repository, `npx -y webhand@0.2` fails with `webhand: not found`: npm treats the repository itself (`webhand@0.2.0`) as satisfying the spec and looks for its bin in the local `node_modules/.bin`, where it is not linked. Use `npm link` as above (the skills then run `webhand` directly), or `npx -y webhand@latest` to fetch the published package.
+
 To keep run logs in the repository's `runs/`, put `{"env": {"WEBHAND_HOME": "<absolute path to this repository>"}}` in `.claude/settings.local.json`. User-scope runbooks are then read from the repository's `runbooks/` instead of `~/.webhand/runbooks/`.
 
 ```bash

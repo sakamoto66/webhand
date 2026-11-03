@@ -234,6 +234,8 @@ npm run build && npm link   # webhand コマンドを作業ツリーのビルド
 claude --plugin-dir .
 ```
 
+このリポジトリの中では、`npx -y webhand@0.2` は `webhand: not found` で失敗します。npm がリポジトリ自身（`webhand@0.2.0`）を指定に合うものとみなし、ローカルの `node_modules/.bin` から bin を探すためです（そこにはリンクされていません）。上のように `npm link` しておくか（スキルは `webhand` を直接使います）、公開版を取得する `npx -y webhand@latest` を使ってください。
+
 実行記録をリポジトリの `runs/` に残したい場合は、`.claude/settings.local.json` に `{"env": {"WEBHAND_HOME": "<このリポジトリの絶対パス>"}}` を書きます。このときユーザー単位の手順書は `~/.webhand/runbooks/` ではなく、リポジトリの `runbooks/` から読みます。
 
 ```bash
