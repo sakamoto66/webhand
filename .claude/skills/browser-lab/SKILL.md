@@ -24,6 +24,7 @@ From the request and the catalog, write:
 - **Start URL**: from the procedure's `start_url` or the service's pages. Never guess a URL for an unknown service; ask.
 - **Steps**: ordered, each ending in something visible. Start from a matching procedure (`--runbook NAME --param k=v`; only `approved` ones, or `--allow-draft` for a trial the user asked for). Otherwise write your own with `--step`. Put easy-to-skip requirements in a step, such as submitting a search. Mark a step a person does as `[person] Sign in`. Do not name element indices.
 - **Values**: every text Jev may type, as `--value "LABEL=VALUE"`. Runbook params become values automatically.
+- **Regions** (optional): the catalog lists each page's learned regions and each procedure's `focus` / `skip`, which apply automatically with `--runbook` and `--service`. Add `--focus REGION` for the parts of a page the goal works in and `--skip REGION` for parts that crowd them out, using keys from the catalog or from `REGIONS` in earlier output. A bare kind such as `form` matches any form. Leave them out when nothing was learned and nothing was cut.
 
 If a needed value is missing, ask the user with AskUserQuestion. Never invent personal information. Never ask for passwords, codes, or card numbers: make that a `[person]` step.
 
@@ -65,11 +66,11 @@ Add `--headed` when there are `[person]` steps or the user wants to watch. With 
 When an attempt falls short, read the actions and page printed, decide why, and start the next attempt:
 
 ```
-browser-lab replan --reason "Search was never submitted; Find stays must be pressed" [--step ...] [--value ...] [--restart]
+browser-lab replan --reason "Search was never submitted; Find stays must be pressed" [--step ...] [--value ...] [--focus ...] [--skip ...] [--restart]
 browser-lab run
 ```
 
-`--reason` reaches Jev, so state the fact it missed. Replace the steps when the plan itself was wrong. Use `--restart` to open the start URL again when the page is in a bad state; leave it out to continue from the current page. Do not restart after something was submitted on a real service. `replan` refuses after the attempt limit (3 by default); then finish `blocked`.
+`--reason` reaches Jev, so state the fact it missed. When `REGIONS` shows that the region a step needs was cut (`actions 0/141`) or skipped, add `--focus` for it or `--skip` for what crowded it out; this replaces your earlier `--focus` / `--skip`. Replace the steps when the plan itself was wrong. Use `--restart` to open the start URL again when the page is in a bad state; leave it out to continue from the current page. Do not restart after something was submitted on a real service. `replan` refuses after the attempt limit (3 by default); then finish `blocked`.
 
 ## 5. Override
 

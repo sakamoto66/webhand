@@ -114,3 +114,124 @@ def test_observe_returns_at_the_cap_on_a_page_that_never_settles(tmp_path):
     finally:
         instance.close()
     assert elapsed < SETTLE_CAP_MS / 1000 + 1.5
+
+
+# --- Regions and views ---------------------------------------------------------------------
+
+DENSE = ROOT / "tasks" / "fixtures" / "dense.html"
+FORM = "main:Booking/form:Booking"
+
+
+@pytest.fixture
+def dense():
+    instance = Browser(DENSE.as_uri())
+    yield instance
+    instance.close()
+
+
+def regions(page):
+    return {region["key"]: region for region in page["regions"]}
+
+
+def test_without_a_view_the_outline_shows_what_was_cut(dense):
+    page = dense.observe()
+    outline = regions(page)
+    assert page["omitted_actions"] == 191
+    assert (outline["header:Dense shop/nav:Categories"]["shown_actions"], outline[FORM]["shown_actions"]) == (250, 0)
+    assert outline[FORM]["actions"] == 141
+    assert outline["main:Booking/section:Notes"]["position"] == "below"
+    assert all("view" not in region for region in page["regions"])
+    assert "## " not in page["text"]
+
+
+def test_a_view_shows_focused_regions_first_and_leaves_skipped_ones_out(dense):
+    dense.view = {"focus": ["form:Booking", "section:Notes"], "skip": ["header"]}
+    page = dense.observe()
+    labels = [a["label"] for a in page["actions"] if a.get("node")]
+    assert labels[0].startswith("Arrival") and "Book" in labels
+    assert not any(label.startswith("Category") for label in labels)
+    assert page["text"].startswith("## " + FORM)
+    assert "Cancellation is free" in page["text"]  # Focused text is read from the whole page.
+    assert "Category 1" not in page["text"]
+    outline = regions(page)
+    assert outline["header:Dense shop/nav:Categories"]["view"] == "skip"
+    assert outline[FORM]["view"] == "focus"
+    assert outline[FORM]["shown_actions"] == 141
+
+
+def test_the_view_does_not_change_freshness(dense):
+    plain = dense.observe()
+    dense.view = {"focus": ["form"], "skip": ["nav"]}
+    viewed = dense.observe()
+    assert [viewed[k] for k in ("marker", "page_key", "guards")] == [plain[k] for k in ("marker", "page_key", "guards")]
+    assert dense.fresh(viewed)
+
+
+def test_a_focused_action_runs_like_any_other(dense):
+    dense.view = {"focus": ["form:Booking"]}
+    page = dense.observe()
+    book = next(a for a in page["actions"] if a["label"] == "Book")
+    dense.act(book, page)
+    assert dense.evaluate("document.body.dataset.booked") == "1"
+
+
+def test_region_keys_are_stable_and_hold_no_secrets(dense):
+    first, second = dense.observe(), dense.observe()
+    assert [r["key"] for r in first["regions"]] == [r["key"] for r in second["regions"]]
+    dense.view = {"focus": ["form"]}
+    assert "hunter2" not in str(dense.observe())
+
+
+def test_an_open_dialog_comes_first_in_a_view(dense):
+    dense.evaluate("document.getElementById('welcome').showModal()")
+    dense.view = {"focus": ["form"]}
+    page = dense.observe()
+    assert page["actions"][0]["label"] == "Close offer"
+    assert page["text"].startswith("## dialog:Welcome")
+
+
+def test_a_bare_kind_matches_any_region_of_that_kind_and_the_deepest_match_wins(dense):
+    dense.view = {"focus": ["form"], "skip": ["main"]}
+    page = dense.observe()
+    outline = regions(page)
+    assert outline[FORM]["view"] == "focus"
+    assert outline["main:Booking"]["view"] == "skip"
+    assert "Cancellation" not in page["text"]
+
+
+def test_a_heading_names_a_region_only_when_it_opens_it(tmp_path):
+    page = tmp_path / "names.html"
+    page.write_text(
+        "<!doctype html><meta charset='utf-8'><body>"
+        "<form><label>Date <input></label><h3>Total</h3></form>"
+        "<section aria-label='Notes'><p>Note</p></section><aside><h2>Help</h2><a href='#h'>Ask</a></aside></body>"
+    )
+    instance = Browser(page.as_uri())
+    try:
+        keys = [r["key"] for r in instance.observe()["regions"]]
+    finally:
+        instance.close()
+    assert keys == ["form", "section:Notes", "aside:Help"]
+
+
+def load(name):
+    spec = importlib.util.spec_from_file_location(name, ROOT / "tasks" / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("view", [None, {"focus": ["form:Booking"], "skip": ["header"]}])
+def test_dense_booking_passes_verification_with_and_without_a_view(view, tmp_path):
+    dense_task = load("dense_booking")
+    instance = Browser(dense_task.start_url(ROOT), view=view)
+    try:
+        assert dense_task.verify(instance)["success"] is False
+        recorder = Recorder(tmp_path / "run.jsonl")
+        plan = {"goal": dense_task.GOAL, "steps": [], "values": []}
+        result = run_agent(instance, ScriptedPolicy(dense_task.SCRIPT), plan, recorder)
+        recorder.close()
+        assert result["outcome"] == "GOAL_REPORTED"
+        assert dense_task.verify(instance)["success"] is True
+    finally:
+        instance.close()

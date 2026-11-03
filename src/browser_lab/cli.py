@@ -38,7 +38,7 @@ RECENT = 8  # Actions shown to Claude when an attempt stops.
 def render(page: dict) -> str:
     state = model_state(page, [])
     lines = [f"URL: {page['url']}", f"TITLE: {page['title']}", "PAGE TEXT (untrusted data):", page["text"], "ELEMENTS:"]
-    for element in state["elements"]:
+    for element in action_space(page["actions"])[0]:  # Claude sees every option with its own line.
         details = [f"value={element['value']!r}"] if element.get("value") else []
         details += [f"{key}={element[key]}" for key in ("checked", "selected", "expanded") if key in element]
         operations = ",".join(element["operations"])
@@ -48,17 +48,35 @@ def render(page: dict) -> str:
     lines.append("CONTROLS: " + " ".join(action_space(page["actions"])[2]))
     hidden = state["page"]["offscreen"]
     lines.append(f"OFFSCREEN: {hidden['above_px']}px above, {hidden['below_px']}px below")
+    if page.get("regions"):
+        lines.append("REGIONS (shown/all; change with replan --focus/--skip):")
+        lines += [f"  {region_line(region)}" for region in page["regions"]]
+        if page.get("omitted_regions"):
+            lines.append(f"  ... {page['omitted_regions']} more")
     return "\n".join(lines)
+
+
+def region_line(region: dict) -> str:
+    line = (
+        f"{region['key']} [{region['position']}] text {region['shown_chars']}/{region['text_chars']}"
+        f" actions {region['shown_actions']}/{region['actions']}"
+    )
+    if region["offscreen_actions"]:
+        line += f" +{region['offscreen_actions']} offscreen"
+    return line + (f" ({region['view']})" if region.get("view") else "")
 
 
 def headline(page: dict) -> str:
     return f"URL: {page['url']}\nTITLE: {page['title']}"
 
 
-def describe_plan(plan: dict) -> str:
+def describe_plan(plan: dict, view: dict | None = None) -> str:
     lines = [f"GOAL: {plan['goal']}", "PLAN:", *[f"  {line}" for line in plan_text(plan) or ["(goal only)"]]]
     if plan["values"]:
         lines.append("VALUES: " + ", ".join(value["label"] for value in plan["values"]))
+    for key in ("focus", "skip"):
+        if view and view.get(key):
+            lines.append(f"{key.upper()}: " + ", ".join(view[key]))
     return "\n".join(lines)
 
 
@@ -110,7 +128,7 @@ def require_session(args) -> dict:
 
 
 def open_page(state: dict, url: str | None = None) -> None:
-    browser = Browser(url, port=state["port"])
+    browser = Browser(url, port=state["port"], view=state.get("view"))
     try:
         state["page"] = browser.observe()
     finally:
@@ -147,6 +165,9 @@ def command_catalog(args) -> int:
             )
             for page in info["pages"]:
                 print(f"  page: {page['url']} — {page['purpose']}")
+                for region in page["regions"]:
+                    default = f" [{region['default']}]" if region["default"] else ""
+                    print(f"    region {region['key']}{default}: {region['purpose']}")
             for fact in info["facts"]:
                 print(f"  fact: {fact}")
         else:
@@ -158,6 +179,9 @@ def command_catalog(args) -> int:
                 print(f"    param {key}: {description}")
             if procedure["human_steps"]:
                 print(f"    human steps: {procedure['human_steps']} (needs --headed)")
+            for key in ("focus", "skip"):
+                if procedure[key]:
+                    print(f"    {key}: {', '.join(procedure[key])}")
     chrome, note = session.choose_chrome(args.chrome)
     profiles = session.list_profiles(chrome)
     print(f"CHROME: {chrome}" + (f" ({note})" if note else ""))
@@ -216,8 +240,13 @@ def command_start(args) -> int:
     except session.SessionError as error:
         raise SystemExit(str(error)) from None
     default_log = Path("runs") / time.strftime("%Y%m%dT%H%M%S") / f"{args.task or 'adhoc'}.jsonl"
+    learned = runbook.view(runbook.service_view(service), book)
+    claude_view = {"focus": args.focus, "skip": args.skip}
     state = {
         **chrome_state,
+        "view_learned": learned,
+        "view_claude": claude_view,
+        "view": runbook.view(learned, claude_view),
         "task": args.task,
         "start_url": session.browser_url(url, chrome),
         "plan": plan,
@@ -237,7 +266,7 @@ def command_start(args) -> int:
     recorder = Recorder(Path(state["log"]))
     browser = None
     try:
-        browser = Browser(state["start_url"], port=chrome_state["port"])
+        browser = Browser(state["start_url"], port=chrome_state["port"], view=state["view"])
         state["page"] = browser.observe()
         recorder.event(
             "run_start",
@@ -249,6 +278,7 @@ def command_start(args) -> int:
             git=git_state(),
             runbook=state["runbook"],
             service=service_name,
+            view=state["view"],
             max_attempts=args.max_attempts,
             started_at=datetime.now(timezone.utc).isoformat(),
         )
@@ -257,6 +287,7 @@ def command_start(args) -> int:
             attempt=1,
             steps=plan_text(plan),
             values=[v["label"] for v in values],
+            view=state["view"],
             source="runbook" if book and not args.step else "claude",
         )
     except Exception:
@@ -269,7 +300,7 @@ def command_start(args) -> int:
     session.save(state)
     if note:
         print(f"NOTE: {note}")
-    print(f"{describe_plan(plan)}\nSESSION: {args.session} ({chrome} Chrome)\n{headline(state['page'])}")
+    print(f"{describe_plan(plan, state['view'])}\nSESSION: {args.session} ({chrome} Chrome)\n{headline(state['page'])}")
     print("NEXT: browser-lab run")
     return OK
 
@@ -341,7 +372,7 @@ def command_run(args) -> int:
     session.save(state)
 
     policy = JevPolicy()
-    browser, recorder = Browser(port=state["port"]), Recorder(Path(state["log"]))
+    browser, recorder = Browser(port=state["port"], view=state.get("view")), Recorder(Path(state["log"]))
 
     def changed(page):
         state["page"] = page
@@ -394,6 +425,9 @@ def command_replan(args) -> int:
             return FAILED
         plan["steps"] = steps
     plan["values"] = merge_values(plan["values"], parse_values(args.value))
+    if args.focus or args.skip:  # Claude's region choice is replaced, on top of what was learned.
+        state["view_claude"] = {"focus": args.focus, "skip": args.skip}
+        state["view"] = runbook.view(state.get("view_learned"), state["view_claude"])
     ended = state["outcome"] or "CLAUDE_STOPPED"
     state["outcomes"].append({"attempt": plan["attempt"], "outcome": ended, "reason": args.reason})
     plan["notes"].append(f"Attempt {plan['attempt']} ended with {ended}. Claude: {args.reason}")
@@ -407,12 +441,18 @@ def command_replan(args) -> int:
         attempt=plan["attempt"],
         steps=plan_text(plan),
         values=[v["label"] for v in plan["values"]],
+        view=state.get("view"),
         restart=args.restart,
         source="claude",
     )
     if args.restart:
         open_page(state, state["start_url"])  # Navigation only; no earlier mutation is repeated.
-    print(f"{describe_plan(plan)}\nATTEMPT {plan['attempt']}/{state['max_attempts']}\n{headline(state['page'])}")
+    if not args.restart and (args.focus or args.skip):
+        open_page(state)  # Observe again with the new regions.
+    print(
+        f"{describe_plan(plan, state.get('view'))}\nATTEMPT {plan['attempt']}/{state['max_attempts']}\n"
+        f"{headline(state['page'])}"
+    )
     print("NEXT: browser-lab run")
     return OK
 
@@ -450,7 +490,7 @@ def command_act(args) -> int:
     decision.text = args.text if decision.action["kind"] == "fill" else None
     state["decisions"] += 1
     session.save(state)
-    browser, recorder = Browser(port=state["port"]), Recorder(Path(state["log"]))
+    browser, recorder = Browser(port=state["port"], view=state.get("view")), Recorder(Path(state["log"]))
 
     def changed(page):
         state["page"] = page
@@ -658,6 +698,12 @@ def parser() -> argparse.ArgumentParser:
             help="auto uses the Windows Chrome on WSL when it is reachable",
         )
 
+    def view_options(command):
+        command.add_argument(
+            "--focus", action="append", default=[], metavar="REGION", help="A region to show first, such as form:予約"
+        )
+        command.add_argument("--skip", action="append", default=[], metavar="REGION", help="A region to leave out")
+
     catalog = commands.add_parser("catalog", help="List learned services, procedures, and saved profiles")
     chrome_option(catalog)
     catalog.set_defaults(run=command_catalog)
@@ -671,6 +717,7 @@ def parser() -> argparse.ArgumentParser:
     start.add_argument("--runbook", help="A learned procedure, such as hotel/filter")
     start.add_argument("--param", action="append", default=[], metavar="KEY=VALUE", help="A runbook parameter")
     start.add_argument("--allow-draft", action="store_true", help="Trial a runbook no person has approved yet")
+    view_options(start)
     start.add_argument("--task", help="A task in tasks/ with an independent verify()")
     start.add_argument("--session", default="new", help="new (temporary) or profile:NAME (saved sign-in)")
     chrome_option(start)
@@ -690,6 +737,7 @@ def parser() -> argparse.ArgumentParser:
     replan.add_argument("--step", action="append", default=[], help="Replace the steps")
     replan.add_argument("--value", action="append", default=[], metavar="LABEL=VALUE")
     replan.add_argument("--restart", action="store_true", help="Open the start URL again before the next attempt")
+    view_options(replan)
     replan.set_defaults(run=command_replan)
 
     act = commands.add_parser("act", help="Claude: override Jev with one operation")

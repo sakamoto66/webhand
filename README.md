@@ -94,14 +94,14 @@ Claude Code のセッションで、スキルを呼び出します。
 | `browser-lab catalog` | Claude | 学習済みのサービス、手順書、保存プロファイルを一覧する |
 | `browser-lab start --goal G --url U --step S ... --value L=V ... --session ...` | Claude | 計画を記録し、Chrome で開始 URL を開く |
 | `browser-lab run` | Jev | GOAL まで操作する |
-| `browser-lab replan --reason R [--step ...] [--value ...] [--restart]` | Claude | 計画を見直して、次の試行を始める |
+| `browser-lab replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--restart]` | Claude | 計画を見直して、次の試行を始める |
 | `browser-lab act OP [TARGET]` | Claude | Jev の代わりに操作を1つ実行する |
 | `browser-lab observe` | Claude | 現在のページを表示する |
 | `browser-lab finish --status STATUS` | Claude | 独立検証、ログ記録、Chrome の終了 |
 | `browser-lab learn --name NAME --url URL` | 人 | 操作を記録する |
 | `browser-lab profile login/list/delete` | 人 | 保存プロファイルを管理する |
 
-手順の先頭に `[person]` を付けると、人が行う手順になります（`--headed` が必須です）。`--runbook NAME --param k=v` を指定すると、手順書の GOAL、開始 URL、手順が既定値になり、params は入力値として Jev に渡されます。
+手順の先頭に `[person]` を付けると、人が行う手順になります（`--headed` が必須です）。`start` と `replan` の `--focus REGION` / `--skip REGION` で、観測する領域を選べます（下の「ページの領域」）。`--runbook NAME --param k=v` を指定すると、手順書の GOAL、開始 URL、手順が既定値になり、params は入力値として Jev に渡されます。
 
 ## 学習モード
 
@@ -109,8 +109,8 @@ Claude Code のセッションで、スキルを呼び出します。
 
 | ファイル | 内容 | 使われ方 |
 | --- | --- | --- |
-| `runbooks/<service>/service.toml` | サービスの説明、ログインの要否、ページの一覧、Jev 向けの事実 | `catalog` で Claude が読み、`--service` で Jev に渡す |
-| `runbooks/<service>/<name>.toml` | 手順書（goal、params、steps、hints、done_when） | Claude の計画の下敷き。手順と hints は Jev にも渡す |
+| `runbooks/<service>/service.toml` | サービスの説明、ログインの要否、ページと領域の一覧、Jev 向けの事実 | `catalog` で Claude が読み、`--service` で Jev に渡す |
+| `runbooks/<service>/<name>.toml` | 手順書（goal、params、steps、hints、done_when、focus、skip） | Claude の計画の下敷き。手順と hints は Jev にも渡す |
 
 ```text
 /browser-lab-learn --name myservice/search --url https://example.com
@@ -130,6 +130,38 @@ Claude Code のセッションで、スキルを呼び出します。
 - 記録は `runs/` に保存され、コミットしません。ページ本文を含みます
 - iframe 内の操作、ファイル選択、新しいタブは再現できないため、`unsupported` として残します
 - ページのスクリプトは記録を偽装できるため、記録は信頼せず、手順書はユーザーが承認します
+
+## ページの領域
+
+観測は、テキスト 6000 文字、操作 250 件が上限です。ページは領域（header、nav、main、form、fieldset、table、dialog、ラベル付きの section など）に分けて観測します。領域のキーは、外側の領域からの並びです。
+
+```text
+main/form:宿泊予約/fieldset:追加プラン   # 種類:名前。名前は aria-label、legend、caption、領域の先頭の見出しから取る
+nav#2                                    # 名前のない同じ種類が並ぶときは順番
+```
+
+- 観測結果の `regions` には、領域ごとに位置（`above` / `visible` / `below`）、テキストと操作の表示数と全数、画面外の操作の数が入ります。Claude には `REGIONS`、Jev には `page.regions` として渡ります。何が切り捨てられたかがわかります。
+- `focus` の領域は先頭に並び、テキストはページ全体から取ります。`skip` の領域は要約にだけ出ます。どちらもないときは、今までどおり画面内を DOM 順に取ります。開いた dialog は、view があるときは常に先頭です。
+- パターンはキーのどこに一致してもよく、一致した領域の内側も含みます。名前や番号のない段（`form`）は、その種類のどの領域にも一致します。focus と skip の両方に一致したら、深いほうが勝ちます（同じ深さなら focus）。
+- 操作の対象は今までどおり画面内だけです。鮮度の判定（`marker`、`page_key`、`guards`）は、view に関係なく同じ入力から計算します。
+- view は、service.toml の `default`、手順書の `focus` / `skip`、Claude の `--focus` / `--skip` の順に重ね、後のものが勝ちます。`run_start` と `plan` のイベントに `view` が残ります。
+
+```toml
+# service.toml
+[[pages.regions]]
+key = "main/form:宿泊予約"
+purpose = "予約フォーム"
+[[pages.regions]]
+key = "footer"
+purpose = "サイト共通のリンク"
+default = "skip"       # focus か skip。なしなら通常
+
+# 手順書
+focus = ["form:宿泊予約"]
+skip = ["header", "footer"]
+```
+
+学習の記録では、`page` イベントに領域の要約（キーと件数だけ）、`action` イベントに対象の領域キーが入ります。秘密に見える名前の段は `form:<redacted>` になります。
 
 `verify()` のないサービスでは `verified` は `None` です。手順書の `done_when` は Claude の確認材料で、成功の証拠にはなりません。
 

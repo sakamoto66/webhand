@@ -127,3 +127,30 @@ def test_changes_inside_open_shadow_dom_are_recorded(demo, tmp_path):
     assert ("fill", "City", "Lisbon") in seen
     assert ("toggle", "Keep me", None) in seen
     assert any(s["operation"] == "submit" for s in steps)
+
+
+REGIONS = """<title>Regions</title><nav aria-label="Top"><a href="#x">Home</a></nav>
+<main><form aria-label="Card number"><label>City <input name="city"></label><button>Go</button></form></main>"""
+
+
+def test_actions_and_pages_carry_regions_without_secret_names(demo, tmp_path):
+    play, log = demo
+    (tmp_path / "form.html").write_text(REGIONS)
+
+    def fill(page):
+        page.get_by_label("City").click()
+        page.keyboard.type("Lisbon")
+        page.get_by_label("City").press("Tab")
+
+    play([fill])
+    steps, events = actions(log)
+    assert next(s for s in steps if s["label"] == "City")["region"] == "main/form:<redacted>"
+    outline = next(e for e in events if e["type"] == "page")["regions"]
+    assert {r["key"] for r in outline} >= {"nav:Top", "main/form:<redacted>"}
+    assert set(outline[0]) <= set(learn.REGION_FIELDS)
+    assert "Card number" not in log.read_text()
+
+
+def test_a_forged_outline_keeps_only_typed_fields():
+    assert learn.outline("x") == []
+    assert learn.outline([{"key": "nav", "actions": "9", "extra": 1}, 3]) == [{"key": "nav"}]

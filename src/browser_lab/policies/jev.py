@@ -74,6 +74,17 @@ def task_brief(plan: dict) -> dict:
     return brief
 
 
+def target_criterion(operation: str, index: str, action: dict) -> dict | str:
+    """A dropdown option is only its label: the dropdown's current value is in the state's elements."""
+    if operation == "SELECT":
+        return f"[{index}] {action['label']}"
+    return {
+        "element": f"[{index}] {action['label']}",
+        "current_value": action.get("current_value", action.get("value", "")),
+        **{k: action[k] for k in ("role", "checked", "selected", "expanded") if k in action},
+    }
+
+
 def build_questions(plan: dict, targets: dict, controls: dict, values: dict) -> tuple[dict, dict]:
     brief = task_brief(plan)
     operations = {key: OPERATION_HELP[key] for key in targets}
@@ -85,14 +96,7 @@ def build_questions(plan: dict, targets: dict, controls: dict, values: dict) -> 
     for operation, candidates in targets.items():
         questions[operation.lower() + "_target"] = {
             "type": "choice",
-            "criteria": {
-                index: {
-                    "element": f"[{index}] {a['label']}",
-                    "current_value": a.get("current_value", a.get("value", "")),
-                    **{k: a[k] for k in ("role", "checked", "selected", "expanded") if k in a},
-                }
-                for index, a in candidates.items()
-            }
+            "criteria": {index: target_criterion(operation, index, a) for index, a in candidates.items()}
             | {NOT_VISIBLE: NOT_VISIBLE_HELP},
             "instructions": {**brief, "operation": operation, "rules": [NEXT_ACTION, TARGET]},
         }

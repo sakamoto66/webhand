@@ -307,3 +307,26 @@ def test_catalog_lists_learned_services_and_procedures(capsys):
     assert "PROCEDURE hotel-site/reserve [" in output
     assert "param check_in:" in output
     assert "SAVED PROFILES: (none)" in output
+
+
+def test_claude_chooses_regions_and_jev_sees_the_outline(tmp_path, capsys):
+    begin("--focus", "form", "--skip", "header")
+    output = capsys.readouterr().out
+    assert "FOCUS: form" in output and "SKIP: header" in output
+    ScriptedJev.moves = [("BLOCKED", None, None)]
+    cli.main(["run"])
+    state = ScriptedJev.states[0]
+    outline = {region["key"]: region for region in state["page"]["regions"]}
+    assert outline["header/nav"]["view"] == "skip"
+    assert any(region.get("view") == "focus" for region in outline.values())
+    assert "REGIONS (shown/all" in capsys.readouterr().out
+    start = next(e for e in events(tmp_path) if e["type"] == "run_start")
+    assert start["view"] == {"focus": ["form"], "skip": ["header"]}
+
+
+def test_replan_replaces_claudes_regions():
+    begin("--focus", "form")
+    cli.main(["replan", "--reason", "The filter is in the header", "--focus", "header"])
+    state = session.load()
+    assert state["view"] == {"focus": ["header"], "skip": []}
+    assert any(region.get("view") == "focus" for region in state["page"]["regions"])

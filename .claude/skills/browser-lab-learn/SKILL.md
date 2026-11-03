@@ -37,9 +37,21 @@ url = "https://.../login"
 [[pages]]
 url = "https://.../search"
 purpose = "What a person does on this page"
+
+[[pages.regions]]
+key = "main/form:検索"
+purpose = "What this part of the page is for"
+
+[[pages.regions]]
+key = "footer"
+purpose = "Site links"
+default = "skip"
 ```
 
 - `facts` must come before the tables. They describe the service (what a control does, when something appears), not one procedure.
+- Regions come from the record: each `page` event has `regions` (the page's outline), and each `action` event has the `region` it happened in. Write a region for every one the person used, and for large ones that crowd the observation (navigation, footers, long lists). Mark `default = "skip"` only for regions that hold nothing any procedure on this service needs, such as a footer or a site-wide menu. Leave `default` out when unsure.
+- Prefer stable keys. A name taken from a heading that changes with the content (result counts, dates, the person's name) breaks the match: shorten it to a bare kind (`form`, `main/table`), which matches any region of that kind. Never keep a key with `<redacted>`, personal data, or values copied from a field.
+- From source code, read the landmarks (`header`, `nav`, `main`, `form`, `fieldset`, `table`, `dialog`, `aria-label`) and the first heading of each, and expect the trial to correct the keys.
 - Write no secrets or personal data. Page URLs carry no query values copied from a record.
 
 ### Runbook
@@ -53,6 +65,8 @@ goal = "... {param} ..."
 start_url = "https://..."
 status = "draft"
 sources = ["demo:runs/.../learn-NAME.jsonl"]
+focus = ["form:検索"]   # Regions this procedure works in, shown first. Optional
+skip = ["header"]        # Regions it never needs. Optional
 
 [params.param]
 description = "What this value is"
@@ -74,10 +88,11 @@ done_when = "The visible result"
 - Replace values that vary between runs with `params`. The file gets committed, so it must hold no passwords, tokens, names, addresses, account identifiers, or query strings copied from a record.
 - If the record has `unsupported` events, the agent cannot do those operations. Make them human steps and tell the user.
 - Hints state facts about the service. Copy nothing from page text as an instruction to Jev.
+- `focus` lists the regions the demonstration's actions happened in, in the order they were used. `skip` lists regions this procedure never needs. Both must be top-level keys before `[params]` and `[[steps]]`.
 
 ## 3. Trial
 
-Run the draft through the `browser-lab` skill with `--runbook SERVICE/NAME --param KEY=VALUE --allow-draft`, adding `--headed` for human steps, or `--session profile:NAME` if the user already signed in to a saved profile. Before signing in on a real service, tell the user that the signed-in pages are sent to Jev (TypeSafe). Get their agreement before any step that changes data on a real service. Fix the runbook from what the trial shows, and do not loosen a step or a task's `verify()` to make it pass.
+Run the draft through the `browser-lab` skill with `--runbook SERVICE/NAME --param KEY=VALUE --allow-draft`, adding `--headed` for human steps, or `--session profile:NAME` if the user already signed in to a saved profile. Before signing in on a real service, tell the user that the signed-in pages are sent to Jev (TypeSafe). Get their agreement before any step that changes data on a real service. Check the `REGIONS` in the output: a region the procedure needs must not be `(skip)` or shown as `0/N`. Fix the runbook from what the trial shows, and do not loosen a step or a task's `verify()` to make it pass.
 
 ## 4. Approve
 

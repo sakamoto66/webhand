@@ -16,6 +16,11 @@
     if (url.hash.includes('=')) url.hash = '<redacted>';
     return url.href;
   };
+  // A region key is built from labels and headings. A segment whose name looks secret keeps only its kind.
+  const safeRegion = key => (key || '').split('/').map(segment => {
+    const [kind, ...name] = segment.split(':');
+    return name.length && secretWords.test(name.join(':')) ? kind + ':<redacted>' : segment;
+  }).join('/');
   const send = event => {
     const payload = {...event, url: safeUrl()};
     window.__browserLabRecord?.(inFrame ? {...payload, kind: 'unsupported', reason: 'iframe'} : payload);
@@ -26,14 +31,20 @@
     const element = target instanceof Element ? target : target?.parentElement;
     if (!element) return null;
     read();
-    return window.__browserLab?.describe(element) ??
+    const lab = window.__browserLab;
+    const found = lab?.describe(element) ??
       {role: 'none', label: (element.innerText || '').trim().slice(0, 80), element};
+    return {...found, region: safeRegion(lab?.region?.(found.element))};
   };
   let timer = null;
   const sendPage = () => {
     if (inFrame) return;
     const state = read();
-    if (state) window.__browserLabRecord?.({kind: 'page', url: safeUrl(), title: state.title, text: state.text.slice(0, 2000)});
+    if (!state) return;
+    // The outline only: where each region is and how much it holds. No text from inside it.
+    const regions = state.regions.map(r => ({key: safeRegion(r.key), position: r.position,
+      text_chars: r.text_chars, actions: r.actions, offscreen_actions: r.offscreen_actions}));
+    window.__browserLabRecord?.({kind: 'page', url: safeUrl(), title: state.title, text: state.text.slice(0, 2000), regions});
   };
   const action = event => {
     send({kind: 'action', ...event});
@@ -49,13 +60,13 @@
     if (!event.isTrusted) return;
     const found = describe(origin(event));
     if (!found || textField(found.element) || ['checkbox', 'radio'].includes(found.element.type)) return;
-    action({operation: 'click', role: found.role, label: found.label});
+    action({operation: 'click', role: found.role, label: found.label, region: found.region});
   }, true);
   const onChange = event => {
     if (!event.isTrusted) return;
     const found = describe(origin(event)), e = found?.element;
     if (!e) return;
-    const base = {role: found.role, label: found.label};
+    const base = {role: found.role, label: found.label, region: found.region};
     if (e.type === 'file') send({kind: 'unsupported', reason: 'file_input', ...base});
     else if (['checkbox', 'radio'].includes(e.type)) action({operation: 'toggle', checked: e.checked, ...base});
     else if (secret(e, found.label)) action({operation: 'fill', value: '<redacted>', ...base});
@@ -66,7 +77,7 @@
   addEventListener('focusout', event => {
     if (!event.isTrusted || !origin(event).isContentEditable) return;
     const found = describe(origin(event));
-    if (found) action({operation: 'fill', role: found.role, label: found.label,
+    if (found) action({operation: 'fill', role: found.role, label: found.label, region: found.region,
       value: secret(found.element, found.label) ? '<redacted>' : found.element.innerText.slice(0, 500)});
   }, true);
   const onSubmit = event => {
@@ -96,7 +107,7 @@
   addEventListener('keydown', event => {
     if (!event.isTrusted || event.key !== 'Enter') return;
     const found = describe(origin(event));
-    if (found) action({operation: 'press_enter', role: found.role, label: found.label});
+    if (found) action({operation: 'press_enter', role: found.role, label: found.label, region: found.region});
   }, true);
   addEventListener('load', sendPage);
 })();

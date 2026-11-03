@@ -211,3 +211,23 @@ def test_jev_can_say_the_needed_target_is_not_visible(monkeypatch):
 
     criteria = json.loads(sent[0].content)["questions"]["click_target"]["criteria"]
     assert "NOT_VISIBLE" in criteria
+
+
+def test_dropdown_options_reach_jev_once_each_in_short_form(monkeypatch):
+    import json
+
+    sent = []
+
+    def handler(request):
+        sent.append(request)
+        return httpx.Response(200, json=jev_answer())
+
+    jev_policy(monkeypatch, handler).choose(PAGE, PLAN, [])
+    body = json.loads(sent[0].content)
+    kind = next(e for e in body["state"]["elements"] if e["label"] == "Kind")
+    assert kind["options"] == {"3:1": "A"}
+    assert body["questions"]["select_target"]["criteria"]["3:1"] == "[3:1] Kind → A"
+    # Choices are unchanged: the same index still resolves to the observed option.
+    assert resolve(PAGE, "SELECT", "3:1").action["id"] == "e4"
+    # Claude's view of the page keeps the full option list.
+    assert action_space(PAGE["actions"])[0][2]["options"][0]["value"] == "a"

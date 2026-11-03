@@ -10,7 +10,15 @@ from playwright.sync_api import sync_playwright
 
 from .types import Action, MutationUncertain, Page, StalePage
 
-READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
+SNAPSHOT = Path(__file__).with_name("snapshot.js").read_text().strip()
+
+
+def read_state(view: dict | None = None) -> str:
+    """The snapshot expression for a view ({focus, skip} region patterns). The view never changes freshness."""
+    return f"({SNAPSHOT})({json.dumps(view or {}, ensure_ascii=False)})"
+
+
+READ_STATE = read_state()
 MARKER = f"(() => {{ const state={READ_STATE}; return state?.marker ?? null; }})()"
 # Read only once the document has loaded and the DOM has stopped changing, so content rendered by
 # DOMContentLoaded handlers or after an XHR is observed. A page that never goes quiet is read at the cap.
@@ -54,8 +62,14 @@ SELECT_OPTION = """(action => {
 
 
 class Browser:
-    def __init__(self, url: str | None = None, *, headless: bool = True, port: int | None = None):
-        """Launch a throwaway Chrome for url, or attach to the session Chrome on port."""
+    def __init__(
+        self, url: str | None = None, *, headless: bool = True, port: int | None = None, view: dict | None = None
+    ):
+        """Launch a throwaway Chrome for url, or attach to the session Chrome on port.
+
+        view is Claude's choice of regions to focus on or skip when observing.
+        """
+        self.view = view
         self.playwright = sync_playwright().start()
         self.attached = port is not None
         try:
@@ -106,7 +120,7 @@ class Browser:
         for _ in range(10):
             try:
                 self.evaluate(SETTLE, await_promise=True)
-                state = self.evaluate(READ_STATE)
+                state = self.evaluate(read_state(self.view))
             except StalePage:
                 state = None
             if state is not None:

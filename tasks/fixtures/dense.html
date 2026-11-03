@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dense shop</title>
+<style>
+  body { font: 12px sans-serif; margin: 8px; }
+  #categories { display: grid; grid-template-columns: repeat(12, 1fr); gap: 2px; }
+  #categories a { font-size: 11px; line-height: 16px; }
+  #notes { margin-top: 1600px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Dense shop</h1>
+  <nav aria-label="Categories" id="categories"></nav>
+</header>
+<main>
+  <h2>Booking</h2>
+  <form aria-label="Booking" onsubmit="book(event)">
+    <label>Arrival <select id="arrival" name="arrival"></select></label>
+    <label>Departure <select id="departure" name="departure"></select></label>
+    <label>Region <select id="region" name="region"></select></label>
+    <label>Guest <input name="guest"></label>
+    <label>Password <input type="password" name="pw" value="hunter2-dense"></label>
+    <button>Book</button>
+  </form>
+  <p id="result" role="status"></p>
+  <section aria-label="Notes" id="notes">
+    <h2>Notes</h2>
+    <p>Cancellation is free until two days before arrival.</p>
+    <a href="#terms">Read the terms</a>
+  </section>
+</main>
+<footer>
+  <a href="#about">About</a> <a href="#help">Help</a>
+</footer>
+<dialog id="welcome" aria-label="Welcome">
+  <p>Welcome offer</p>
+  <button onclick="this.closest('dialog').close()">Close offer</button>
+</dialog>
+<script>
+  // What was submitted, for the task's verify(). The password field is never part of it.
+  function book(event) {
+    event.preventDefault();
+    const form = event.target;
+    document.body.dataset.booked = '1';
+    document.body.dataset.booking = JSON.stringify({
+      arrival: form.arrival.value, departure: form.departure.value, region: form.region.value, guest: form.guest.value,
+    });
+    document.getElementById('result').textContent = 'Booking received';
+  }
+  const nav = document.getElementById('categories');
+  for (let i = 1; i <= 300; i++) {
+    const a = document.createElement('a');
+    a.href = '#c' + i;
+    a.textContent = 'Category ' + i;
+    nav.append(a);
+  }
+  for (const id of ['arrival', 'departure', 'region']) {
+    const select = document.getElementById(id);
+    for (let i = 1; i <= 47; i++) select.add(new Option(id + ' ' + i, String(i)));
+  }
+</script>
+</body>
+</html>

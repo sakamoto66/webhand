@@ -196,3 +196,57 @@ def test_service_information_and_catalog(tmp_path, monkeypatch):
 def test_service_is_not_a_procedure_name():
     with pytest.raises(runbook.RunbookError):
         runbook.path("hotel/service")
+
+
+REGION_SERVICE = (
+    SERVICE
+    + """
+[[pages]]
+url = "https://demo.test/reports"
+purpose = "Reports"
+
+[[pages.regions]]
+key = "main/form:Filter"
+purpose = "The report filter"
+
+[[pages.regions]]
+key = "footer"
+purpose = "Site links"
+default = "skip"
+"""
+)
+
+
+def test_regions_and_their_defaults_are_learned(tmp_path, monkeypatch):
+    monkeypatch.setattr(runbook, "ROOT", tmp_path)
+    (tmp_path / "demo").mkdir()
+    (tmp_path / "demo" / "service.toml").write_text(REGION_SERVICE)
+    info = runbook.load_service("demo")
+    assert info["pages"][0]["regions"][1] == {"key": "footer", "purpose": "Site links", "default": "skip"}
+    assert runbook.service_view(info) == {"focus": [], "skip": ["footer"]}
+
+
+def test_an_unknown_region_default_is_an_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(runbook, "ROOT", tmp_path)
+    (tmp_path / "demo").mkdir()
+    (tmp_path / "demo" / "service.toml").write_text(REGION_SERVICE.replace('"skip"', '"hide"'))
+    with pytest.raises(runbook.RunbookError, match="hide"):
+        runbook.load_service("demo")
+
+
+def test_a_runbook_names_regions_to_focus_on_and_skip(book):
+    book.write_text('focus = ["form:Filter"]\nskip = ["nav"]\n' + HUMAN)
+    loaded = runbook.load("demo", values())
+    assert (loaded["focus"], loaded["skip"]) == (["form:Filter"], ["nav"])
+
+
+def test_region_patterns_must_be_a_list_of_keys(book):
+    book.write_text('focus = "form"\n' + HUMAN)
+    with pytest.raises(runbook.RunbookError, match="focus"):
+        runbook.load("demo", values())
+
+
+def test_a_later_layer_of_region_choices_wins():
+    learned = {"focus": ["main"], "skip": ["footer", "nav"]}
+    claude = {"focus": ["nav", "form"], "skip": ["main"]}
+    assert runbook.view(learned, None, claude) == {"focus": ["nav", "form"], "skip": ["footer", "main"]}
