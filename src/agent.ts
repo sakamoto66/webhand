@@ -26,7 +26,6 @@ export const NEEDS_HUMAN = "NEEDS_HUMAN"; // A person acts in the window: sign-i
 export const NEEDS_VALUE = "NEEDS_VALUE"; // A field needs text and none of Claude's values fits.
 export const JEV_FAILED = "JEV_FAILED"; // No usable decision. Nothing was executed.
 export const UNCERTAIN = "UNCERTAIN"; // A mutation may have happened. Never retried, never replanned.
-export const REPLANNABLE = new Set([GOAL_REPORTED, BLOCKED, STUCK, ATTEMPT_BUDGET, NEEDS_VALUE, JEV_FAILED]);
 
 /** Per attempt. A replan starts a new attempt with a fresh budget. */
 export class Budget {
@@ -41,8 +40,8 @@ export class Budget {
   }
 }
 
-export const MISSING = "missing"; // A history entry for a NOT_VISIBLE choice: nothing ran, but Jev must see it.
-export const STALE = "stale"; // A history entry for a choice the browser refused as stale: nothing ran.
+const MISSING = "missing"; // A history entry for a NOT_VISIBLE choice: nothing ran, but Jev must see it.
+const STALE = "stale"; // A history entry for a choice the browser refused as stale: nothing ran.
 
 /** What the loop needs from a browser. */
 export interface Actor {
@@ -57,7 +56,7 @@ export function actionsIn(history: HistoryEntry[], attempt: number): HistoryEntr
 }
 
 /** Three entries without progress: unchanged pages, targets Jev could not see, or refused stale choices. */
-export function stuck(history: HistoryEntry[], attempt = 1): boolean {
+function stuck(history: HistoryEntry[], attempt = 1): boolean {
   const recent = history.filter((h) => (h.attempt ?? 1) === attempt && h.kind !== "human").slice(-3);
   return recent.length === 3 && recent.every((s) => s.page_changed === false && s.kind !== "wait");
 }
@@ -99,7 +98,7 @@ export async function execute(
 }
 
 /** Markers are JSON values from the page; equal content means the same page. */
-export function sameMarker(a: unknown, b: unknown): boolean {
+function sameMarker(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 

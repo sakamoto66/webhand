@@ -34,9 +34,12 @@
     "build": "tsc -p tsconfig.build.json",
     "lint": "biome check .",
     "typecheck": "tsc --noEmit",
+    "knip": "knip",
+    "check": "npm run lint && npm run typecheck && npm run knip",
     "test": "vitest run",
     "smoke": "node src/run.ts",
-    "prepublishOnly": "npm run lint && npm run typecheck && npm run build"
+    "prepare": "husky",
+    "prepublishOnly": "npm run check && npm run build"
   },
   "dependencies": {
     "playwright-core": "~1.64.1",
@@ -46,6 +49,8 @@
   "devDependencies": {
     "@biomejs/biome": "^2.6.4",
     "@types/node": "^24.19.2",
+    "husky": "^9.1.7",
+    "knip": "^6.44.1",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"
   }

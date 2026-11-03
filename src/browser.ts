@@ -24,7 +24,7 @@ export interface ViewChoice {
 }
 
 /** The snapshot expression for a view ({focus, skip} region patterns). The view never changes freshness. */
-export function readState(view: ViewChoice | null = null): string {
+function readState(view: ViewChoice | null = null): string {
   return `(${SNAPSHOT})(${JSON.stringify(view ?? {})})`;
 }
 

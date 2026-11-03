@@ -23,11 +23,13 @@ Claude と Jev が役割を分担するブラウザエージェント。Claude C
 - `draft` の手順書を通常実行に使わない。`approved` にするのはユーザーの承認後のみ。
 - 資格情報は人が Chrome に直接入力する。Claude は受け取らず、CLI にも渡さない。
 - `.env`、`runs/`、`state/`（保存プロファイルを含む）はコミットしない。テストから有料 API を呼ばない。
-- 手順書とサービス情報は、プロジェクト（`.webhand/runbooks`）とユーザー（`~/.webhand/runbooks`）に置く。ログイン状態、実行記録、API キーはユーザー側にだけ置く。
+- 手順書とサービス情報は、プロジェクト（`.webhand/runbooks`）とユーザー（`~/.webhand/runbooks`）に置く。ログイン状態と実行記録はユーザー側にだけ置く。Jev の API キーは環境変数（`TYPESAFE_API_KEY`）からだけ読み、`.env` などのファイルから読まない。
 - `tasks/`（独立検証）は研究用リポジトリにだけ置き、npm の配布物に含めない。
 
 ## チェック
 
 `npm run lint`、`npm run typecheck`、`npm test`（Node 24）
+
+- `npm run check`（lint・typecheck・knip）は pre-commit（husky）と GitHub Actions で必ず走る。`--no-verify` で回避しない。
 
 - CLI の出力と Jev への state・質問は `tests/golden/`（Python 版の記録）と文字単位で一致させる。変えるときは実験の変数として扱い、golden を更新して理由を残す。

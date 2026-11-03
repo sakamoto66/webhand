@@ -34,10 +34,9 @@ import * as workspace from "./workspace.ts";
 
 export const OK = 0;
 export const FAILED = 1;
-export const STALE = 3;
+const STALE = 3;
 export const UNCERTAIN = 4;
 export const BUDGET = 5;
-export const USAGE = 2;
 const DEFAULT_ATTEMPTS = 3;
 const PERSON = "[person]";
 const RECENT = 8; // Actions shown to Claude when an attempt stops.
@@ -313,7 +312,7 @@ async function commandStart(args: Args): Promise<number> {
     throw new CliExit("This plan has [person] steps. Add --headed so the person can see the window");
   }
   if (!process.env.TYPESAFE_API_KEY) {
-    throw new CliExit(`TYPESAFE_API_KEY is not set. Put it in ${join(workspace.home(), ".env")}`);
+    throw new CliExit("TYPESAFE_API_KEY is not set. Set it as an environment variable");
   }
   const plan: Plan = {
     goal,
@@ -631,7 +630,7 @@ async function commandAct(args: Args): Promise<number> {
   }
 }
 
-export function runTotals(log: string): Record<string, unknown> {
+function runTotals(log: string): Record<string, unknown> {
   const calls: ModelCall[] = [];
   const escalations: Record<string, number> = {};
   const decidedBy: Record<string, number> = {};
@@ -1035,7 +1034,7 @@ function help(name: string, spec: CommandSpec): string {
 }
 
 /** The package version, so a skill can tell which CLI it is talking to. */
-export function version(): string {
+function version(): string {
   return JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 }
 
@@ -1173,7 +1172,6 @@ const processIO: IO = {
  * so the caller prints its message and exits with 1 or 2.
  */
 export async function main(argv: string[], io: IO = processIO): Promise<number> {
-  workspace.loadEnv();
   const parsed = parse(argv);
   if ("help" in parsed) {
     io.out(parsed.help);

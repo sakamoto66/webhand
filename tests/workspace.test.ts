@@ -1,4 +1,4 @@
-import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, vi } from "vitest";
 import * as runbook from "../src/runbook.ts";
@@ -11,17 +11,6 @@ test("everything of the user lives under the workspace", () => {
   vi.stubEnv("WEBHAND_HOME", dir);
   expect(runbook.root("user")).toBe(join(dir, "runbooks"));
   expect(session.home()).toBe(join(dir, "state"));
-});
-
-test("env file fills only unset variables", () => {
-  const dir = tmpPath();
-  vi.stubEnv("WEBHAND_HOME", dir);
-  vi.stubEnv("TYPESAFE_API_KEY", undefined);
-  vi.stubEnv("TYPESAFE_MODEL", "kept");
-  writeFileSync(join(dir, ".env"), '# comment\nexport TYPESAFE_API_KEY="abc"\nTYPESAFE_MODEL=other\n');
-  workspace.loadEnv();
-  expect(process.env.TYPESAFE_API_KEY).toBe("abc");
-  expect(process.env.TYPESAFE_MODEL).toBe("kept");
 });
 
 test("the project folder is the nearest .webhand from the current directory up", () => {

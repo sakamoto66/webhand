@@ -53,7 +53,7 @@ export const TERMINAL_HELP: Record<string, string> = {
   NEEDS_HUMAN: "A person must act next: a [person] step, sign-in, password, verification code, or CAPTCHA.",
   BLOCKED: "No supported operation can progress.",
 };
-export const HISTORY_LIMIT = 40;
+const HISTORY_LIMIT = 40;
 
 // biome-ignore lint/suspicious/noExplicitAny: elements mirror the observed actions' fields.
 export type Element = Record<string, any>;

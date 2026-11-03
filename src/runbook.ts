@@ -20,7 +20,7 @@ const PARAM = /\{([A-Za-z_][\p{L}\p{N}_]*)\}/gu;
 const ACTORS = new Set(["jev", "human"]);
 const STATUSES = new Set(["draft", "approved"]);
 const DEFAULTS = new Set(["focus", "skip"]); // A region's default in service.toml. Without one, it is observed as usual.
-export const SERVICE_FILE = "service"; // runbooks/<service>/service.toml holds the service information.
+const SERVICE_FILE = "service"; // runbooks/<service>/service.toml holds the service information.
 
 // biome-ignore lint/suspicious/noExplicitAny: TOML documents are untyped until validated.
 type Doc = Record<string, any>;
@@ -36,7 +36,7 @@ export function root(scope: Scope = "project"): string {
 }
 
 /** Runbook folders that exist or may exist, project first. */
-export function folders(): { scope: Scope; dir: string }[] {
+function folders(): { scope: Scope; dir: string }[] {
   return roots().map(({ scope, dir }) => ({ scope, dir: join(dir, "runbooks") }));
 }
 
@@ -46,7 +46,7 @@ export class RunbookError extends Error {
 }
 
 /** Checks a runbook name such as hotel/filter. */
-export function checkName(name: string): string {
+function checkName(name: string): string {
   if (!NAME.test(name) || name.split("/").at(-1) === SERVICE_FILE) {
     throw new RunbookError(`Invalid runbook name: ${pyRepr(name)}`);
   }
@@ -92,11 +92,11 @@ function find(relative: string): Found | null {
   return null;
 }
 
-export function findRunbook(name: string): Found | null {
+function findRunbook(name: string): Found | null {
   return find(`${checkName(name)}.toml`);
 }
 
-export function findService(service: string): Found | null {
+function findService(service: string): Found | null {
   return find(join(checkService(service), `${SERVICE_FILE}.toml`));
 }
 
@@ -202,7 +202,7 @@ export function loadService(service: string): ServiceInfo | null {
   };
 }
 
-export interface Procedure {
+interface Procedure {
   name: string;
   scope: Scope;
   status: unknown;

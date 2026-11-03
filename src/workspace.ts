@@ -5,21 +5,19 @@
  *   runbooks/  service information and runbooks for every project
  *   runs/      run logs, which hold page text
  *   state/     the active session and saved profiles
- *   .env       TYPESAFE_API_KEY and TYPESAFE_MODEL
  * project  the nearest .webhand/ from the current directory up
  *   runbooks/  service information and runbooks for this project; they win over the user's
  *
- * Sign-ins, logs, and keys never go into a project.
+ * Sign-ins and logs never go into a project. The Jev key comes only from the environment (TYPESAFE_API_KEY).
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 export type Scope = "project" | "user";
-export const SCOPES: Scope[] = ["project", "user"];
-export const FOLDER = ".webhand";
+const FOLDER = ".webhand";
 
 function expandUser(path: string): string {
   if (path === "~") return homedir();
@@ -81,22 +79,4 @@ export function roots(): { scope: Scope; dir: string }[] {
   if (project) found.push({ scope: "project", dir: project });
   found.push({ scope: "user", dir: home() });
   return found;
-}
-
-/** Reads home()/.env. Variables already set win. */
-export function loadEnv(): void {
-  const file = join(home(), ".env");
-  if (!existsSync(file)) return;
-  for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
-    let text = line.trim();
-    if (text.startsWith("export ")) text = text.slice("export ".length);
-    const at = text.indexOf("=");
-    if (at < 0) continue;
-    const key = text.slice(0, at).trim();
-    const value = text
-      .slice(at + 1)
-      .trim()
-      .replace(/^['"]+|['"]+$/g, "");
-    if (key && !key.startsWith("#") && !(key in process.env)) process.env[key] = value;
-  }
 }

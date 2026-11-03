@@ -7,7 +7,7 @@ allowed-tools: Bash(webhand:*), Bash(npx -y webhand@0.2:*), AskUserQuestion
 
 # webhand
 
-You plan and judge; Jev operates the browser toward your goal. Use only the `webhand` command: run `webhand --version`, and if that fails, use `npx -y webhand@0.2` in its place for every command below (same arguments). It needs Node.js 22 or later and Google Chrome. If `start` says `TYPESAFE_API_KEY` is not set, tell the user to put it in `~/.webhand/.env`, then stop. Run one command at a time. Do not read project files, take screenshots, or write scripts.
+You plan and judge; Jev operates the browser toward your goal. Use only the `webhand` command: run `webhand --version`, and if that fails, use `npx -y webhand@0.2` in its place for every command below (same arguments). It needs Node.js 22 or later and Google Chrome. If `start` says `TYPESAFE_API_KEY` is not set, tell the user to set it as an environment variable (for example `export TYPESAFE_API_KEY=...` in their shell profile) and restart Claude Code, then stop. Run one command at a time. Do not read project files, take screenshots, or write scripts.
 
 | Role | Owns |
 | --- | --- |

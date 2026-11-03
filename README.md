@@ -12,10 +12,10 @@ Anthropic の API キーは使いません。作業中の Claude Code がスキ�
    /plugin install webhand --marketplace sakamoto66/webhand
    ```
 
-2. Jev の API キーを置きます。
+2. Jev の API キーを環境変数に設定し、Claude Code を起動し直します（`TYPESAFE_MODEL` で使うモデルも変えられます）。
 
    ```bash
-   mkdir -p ~/.webhand && echo 'TYPESAFE_API_KEY=...' > ~/.webhand/.env
+   echo 'export TYPESAFE_API_KEY=...' >> ~/.bashrc   # 使っているシェルの設定ファイルに
    ```
 
 CLI はインストール不要です。スキルが `npx -y webhand@0.2 ...` で実行します。Node.js 22 以上と Google Chrome（Linux、または WSL から Windows 側）が必要です。毎回の起動を速くしたい場合は、`npm i -g webhand` で入れておくと、スキルは `webhand ...` を使います。
@@ -30,12 +30,12 @@ Claude Code の `~/.claude/` と `.claude/` と同じように、ユーザー単
 
 | 場所 | パス | 内容 |
 | --- | --- | --- |
-| ユーザー | `~/.webhand/`（`WEBHAND_HOME` で変更可） | `runbooks/`（どのプロジェクトでも使うサービス情報と手順書）、`runs/`（実行と学習の記録。ページ本文を含む）、`state/`（実行中のセッションと保存プロファイル）、`.env`（`TYPESAFE_API_KEY`、`TYPESAFE_MODEL`） |
+| ユーザー | `~/.webhand/`（`WEBHAND_HOME` で変更可） | `runbooks/`（どのプロジェクトでも使うサービス情報と手順書）、`runs/`（実行と学習の記録。ページ本文を含む）、`state/`（実行中のセッションと保存プロファイル） |
 | プロジェクト | 現在のディレクトリから上にたどって最初に見つかる `.webhand/`（ホームディレクトリで止まる） | `runbooks/`（そのプロジェクトのサービス情報と手順書。git で共有できる） |
 
 - 手順書とサービス情報は、プロジェクト、ユーザーの順に探します。同じ名前ならプロジェクトのものを使います。`catalog` は両方を一覧し、それぞれの出所を `(project)` / `(user)` で示します。
 - `learn` は既定でプロジェクトに書きます（`.webhand/` がなければ git のルート、なければ現在のディレクトリに作ります）。`--scope user` でユーザーに書きます。
-- ログイン状態、実行記録、API キーはユーザー単位にだけ置き、プロジェクトには置きません。
+- ログイン状態と実行記録はユーザー単位にだけ置き、プロジェクトには置きません。API キーはファイルに置かず、環境変数（`TYPESAFE_API_KEY`）からだけ読みます。
 
 ```
 Claude Code ── /webhand-learn ──> .webhand/runbooks/<service>/ または ~/.webhand/runbooks/<service>/
