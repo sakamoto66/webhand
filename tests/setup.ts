@@ -1,4 +1,4 @@
-/** Tests never read the person's ~/.webhand, including its .env, and never call Jev. */
+/** Tests never read the person's ~/.webhand and never call Jev. */
 
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";

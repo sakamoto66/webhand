@@ -312,7 +312,7 @@ async function commandStart(args: Args): Promise<number> {
     throw new CliExit("This plan has [person] steps. Add --headed so the person can see the window");
   }
   if (!process.env.TYPESAFE_API_KEY) {
-    throw new CliExit(`TYPESAFE_API_KEY is not set. Put it in ${join(workspace.home(), ".env")}`);
+    throw new CliExit("TYPESAFE_API_KEY is not set. Set it as an environment variable");
   }
   const plan: Plan = {
     goal,
@@ -1172,7 +1172,6 @@ const processIO: IO = {
  * so the caller prints its message and exits with 1 or 2.
  */
 export async function main(argv: string[], io: IO = processIO): Promise<number> {
-  workspace.loadEnv();
   const parsed = parse(argv);
   if ("help" in parsed) {
     io.out(parsed.help);
