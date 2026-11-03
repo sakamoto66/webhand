@@ -1,6 +1,6 @@
 # webhand
 
-Claude と Jev が役割を分担するブラウザエージェント。Claude Code プラグインとして公開し、研究基盤も兼ねる。使い方は README.md、実験設計は docs/research-plan.md を参照。
+Claude と Jev が役割を分担するブラウザエージェント。Claude Code プラグインとして公開し、研究基盤も兼ねる。使い方は README.md（日本語は README.ja.md）、実験設計は docs/research-plan.md を参照。
 
 ## 実験の規則
 

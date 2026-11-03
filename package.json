@@ -25,7 +25,8 @@
     "assets",
     "LICENSE",
     "THIRD_PARTY_LICENSE_jev-ultrafast.txt",
-    "README.md"
+    "README.md",
+    "README.ja.md"
   ],
   "engines": {
     "node": ">=22"
