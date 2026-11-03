@@ -40,11 +40,13 @@ Like Claude Code's `~/.claude/` and `.claude/`, webhand uses two locations: one 
 - `learn` writes to the project by default (creating `.webhand/` at the git root if none exists, or in the current directory outside git). Use `--scope user` to write to the user folder.
 - Login state and run logs live only in the user folder, never in the project. The API key is never stored in a file; it is read only from the `TYPESAFE_API_KEY` environment variable.
 
-```
-Claude Code ── /webhand-learn ──> .webhand/runbooks/<service>/ or ~/.webhand/runbooks/<service>/
-     │
-     └──────── /webhand ── CLI webhand ── CDP ──> Chrome (fresh / saved profile; Windows side from WSL)
-       plan, values, checks, replans    └── run ──> Jev (chooses actions toward the GOAL)
+```mermaid
+flowchart LR
+  CC["Claude Code"] -->|"/webhand-learn"| RB["Runbooks<br>.webhand/runbooks/#lt;service#gt;/<br>or ~/.webhand/runbooks/#lt;service#gt;/"]
+  CC -->|"/webhand<br>plan, values, checks, replans"| CLI["webhand CLI"]
+  RB -.->|"catalog"| CLI
+  CLI -->|"CDP"| CH["Chrome<br>fresh / saved profile<br>Windows side from WSL"]
+  CLI -->|"run"| JEV["Jev<br>chooses actions toward the GOAL"]
 ```
 
 ## How it works

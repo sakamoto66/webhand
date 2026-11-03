@@ -40,11 +40,13 @@ Claude Code の `~/.claude/` と `.claude/` と同じように、ユーザー単
 - `learn` は既定でプロジェクトに書きます（`.webhand/` がなければ git のルート、なければ現在のディレクトリに作ります）。`--scope user` でユーザーに書きます。
 - ログイン状態と実行記録はユーザー単位にだけ置き、プロジェクトには置きません。API キーはファイルに置かず、環境変数（`TYPESAFE_API_KEY`）からだけ読みます。
 
-```
-Claude Code ── /webhand-learn ──> .webhand/runbooks/<service>/ または ~/.webhand/runbooks/<service>/
-     │
-     └──────── /webhand ── CLI webhand ── CDP ──> Chrome（新規 / 保存プロファイル、WSL では Windows 側も可）
-       計画・入力値・確認・見直し       └── run ──> Jev（GOAL までの操作を選択）
+```mermaid
+flowchart LR
+  CC["Claude Code"] -->|"/webhand-learn"| RB["手順書<br>.webhand/runbooks/#lt;service#gt;/<br>または ~/.webhand/runbooks/#lt;service#gt;/"]
+  CC -->|"/webhand<br>計画・入力値・確認・見直し"| CLI["CLI webhand"]
+  RB -.->|"catalog"| CLI
+  CLI -->|"CDP"| CH["Chrome<br>新規 / 保存プロファイル<br>WSL では Windows 側も可"]
+  CLI -->|"run"| JEV["Jev<br>GOAL までの操作を選択"]
 ```
 
 ## ユーザー体験
