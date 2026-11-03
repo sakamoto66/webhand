@@ -238,6 +238,7 @@ claude --plugin-dir .
 npm run lint                               # Biome
 npm run typecheck
 npm test                                   # 有料 API は呼びません。Linux の Chrome を使います
+npm run test:coverage                      # カバレッジ（coverage/index.html）
 npm run smoke -- --task hotel_filter       # モデルなしの動作確認
 ```
 

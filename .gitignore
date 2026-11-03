@@ -13,6 +13,7 @@ state/
 node_modules/
 dist/
 .vitest/
+coverage/
 *.tgz
 
 # ローカルツール

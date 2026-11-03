@@ -30,6 +30,7 @@ Claude と Jev が役割を分担するブラウザエージェント。Claude C
 
 `npm run lint`、`npm run typecheck`、`npm test`（Node 24）
 
-- `npm run check`（lint・typecheck・knip）は pre-commit（husky）と GitHub Actions で必ず走る。`--no-verify` で回避しない。
+- `npm run check`（lint・typecheck・knip）と `npm test` は pre-commit（husky）と GitHub Actions で必ず走る。`--no-verify` で回避しない。
+- カバレッジは `npm run test:coverage`（`coverage/` に出力）。合格ラインは lines・statements・functions・branches とも 70%（`vitest.config.ts`）で、下回ると CI が失敗する。CI ではテスト結果とカバレッジ表をジョブサマリー（`GITHUB_STEP_SUMMARY`）に書く。
 
 - CLI の出力と Jev への state・質問は `tests/golden/`（Python 版の記録）と文字単位で一致させる。変えるときは実験の変数として扱い、golden を更新して理由を残す。
