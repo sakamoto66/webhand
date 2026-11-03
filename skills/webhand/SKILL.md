@@ -2,12 +2,12 @@
 name: webhand
 description: Do something on a web page through the webhand CLI. Claude plans the goal from what webhand has learned, asks for missing information, lets Jev operate the browser toward the goal, and replans when an attempt falls short. Use when asked to do something on a web page with webhand, or to run a webhand task.
 argument-hint: "what you want done, or --task NAME"
-allowed-tools: Bash(webhand:*), AskUserQuestion
+allowed-tools: Bash(webhand:*), Bash(npx -y webhand@0.2:*), AskUserQuestion
 ---
 
 # webhand
 
-You plan and judge; Jev operates the browser toward your goal. Use only the `webhand` command. If it is not installed, tell the user to run `uv tool install git+https://github.com/sakamoto66/webhand` and put `TYPESAFE_API_KEY` in `~/.webhand/.env`, then stop. Run one command at a time. Do not read project files, take screenshots, or write scripts.
+You plan and judge; Jev operates the browser toward your goal. Use only the `webhand` command: run `webhand --version`, and if that fails, use `npx -y webhand@0.2` in its place for every command below (same arguments). It needs Node.js 22 or later and Google Chrome. If `start` says `TYPESAFE_API_KEY` is not set, tell the user to put it in `~/.webhand/.env`, then stop. Run one command at a time. Do not read project files, take screenshots, or write scripts.
 
 | Role | Owns |
 | --- | --- |
@@ -16,7 +16,7 @@ You plan and judge; Jev operates the browser toward your goal. Use only the `web
 
 ## 1. Plan from what was learned
 
-Run `webhand catalog`. It lists learned services (description, login, pages, facts), their procedures (goal template, params, status), and saved profiles.
+Run `webhand catalog`. It lists learned services (description, login, pages, facts), their procedures (goal template, params, status), and saved profiles. Each comes from this project's `.webhand/` `(project)` or the user's `~/.webhand/` `(user)`; a project one wins over a user one of the same name.
 
 From the request and the catalog, write:
 

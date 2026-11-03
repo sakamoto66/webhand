@@ -1,0 +1,52 @@
+{
+  "name": "webhand",
+  "version": "0.2.0",
+  "description": "Claude plans, asks, checks, and replans; Jev operates the browser toward the goal.",
+  "license": "MIT",
+  "author": "sakamoto66",
+  "homepage": "https://github.com/sakamoto66/webhand",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sakamoto66/webhand.git"
+  },
+  "keywords": [
+    "browser",
+    "agent",
+    "automation",
+    "runbook",
+    "claude-code"
+  ],
+  "type": "module",
+  "bin": {
+    "webhand": "dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "assets",
+    "LICENSE",
+    "THIRD_PARTY_LICENSE_jev-ultrafast.txt",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "biome check .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "smoke": "node src/run.ts",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm run build"
+  },
+  "dependencies": {
+    "playwright-core": "~1.64.1",
+    "smol-toml": "^1.9.1",
+    "undici": "^8.12.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.4",
+    "@types/node": "^24.19.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

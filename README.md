@@ -12,28 +12,33 @@ Anthropic の API キーは使いません。作業中の Claude Code がスキ�
    /plugin install webhand --marketplace sakamoto66/webhand
    ```
 
-2. CLI を入れ、Jev の API キーを置きます。
+2. Jev の API キーを置きます。
 
    ```bash
-   uv tool install git+https://github.com/sakamoto66/webhand
-   mkdir -p ~/.webhand && cp .env.example ~/.webhand/.env   # TYPESAFE_API_KEY を設定
+   mkdir -p ~/.webhand && echo 'TYPESAFE_API_KEY=...' > ~/.webhand/.env
    ```
 
-   Chrome（Linux、または WSL から Windows 側）が必要です。
+CLI はインストール不要です。スキルが `npx -y webhand@0.2 ...` で実行します。Node.js 22 以上と Google Chrome（Linux、または WSL から Windows 側）が必要です。毎回の起動を速くしたい場合は、`npm i -g webhand` で入れておくと、スキルは `webhand ...` を使います。
 
-### ワークスペース
+```bash
+npx -y webhand@0.2 catalog   # 動作確認
+```
 
-webhand は学習した内容と実行記録を `~/.webhand/` に置きます。`WEBHAND_HOME` で変更できます。
+### 保存場所
 
-| パス | 内容 |
-| --- | --- |
-| `runbooks/` | サービス情報と手順書 |
-| `runs/` | 実行と学習の記録（ページ本文を含む） |
-| `state/` | 実行中のセッションと保存プロファイル |
-| `.env` | `TYPESAFE_API_KEY`、`TYPESAFE_MODEL` |
+Claude Code の `~/.claude/` と `.claude/` と同じように、ユーザー単位とプロジェクト単位の2か所を使います。
+
+| 場所 | パス | 内容 |
+| --- | --- | --- |
+| ユーザー | `~/.webhand/`（`WEBHAND_HOME` で変更可） | `runbooks/`（どのプロジェクトでも使うサービス情報と手順書）、`runs/`（実行と学習の記録。ページ本文を含む）、`state/`（実行中のセッションと保存プロファイル）、`.env`（`TYPESAFE_API_KEY`、`TYPESAFE_MODEL`） |
+| プロジェクト | 現在のディレクトリから上にたどって最初に見つかる `.webhand/`（ホームディレクトリで止まる） | `runbooks/`（そのプロジェクトのサービス情報と手順書。git で共有できる） |
+
+- 手順書とサービス情報は、プロジェクト、ユーザーの順に探します。同じ名前ならプロジェクトのものを使います。`catalog` は両方を一覧し、それぞれの出所を `(project)` / `(user)` で示します。
+- `learn` は既定でプロジェクトに書きます（`.webhand/` がなければ git のルート、なければ現在のディレクトリに作ります）。`--scope user` でユーザーに書きます。
+- ログイン状態、実行記録、API キーはユーザー単位にだけ置き、プロジェクトには置きません。
 
 ```
-Claude Code ── /webhand-learn ──> runbooks/<service>/  サービス情報と手順書
+Claude Code ── /webhand-learn ──> .webhand/runbooks/<service>/ または ~/.webhand/runbooks/<service>/
      │
      └──────── /webhand ── CLI webhand ── CDP ──> Chrome（新規 / 保存プロファイル、WSL では Windows 側も可）
        計画・入力値・確認・見直し       └── run ──> Jev（GOAL までの操作を選択）
@@ -105,8 +110,9 @@ Claude Code のセッションで、スキルを呼び出します。
 
 ```text
 /webhand HOTEL PLANISPHERE で来月の土曜から2泊、2名で予約して
-/webhand --task hotel_filter
 ```
+
+下の表の `webhand` は、インストールしていなければ `npx -y webhand@0.2` と読み替えてください。`webhand --version` で版を確認できます。
 
 
 | コマンド | 担当 | 内容 |
@@ -118,7 +124,7 @@ Claude Code のセッションで、スキルを呼び出します。
 | `webhand act OP [TARGET]` | Claude | Jev の代わりに操作を1つ実行する |
 | `webhand observe` | Claude | 現在のページを表示する |
 | `webhand finish --status STATUS` | Claude | 独立検証、ログ記録、Chrome の終了 |
-| `webhand learn --name NAME --url URL` | 人 | 操作を記録する |
+| `webhand learn --name NAME --url URL [--scope project\|user]` | 人 | 操作を記録する |
 | `webhand profile login/list/delete` | 人 | 保存プロファイルを管理する |
 
 手順の先頭に `[person]` を付けると、人が行う手順になります（`--headed` が必須です）。`start` と `replan` の `--focus REGION` / `--skip REGION` で、観測する領域を選べます（下の「ページの領域」）。`--runbook NAME --param k=v` を指定すると、手順書の GOAL、開始 URL、手順が既定値になり、params は入力値として Jev に渡されます。
@@ -132,11 +138,13 @@ Claude Code のセッションで、スキルを呼び出します。
 | `runbooks/<service>/service.toml` | サービスの説明、ログインの要否、ページと領域の一覧、Jev 向けの事実 | `catalog` で Claude が読み、`--service` で Jev に渡す |
 | `runbooks/<service>/<name>.toml` | 手順書（goal、params、steps、hints、done_when、focus、skip） | Claude の計画の下敷き。手順と hints は Jev にも渡す |
 
+どちらも、プロジェクトの `.webhand/` かユーザーの `~/.webhand/` に置きます（「保存場所」）。`learn` は書き込み先を `WRITE THE RUNBOOK TO ...` として表示します。`start_url` にローカルファイルの相対パスを書くと、その `.webhand/` を含むディレクトリからのパスになります。
+
 ```text
 /webhand-learn --name myservice/search --url https://example.com
 ```
 
-1. `webhand learn` が Chrome を開き、ユーザーの操作を記録します。ウィンドウを閉じると終了します。ログインした状態で操作を見せる場合は、`--session profile:NAME` を付けます。
+1. `webhand learn` が Chrome を開き、ユーザーの操作を記録します。ウィンドウを閉じると終了します。ログインした状態で操作を見せる場合は、`--session profile:NAME` を付けます。バックグラウンドのジョブを止めても（SIGTERM、または npx の終了）、記録を保存して Chrome を閉じます。
 2. Claude が記録またはソースコードから、サービス情報と手順書の下書きを書きます。
 3. `--runbook NAME --param k=v --allow-draft` で試行します。
 4. ユーザーが内容を確認し、`status = "approved"` にします。
@@ -203,37 +211,42 @@ skip = ["header", "footer"]
 
 成功判定は `run_end.verified` です。`status=done` は申告にすぎません。Claude Code のトークン数は取得しないため、`handoffs`（Claude に戻した回数）と `handoff_chars`（読ませた文字数）を代理指標にします。
 
-## タスクの追加
+## タスクの追加（研究用）
 
-`tasks/<名前>.py` に次を定義します。
+タスクは研究用リポジトリの `tasks/` にだけ置き、npm の配布物には含めません。`tasks/<名前>.ts` で次を export します。
 
 - `GOAL`: 自然言語の目標
-- `start_url(root)`: 開始 URL
-- `verify(browser)`: `{"success": bool, "evidence": ...}` を返す独立検証
+- `startUrl(root)`: 開始 URL（`root` はリポジトリのルート）
+- `verify(browser)`: `{success, evidence}` を返す独立検証（async）
 - `SCRIPT`: 基盤の動作確認用の固定手順
+
+`--task` はリポジトリのルートで実行します。Node の型除去でそのまま読み込むため、型注釈を消すだけで動く構文で書きます（Node 22.18 以上）。
 
 ## 開発
 
-このリポジトリは研究基盤も兼ねています（実験設計は `docs/research-plan.md`）。開発時は、リポジトリをワークスペースにしてプラグインを直接読み込みます。
+このリポジトリは研究基盤も兼ねています（実験設計は `docs/research-plan.md`）。TypeScript で書かれ、Node.js 22 以上で動きます（開発は Node 24）。リポジトリの `.webhand/runbooks/` が、このリポジトリのプロジェクト単位の手順書です。
 
 ```bash
-uv sync
-cp .env.example .env
-# .claude/settings.local.json: {"env": {"WEBHAND_HOME": "<このリポジトリの絶対パス>"}}
-uv tool install --editable .
+npm ci
+npm run build && npm link   # webhand コマンドを作業ツリーのビルドに向ける
 claude --plugin-dir .
 ```
 
-`tasks/`（独立検証つきのタスク、`--task`）はリポジトリのルートで実行します。
+実行記録をリポジトリの `runs/` に残したい場合は、`.claude/settings.local.json` に `{"env": {"WEBHAND_HOME": "<このリポジトリの絶対パス>"}}` を書きます。このときユーザー単位の手順書は `~/.webhand/runbooks/` ではなく、リポジトリの `runbooks/` から読みます。
 
 ```bash
-uv run ruff check .
-uv run pytest                                         # 有料 API は呼びません。Linux の Chrome を使います
-uv run python -m webhand.run --task hotel_filter  # モデルなしの動作確認
+npm run lint                               # Biome
+npm run typecheck
+npm test                                   # 有料 API は呼びません。Linux の Chrome を使います
+npm run smoke -- --task hotel_filter       # モデルなしの動作確認
 ```
+
+`tests/golden/` は Python 版の出力の記録です。Claude と Jev が読む文字列（`render`、`report`、Jev への state と質問など）が移行の前後で同じであることを確かめます。
+
+公開は `npm publish`（`prepublishOnly` で lint、型チェック、ビルド）です。`package.json` と `.claude-plugin/plugin.json` の版を揃え、スキルの `webhand@0.2` も合わせて更新します。
 
 ## ライセンス
 
 MIT License（`LICENSE`）。
 
-`src/webhand/snapshot.js`、`policies/base.py`、`policies/jev.py`、`tasks/fixtures/hotel.html` は [jev-ultrafast](https://github.com/browser-use/jev-ultrafast)（MIT）を改変したものです。`THIRD_PARTY_LICENSE_jev-ultrafast.txt` を参照してください。
+`assets/snapshot.js`、`src/policies/base.ts`、`src/policies/jev.ts`、`tasks/fixtures/hotel.html` は [jev-ultrafast](https://github.com/browser-use/jev-ultrafast)（MIT）を改変したものです。`THIRD_PARTY_LICENSE_jev-ultrafast.txt` を参照してください。

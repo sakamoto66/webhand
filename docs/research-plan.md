@@ -98,6 +98,16 @@ R2-1 の B で、Jev への1回の入力（約 37,000 文字）のうち、`sele
 
 比較元の実行は同じ日の直前のもので、続けて取り直してはいません。select のある `hotel_filter` と `hotel_reserve` では、まだ再確認していません。ログは `runs/20261103T165432/dense_booking.jsonl` です。
 
+## 実装の移行（2026-11-03）
+
+CLI を Python から TypeScript に移し、`npx webhand` で実行できるようにしました。手順書の保存場所も、ユーザー（`~/.webhand/runbooks`）とプロジェクト（`.webhand/runbooks`）の2か所になりました。実験の変数にしないため、次のものは変えていません。
+
+- Claude が読む出力（`render`、`report`、`describe_plan` など）と、Jev へのリクエスト本文（state と質問）。Python 版の出力を `tests/golden/` に記録し、文字単位で一致することを確かめています（`catalog` だけは、出所の `(project)` / `(user)` を足したため変わっています）
+- 観測（`snapshot.js`）と記録（`recorder.js`）。バイト単位で同じです
+- Jev への接続は HTTP/2（undici）のままで、リトライは 429/503/529 の最大3回のままです
+
+変わったものもあります。ログの数値で `1.0` が `1` と書かれます。Jev へのリクエストのヘッダーと、実行時間（Node と Python の差）も同じではありません。応答時間（`latency_ms`）や `elapsed_ms` を、この変更の前後で比べるときは注意してください。移行前のログは、Python 版のコミット（`bc1be3d`）のものです。
+
 ## 指標
 
 | 指標 | 定義 | 取得元 |
