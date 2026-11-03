@@ -7,6 +7,7 @@ import pytest
 from browser_lab.metrics import summarize
 from browser_lab.policies.base import action_space, resolve
 from browser_lab.policies.jev import JevPolicy, validate_choice
+from browser_lab.policies.scripted import ScriptedPolicy
 from browser_lab.types import ModelCall, PolicyError
 
 PAGE = {
@@ -102,3 +103,26 @@ def test_validate_choice_rejects_wrong_probabilities():
 def test_summary_totals_tokens_per_provider():
     calls = [ModelCall("typesafe", "j", "choose", 1, 20, 2), ModelCall("typesafe", "j", "choose", 1, None, None)]
     assert summarize(calls)["providers"]["typesafe"] == {"calls": 2, "input_tokens": 20, "output_tokens": 2}
+
+
+def test_scripted_step_is_retried_until_it_reaches_the_history():
+    policy = ScriptedPolicy(
+        [{"operation": "CLICK", "label": "Go"}, {"operation": "TYPE_TEXT", "label": "City", "text": "Lisbon"}]
+    )
+    history = []
+    assert policy.choose(PAGE, "goal", history).action["id"] == "e3"
+    # The click raised StalePage, so nothing was recorded: the same step comes back.
+    assert policy.choose(PAGE, "goal", history).action["id"] == "e3"
+    history.append({"action": "Go"})
+    decision = policy.choose(PAGE, "goal", history)
+    assert decision.action["id"] == "e1"
+    assert policy.text({}) == "Lisbon"
+    history.append({"action": "City"})
+    assert policy.choose(PAGE, "goal", history).operation == "DONE"
+
+
+def test_scripted_control_step_without_a_label():
+    policy = ScriptedPolicy([{"operation": "WAIT"}])
+    assert policy.choose(PAGE, "goal", []).operation == "WAIT"
+    with pytest.raises(PolicyError):
+        ScriptedPolicy([{"operation": "SCROLL_UP"}]).choose(PAGE, "goal", [])
