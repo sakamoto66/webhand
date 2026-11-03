@@ -1,0 +1,57 @@
+# TOHOシネマズの公式サイト。劇場ごとの上映スケジュールと作品情報を見られる。
+service = "tohotheater"
+description = "TOHOシネマズの劇場、上映スケジュール、作品情報を調べ、チケットを買うサイト"
+base_url = "https://www.tohotheater.jp/"
+sources = ["demo:runs/20261103T170429/learn-tohotheater-schedule.jsonl", "trial:runs/20261103T171043/adhoc.jsonl", "trial:runs/20261103T173043/adhoc.jsonl"]
+facts = [
+  "初回訪問時は Cookie の同意バナーが表示され、「全てのCookieを受け入れる」を押すまでページの一部を覆う。",
+  "劇場一覧（劇場を探す）は地区ごとに折りたたまれている。地区名（例: 関東地区 KANTO AREA）を押すと、その地区の都道府県と劇場名が展開される。",
+  "劇場名のリンクを押すと、その劇場の上映スケジュールページ（hlo.tohotheater.jp）に移る。",
+  "上映スケジュールページには数日分の日付タブ（例: 11/6(金)）が並ぶ。タブを押すと、その日の作品と上映時刻が表示され、見出しが「11月6日(金)」の形式になる。",
+  "日付タブには割引サービス名（TOHOウェンズデイ、FODフライデイ など）が添えられている。これは日付の選択には関係しない。",
+  "劇場一覧の地区の見出しはリンクやボタンではなく、role を持たないクリック要素である。",
+  "ログインせずに上映スケジュールを見られる。",
+  "ページの大半はランドマークのない 1 つの領域（page）にある。",
+]
+
+[login]
+required = false
+
+[[pages]]
+url = "https://www.tohotheater.jp/"
+purpose = "トップページ。劇場一覧（すべての劇場）や上映中作品へ進む"
+
+[[pages.regions]]
+key = "footer"
+purpose = "サイト全体のリンク"
+default = "skip"
+
+[[pages]]
+url = "https://www.tohotheater.jp/theater/find.html"
+purpose = "劇場一覧。地区を展開して劇場を選ぶ"
+
+[[pages.regions]]
+key = "page"
+purpose = "地区の見出しと劇場名のリンク"
+
+[[pages.regions]]
+key = "footer"
+purpose = "サイト全体のリンク"
+default = "skip"
+
+[[pages]]
+url = "https://hlo.tohotheater.jp/net/schedule/081/TNPI2000J01.do"
+purpose = "劇場ごとの上映スケジュール（パスの数字は劇場ごとに異なる）。日付タブを選び、作品と上映時刻を見る"
+
+[[pages.regions]]
+key = "page"
+purpose = "日付タブ、作品名、上映時刻と販売状況"
+
+[[pages.regions]]
+key = "nav"
+purpose = "劇場内のメニュー（上映スケジュール、アクセス、料金など）"
+
+[[pages.regions]]
+key = "footer"
+purpose = "サイト全体のリンク"
+default = "skip"
