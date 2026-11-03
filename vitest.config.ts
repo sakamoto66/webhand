@@ -14,6 +14,8 @@ export default defineConfig({
       include: ["src/**/*.ts"],
       reporter: ["text", "json-summary", "html"],
       reportsDirectory: "coverage",
+      // Below these, vitest --coverage exits non-zero and CI fails.
+      thresholds: { lines: 70, statements: 70, functions: 70, branches: 70 },
     },
   },
 });
