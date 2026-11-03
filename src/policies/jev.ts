@@ -23,6 +23,7 @@ import {
   type Controls,
   modelState,
   NEXT_ACTION,
+  NO_NOT_VISIBLE,
   NOT_VISIBLE,
   NOT_VISIBLE_HELP,
   OPERATION_HELP,
@@ -138,7 +139,7 @@ export function buildQuestions(
   for (const [operation, candidates] of targets) {
     const criteria = new Map<string, unknown>();
     for (const [index, action] of candidates) criteria.set(index, targetCriterion(operation, index, action));
-    criteria.set(NOT_VISIBLE, NOT_VISIBLE_HELP);
+    if (!NO_NOT_VISIBLE) criteria.set(NOT_VISIBLE, NOT_VISIBLE_HELP);
     questions[`${operation.toLowerCase()}_target`] = {
       type: "choice",
       criteria,
@@ -222,7 +223,7 @@ export class JevPolicy implements Policy {
       // Unused target heads cannot cause an action. Validate only the selected head.
       const targetAnswer = validateChoice(answers[`${operation.toLowerCase()}_target`] ?? {}, [
         ...candidates.keys(),
-        NOT_VISIBLE,
+        ...(NO_NOT_VISIBLE ? [] : [NOT_VISIBLE]),
       ]);
       target = targetAnswer.choice;
       confidences.push(targetAnswer.confidence);

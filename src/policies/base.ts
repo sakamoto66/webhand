@@ -7,7 +7,7 @@
 import { pyRepr, pyRound } from "../py.ts";
 import { type Action, Decision, type HistoryEntry, type Page, type Plan, PolicyError, type Value } from "../types.ts";
 
-export const NEXT_ACTION = `Advance the user's entire goal from the CURRENT page using one operation.
+const NEXT_ACTION_FULL = `Advance the user's entire goal from the CURRENT page using one operation.
 Work through the plan's steps in order; the action history shows what was already done in this run.
 Do not start a later step, such as opening a result, while an earlier step is not visibly done on the page.
 Notes from earlier attempts say what went wrong before; do not repeat it. The page is the truth.
@@ -29,12 +29,42 @@ DONE requires visible evidence that ALL requirements of the goal are satisfied. 
 a matching link is not enough. NEEDS_HUMAN when the next step is one the plan marks [person], or a sign-in,
 password, verification code, or CAPTCHA is required. BLOCKED means no supported operation can make progress.`;
 
-export const TARGET = `Choose the best observed target if the next operation is the one specified in this question.
+const TARGET_FULL = `Choose the best observed target if the next operation is the one specified in this question.
 Use the user's entire goal, the plan, field values, nearby text, and recent actions. This question chooses
 only a target for that operation; another question decides which operation to execute. Do not choose
 a field that already contains the requested value. Choose only an offered element index, or NOT_VISIBLE
 when the element the next step needs is not offered (it may be off screen). Never pick a different
 element as a stand-in for one that is not listed.`;
+
+/**
+ * Experiment switch, on the exp/offscreen-notvisible branch only. WEBHAND_EXPERIMENT=no-offscreen leaves out
+ * page.offscreen and its three rule sentences; no-not-visible leaves out the NOT_VISIBLE choice and its rule
+ * sentences, with TARGET ending as it did before NOT_VISIBLE existed.
+ */
+export const EXPERIMENT = process.env.WEBHAND_EXPERIMENT ?? "";
+export const NO_OFFSCREEN = EXPERIMENT === "no-offscreen";
+export const NO_NOT_VISIBLE = EXPERIMENT === "no-not-visible";
+if (EXPERIMENT && !NO_OFFSCREEN && !NO_NOT_VISIBLE) throw new Error(`Unknown WEBHAND_EXPERIMENT ${EXPERIMENT}`);
+
+function without(text: string, part: string, replacement = ""): string {
+  if (!text.includes(part)) throw new Error(`Experiment text not found: ${part.slice(0, 40)}`);
+  return text.replace(part, replacement);
+}
+
+const OFFSCREEN_RULES =
+  "Elements and page text cover only the visible viewport. page.offscreen says how much of the page is above\n" +
+  "and below it. If the element the next step needs is not listed and the page continues in a direction,\n" +
+  "SCROLL toward it instead of clicking a different element. ";
+const NOT_VISIBLE_TARGET_RULES =
+  ", or NOT_VISIBLE\nwhen the element the next step needs is not offered (it may be off screen). Never pick a different\n" +
+  "element as a stand-in for one that is not listed.";
+
+export const NEXT_ACTION = NO_OFFSCREEN
+  ? without(NEXT_ACTION_FULL, OFFSCREEN_RULES)
+  : NO_NOT_VISIBLE
+    ? without(NEXT_ACTION_FULL, "SCROLL toward it or answer NOT_VISIBLE.", "SCROLL toward it.")
+    : NEXT_ACTION_FULL;
+export const TARGET = NO_NOT_VISIBLE ? without(TARGET_FULL, NOT_VISIBLE_TARGET_RULES, ".") : TARGET_FULL;
 
 export const NOT_VISIBLE = "NOT_VISIBLE";
 export const NOT_VISIBLE_HELP = "The element the next step needs is not in this list. Nothing is executed.";
@@ -159,7 +189,7 @@ export function modelState(page: Page, history: HistoryEntry[], plan: Plan | nul
     };
   }
   const shown: Record<string, unknown> = { url: page.url, title: page.title, text: page.text };
-  shown.offscreen = offscreen(page);
+  if (!NO_OFFSCREEN) shown.offscreen = offscreen(page);
   if (page.regions?.length) shown.regions = page.regions;
   state.page = shown;
   state.elements = actionSpace(page.actions)[0].map(compactOptions);

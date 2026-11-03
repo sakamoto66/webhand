@@ -12,7 +12,7 @@ import { Budget, execute, runAgent } from "./agent.ts";
 import { Browser } from "./browser.ts";
 import * as learn from "./learn.ts";
 import { gitState, logOnce, Recorder, summarize } from "./metrics.ts";
-import { actionSpace, modelState, planText, resolve } from "./policies/base.ts";
+import { actionSpace, EXPERIMENT, modelState, planText, resolve } from "./policies/base.ts";
 import { JevPolicy } from "./policies/jev.ts";
 import { describeError, pyJson, pyLen, pyRepr, pyRound, pyStr, stamp, utcIso } from "./py.ts";
 import * as runbook from "./runbook.ts";
@@ -360,6 +360,7 @@ async function commandStart(args: Args): Promise<number> {
     browser = await Browser.open(state.start_url, { port: chromeState.port, view: state.view });
     state.page = await browser.observe();
     recorder.event("run_start", {
+      experiment: EXPERIMENT || null,
       task: args.task ?? null,
       goal,
       chrome: browser.version,
