@@ -1,100 +1,103 @@
 # webhand
 
-Claude が頭、Jev が手。Claude Code のスキルとして、Web ページでの用事を Claude と Jev が役割を分担して進めます。Claude は GOAL と手順の計画、入力値、結果の確認、計画の見直しを担い、Jev（TypeSafe）は GOAL までの操作を選びます。
+English | [日本語](README.ja.md)
 
-Anthropic の API キーは使いません。作業中の Claude Code がスキルの手順に沿って CLI を実行し、Claude の役割を担います。**操作中のページの内容は Jev（TypeSafe の API）に送られます。**
+Claude is the head, Jev is the hand. webhand is a Claude Code skill that gets things done on web pages by splitting the work between Claude and Jev. Claude plans the goal and the steps, writes the input values, checks the result, and replans; Jev (via TypeSafe) chooses each browser action on the way to the goal.
 
-## インストール
+No Anthropic API key is needed. The Claude Code session you are working in plays Claude's role by running the CLI as the skill instructs. **The content of the page being operated is sent to Jev (the TypeSafe API).**
 
-1. プラグインを追加します（Claude Code）。
+## Installation
+
+1. Add the plugin in Claude Code.
 
    ```text
-   /plugin install webhand --marketplace sakamoto66/webhand
+   /plugin marketplace add sakamoto66/webhand
+   /plugin install webhand@webhand
    ```
 
-2. Jev の API キーを環境変数に設定し、Claude Code を起動し直します（`TYPESAFE_MODEL` で使うモデルも変えられます）。
+2. Set Jev's API key as an environment variable and restart Claude Code. (`TYPESAFE_MODEL` selects the model.)
 
    ```bash
-   echo 'export TYPESAFE_API_KEY=...' >> ~/.bashrc   # 使っているシェルの設定ファイルに
+   echo 'export TYPESAFE_API_KEY=...' >> ~/.bashrc   # or your shell's profile
    ```
 
-CLI はインストール不要です。スキルが `npx -y webhand@0.2 ...` で実行します。Node.js 22 以上と Google Chrome（Linux、または WSL から Windows 側）が必要です。毎回の起動を速くしたい場合は、`npm i -g webhand` で入れておくと、スキルは `webhand ...` を使います。
+The CLI needs no installation: the skills run it with `npx -y webhand@0.2 ...`. It requires Node.js 22 or later and Google Chrome (on Linux, or the Windows side from WSL). For faster startup, install it globally with `npm i -g webhand`; the skills then use `webhand ...`.
 
 ```bash
-npx -y webhand@0.2 catalog   # 動作確認
+npx -y webhand@0.2 catalog   # smoke check
 ```
 
-### 保存場所
+### Where things are stored
 
-Claude Code の `~/.claude/` と `.claude/` と同じように、ユーザー単位とプロジェクト単位の2か所を使います。
+Like Claude Code's `~/.claude/` and `.claude/`, webhand uses two locations: one per user and one per project.
 
-| 場所 | パス | 内容 |
+| Scope | Path | Contents |
 | --- | --- | --- |
-| ユーザー | `~/.webhand/`（`WEBHAND_HOME` で変更可） | `runbooks/`（どのプロジェクトでも使うサービス情報と手順書）、`runs/`（実行と学習の記録。ページ本文を含む）、`state/`（実行中のセッションと保存プロファイル） |
-| プロジェクト | 現在のディレクトリから上にたどって最初に見つかる `.webhand/`（ホームディレクトリで止まる） | `runbooks/`（そのプロジェクトのサービス情報と手順書。git で共有できる） |
+| User | `~/.webhand/` (override with `WEBHAND_HOME`) | `runbooks/` (service information and runbooks used in every project), `runs/` (run and learning logs, including page text), `state/` (active sessions and saved profiles) |
+| Project | The first `.webhand/` found walking up from the current directory (stops at the home directory) | `runbooks/` (the project's service information and runbooks; can be shared through git) |
 
-- 手順書とサービス情報は、プロジェクト、ユーザーの順に探します。同じ名前ならプロジェクトのものを使います。`catalog` は両方を一覧し、それぞれの出所を `(project)` / `(user)` で示します。
-- `learn` は既定でプロジェクトに書きます（`.webhand/` がなければ git のルート、なければ現在のディレクトリに作ります）。`--scope user` でユーザーに書きます。
-- ログイン状態と実行記録はユーザー単位にだけ置き、プロジェクトには置きません。API キーはファイルに置かず、環境変数（`TYPESAFE_API_KEY`）からだけ読みます。
+- Runbooks and service information are looked up in the project first, then the user folder. When names collide, the project's version wins. `catalog` lists both and marks each entry `(project)` or `(user)`.
+- `learn` writes to the project by default (creating `.webhand/` at the git root if none exists, or in the current directory outside git). Use `--scope user` to write to the user folder.
+- Login state and run logs live only in the user folder, never in the project. The API key is never stored in a file; it is read only from the `TYPESAFE_API_KEY` environment variable.
 
 ```
-Claude Code ── /webhand-learn ──> .webhand/runbooks/<service>/ または ~/.webhand/runbooks/<service>/
+Claude Code ── /webhand-learn ──> .webhand/runbooks/<service>/ or ~/.webhand/runbooks/<service>/
      │
-     └──────── /webhand ── CLI webhand ── CDP ──> Chrome（新規 / 保存プロファイル、WSL では Windows 側も可）
-       計画・入力値・確認・見直し       └── run ──> Jev（GOAL までの操作を選択）
+     └──────── /webhand ── CLI webhand ── CDP ──> Chrome (fresh / saved profile; Windows side from WSL)
+       plan, values, checks, replans    └── run ──> Jev (chooses actions toward the GOAL)
 ```
 
-## ユーザー体験
+## How it works
 
-1. **学習する**: `/webhand-learn` で、人の操作の記録またはソースコードから、サービス情報と手順書を作ります。
-2. **頼む**: `/webhand ホテルを予約して` のように投稿します。Claude が学習済みのデータから GOAL、手順、入力値を計画し、足りない情報はユーザーに質問します。
-3. **セッションを選ぶ**: 新規（使い捨て）か、ログイン状態を残した保存プロファイルかを選びます。
-4. **実行する**: 計画した URL を開きます。Jev は、サービス情報、計画、表示中のページ、これまでの操作履歴をもとに次の操作を選び、GOAL までループします。
-5. **見直す**: GOAL に届かなければ、Claude が原因を書いて計画を見直し、再挑戦します（既定で最大3回）。
+1. **Learn**: `/webhand-learn` turns a recorded human demonstration, or the service's source code, into service information and a runbook.
+2. **Ask**: Post a request such as `/webhand book a hotel`. Claude plans the GOAL, steps, and input values from what webhand has learned, and asks you for anything missing.
+3. **Choose a session**: A fresh, throwaway session, or a saved profile that keeps you logged in.
+4. **Run**: The planned URL opens. Jev picks the next action from the service information, the plan, the current page, and the action history, and loops until the GOAL.
+5. **Replan**: If the GOAL is not reached, Claude writes down why, revises the plan, and tries again (up to 3 attempts by default).
 
-## 役割分担
+## Division of roles
 
-| 担当 | 役割 |
+| Who | Role |
 | --- | --- |
-| Claude | GOAL と手順を計画する、入力値を書く、足りない情報を質問する、結果を確認する、計画を見直す、実行を締める |
-| Jev | GOAL までの操作ごとに、対象の要素と Claude の入力値のどれを使うかを番号で選ぶ |
-| コード | 選択を観測済み要素と Claude の値に限定し、鮮度を確認して実行する。独立検証を行う |
+| Claude | Plans the GOAL and steps, writes input values, asks for missing information, checks the result, replans, closes the run |
+| Jev | For each action toward the GOAL, picks by number which element to act on and which of Claude's values to use |
+| Code | Restricts choices to observed elements and Claude's values, checks freshness before acting, and runs independent verification |
 
-`run` は、次のいずれかの場合にだけ Claude に制御を返します。
+`run` hands control back to Claude only in these cases:
 
-| 結果 | 発生条件 | Claude の対応 |
+| Result | When | What Claude does |
 | --- | --- | --- |
-| `GOAL_REPORTED` | Jev が GOAL 達成を申告した | ページを GOAL と照合し、`finish` か `replan` |
-| `NEEDS_VALUE` | 入力欄に合う値が計画にない | `run --value "ラベル=値"`。わからなければユーザーに聞く |
-| `NEEDS_HUMAN` | ログイン、認証コード、CAPTCHA、`[person]` の手順 | ユーザーに依頼し、`run --human-done` |
-| `BLOCKED` / `STUCK` / `ATTEMPT_BUDGET` | 進めなくなった | `replan` で再挑戦、`act` で1手補う、または `finish` |
-| `JEV_FAILED` | Jev の応答が使えない（何も実行していない） | もう一度 `run`、`replan`、または `act` |
-| `UNCERTAIN` | 操作が実行されたかどうか不明 | 繰り返さず、`finish --status error` |
+| `GOAL_REPORTED` | Jev reports the GOAL as reached | Compares the page with the GOAL, then `finish` or `replan` |
+| `NEEDS_VALUE` | No planned value fits an input field | `run --value "label=value"`; asks the user if unsure |
+| `NEEDS_HUMAN` | Login, verification code, CAPTCHA, or a `[person]` step | Asks the user, then `run --human-done` |
+| `BLOCKED` / `STUCK` / `ATTEMPT_BUDGET` | No way forward | `replan` to retry, `act` to fill in one action, or `finish` |
+| `JEV_FAILED` | Jev's response was unusable (nothing was executed) | `run` again, `replan`, or `act` |
+| `UNCERTAIN` | Unknown whether an action took effect | Does not repeat it; `finish --status error` |
 
-確信度は記録しますが、Jev を止める条件には使いません。
+Confidence is logged but never used to stop Jev.
 
-## セッション
+## Sessions
 
-| `--session` | 内容 |
+| `--session` | Description |
 | --- | --- |
-| `new`（既定） | 一時プロファイル。ログインしていない状態で始まり、終了時に削除されます |
-| `profile:NAME` | webhand 専用の保存プロファイル。ログイン状態が次回も残ります |
+| `new` (default) | A temporary profile. Starts logged out and is deleted when the run ends |
+| `profile:NAME` | A saved profile dedicated to webhand. Login state persists across runs |
 
 ```bash
-webhand profile login work --url https://example.com/login   # 人がログインしてウィンドウを閉じる
+webhand profile login work --url https://example.com/login   # a person logs in, then closes the window
 webhand profile list
 webhand profile delete work
 ```
 
-普段使いの Chrome プロファイルには接続しません。Chrome 136 以降は、既定のプロファイルへのデバッグ接続ができないためです。保存プロファイルは、Linux では `~/.webhand/state/profiles/`、Windows では `%LOCALAPPDATA%\webhand\profiles\` に置かれます。
+webhand never connects to your everyday Chrome profile, because Chrome 136 and later refuse debugging connections to the default profile. Saved profiles live in `~/.webhand/state/profiles/` on Linux and `%LOCALAPPDATA%\webhand\profiles\` on Windows.
 
-**ログイン後のページの内容は Jev（TypeSafe の API）に送られます。** 個人情報を含む画面を扱うかどうかは、実行前に判断してください。
+**Pages viewed while logged in are sent to Jev (the TypeSafe API).** Decide before each run whether it is acceptable to handle screens that contain personal information.
 
-## WSL で Windows 側の Chrome を使う
+## Using Windows Chrome from WSL
 
-`--chrome auto`（既定）は、WSL 上で Windows の `chrome.exe` に接続できればそれを使い、できなければ Linux の Chrome を使います。`--chrome windows` または `--chrome linux` で固定でき、`WEBHAND_CHROME` でも指定できます。
+With `--chrome auto` (the default), webhand on WSL uses Windows `chrome.exe` when it can connect to it, and falls back to Linux Chrome otherwise. Use `--chrome windows` or `--chrome linux` to pin one, or set `WEBHAND_CHROME`.
 
-Windows の Chrome は、デバッグポートを Windows の 127.0.0.1 で待ち受けます。そのため、WSL のネットワークを mirrored にする必要があります。
+Windows Chrome listens for debugging on Windows' 127.0.0.1, so WSL networking must be set to mirrored:
 
 ```ini
 # %USERPROFILE%\.wslconfig
@@ -102,152 +105,151 @@ Windows の Chrome は、デバッグポートを Windows の 127.0.0.1 で待�
 networkingMode=mirrored
 ```
 
-設定したら、PowerShell で `wsl --shutdown` を実行して WSL を再起動します。ローカルファイルの URL は `file://wsl.localhost/...` に変換して開きます。
+Then restart WSL by running `wsl --shutdown` in PowerShell. Local file URLs are opened as `file://wsl.localhost/...`.
 
-## 使い方
+## Usage
 
-Claude Code のセッションで、スキルを呼び出します。
+Invoke the skill in a Claude Code session:
 
 ```text
-/webhand HOTEL PLANISPHERE で来月の土曜から2泊、2名で予約して
+/webhand On HOTEL PLANISPHERE, book 2 nights for 2 people starting next month's first Saturday
 ```
 
-下の表の `webhand` は、インストールしていなければ `npx -y webhand@0.2` と読み替えてください。`webhand --version` で版を確認できます。
+If the CLI is not installed globally, read `webhand` in the table below as `npx -y webhand@0.2`. `webhand --version` prints the version.
 
-
-| コマンド | 担当 | 内容 |
+| Command | Used by | Description |
 | --- | --- | --- |
-| `webhand catalog` | Claude | 学習済みのサービス、手順書、保存プロファイルを一覧する |
-| `webhand start --goal G --url U --step S ... --value L=V ... --session ...` | Claude | 計画を記録し、Chrome で開始 URL を開く |
-| `webhand run` | Jev | GOAL まで操作する |
-| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--restart]` | Claude | 計画を見直して、次の試行を始める |
-| `webhand act OP [TARGET]` | Claude | Jev の代わりに操作を1つ実行する |
-| `webhand observe` | Claude | 現在のページを表示する |
-| `webhand finish --status STATUS` | Claude | 独立検証、ログ記録、Chrome の終了 |
-| `webhand learn --name NAME --url URL [--scope project\|user]` | 人 | 操作を記録する |
-| `webhand profile login/list/delete` | 人 | 保存プロファイルを管理する |
+| `webhand catalog` | Claude | Lists learned services, runbooks, and saved profiles |
+| `webhand start --goal G --url U --step S ... --value L=V ... --session ...` | Claude | Records the plan and opens the start URL in Chrome |
+| `webhand run` | Jev | Operates the page toward the GOAL |
+| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--restart]` | Claude | Revises the plan and starts the next attempt |
+| `webhand act OP [TARGET]` | Claude | Performs a single action in Jev's place |
+| `webhand observe` | Claude | Shows the current page |
+| `webhand finish --status STATUS` | Claude | Runs independent verification, writes the log, and closes Chrome |
+| `webhand learn --name NAME --url URL [--scope project\|user]` | Person | Records a demonstration |
+| `webhand profile login/list/delete` | Person | Manages saved profiles |
 
-手順の先頭に `[person]` を付けると、人が行う手順になります（`--headed` が必須です）。`start` と `replan` の `--focus REGION` / `--skip REGION` で、観測する領域を選べます（下の「ページの領域」）。`--runbook NAME --param k=v` を指定すると、手順書の GOAL、開始 URL、手順が既定値になり、params は入力値として Jev に渡されます。
+Prefix a step with `[person]` to make it a step a human performs (requires `--headed`). `--focus REGION` / `--skip REGION` on `start` and `replan` choose which regions are observed (see [Page regions](#page-regions)). With `--runbook NAME --param k=v`, the runbook's GOAL, start URL, and steps become the defaults, and the params are passed to Jev as input values.
 
-## 学習モード
+## Learning mode
 
-人の操作、またはサービスのソースコードから、次の2種類のファイルを作ります。
+From a human demonstration or the service's source code, webhand produces two kinds of files:
 
-| ファイル | 内容 | 使われ方 |
+| File | Contents | How it is used |
 | --- | --- | --- |
-| `runbooks/<service>/service.toml` | サービスの説明、ログインの要否、ページと領域の一覧、Jev 向けの事実 | `catalog` で Claude が読み、`--service` で Jev に渡す |
-| `runbooks/<service>/<name>.toml` | 手順書（goal、params、steps、hints、done_when、focus、skip） | Claude の計画の下敷き。手順と hints は Jev にも渡す |
+| `runbooks/<service>/service.toml` | Service description, whether login is required, pages and their regions, facts for Jev | Claude reads it through `catalog`; passed to Jev with `--service` |
+| `runbooks/<service>/<name>.toml` | Runbook (goal, params, steps, hints, done_when, focus, skip) | The basis for Claude's plan; steps and hints are also passed to Jev |
 
-どちらも、プロジェクトの `.webhand/` かユーザーの `~/.webhand/` に置きます（「保存場所」）。`learn` は書き込み先を `WRITE THE RUNBOOK TO ...` として表示します。`start_url` にローカルファイルの相対パスを書くと、その `.webhand/` を含むディレクトリからのパスになります。
+Both go in the project's `.webhand/` or the user's `~/.webhand/` (see [Where things are stored](#where-things-are-stored)). `learn` prints the destination as `WRITE THE RUNBOOK TO ...`. A relative local-file path in `start_url` is resolved from the directory that contains that `.webhand/`.
 
 ```text
 /webhand-learn --name myservice/search --url https://example.com
 ```
 
-1. `webhand learn` が Chrome を開き、ユーザーの操作を記録します。ウィンドウを閉じると終了します。ログインした状態で操作を見せる場合は、`--session profile:NAME` を付けます。バックグラウンドのジョブを止めても（SIGTERM、または npx の終了）、記録を保存して Chrome を閉じます。
-2. Claude が記録またはソースコードから、サービス情報と手順書の下書きを書きます。
-3. `--runbook NAME --param k=v --allow-draft` で試行します。
-4. ユーザーが内容を確認し、`status = "approved"` にします。
+1. `webhand learn` opens Chrome and records what you do. Closing the window ends the recording. To demonstrate while logged in, add `--session profile:NAME`. If the background job is stopped (SIGTERM, or npx exiting), the recording is saved and Chrome is closed.
+2. Claude drafts the service information and the runbook from the recording or the source code.
+3. Try it with `--runbook NAME --param k=v --allow-draft`.
+4. You review the content and set `status = "approved"`.
 
-手順書は機械的に再生しません。
+Runbooks are never replayed mechanically.
 
-記録の扱い:
+How recordings are handled:
 
-- キー入力は記録しません。パスワード、ワンタイムコード、カード番号などの欄の値は `<redacted>` になります。ただし秘匿の判定は欄の属性と名前によるため、見分けられない欄の値は `runs/` の記録に残ります
-- URL のクエリの値はすべて伏せます
-- 記録はワークスペースの `runs/` に保存されます。ページ本文を含むため、共有しないでください
-- iframe 内の操作、ファイル選択、新しいタブは再現できないため、`unsupported` として残します
-- ページのスクリプトは記録を偽装できるため、記録は信頼せず、手順書はユーザーが承認します
+- Keystrokes are not recorded. Values of password, one-time code, card number, and similar fields become `<redacted>`. Detection relies on field attributes and names, so values of fields it cannot recognize remain in the `runs/` log
+- All URL query values are masked
+- Recordings are saved under the user folder's `runs/` (`~/.webhand/runs/` by default). They contain page text, so do not share them
+- Actions inside iframes, file pickers, and new tabs cannot be reproduced and are kept as `unsupported`
+- Page scripts can forge recordings, so recordings are not trusted; you approve the runbook
 
-## ページの領域
+## Page regions
 
-観測は、テキスト 6000 文字、操作 250 件が上限です。ページは領域（header、nav、main、form、fieldset、table、dialog、ラベル付きの section など）に分けて観測します。領域のキーは、外側の領域からの並びです。
+An observation is capped at 6,000 characters of text and 250 actions. The page is observed split into regions (header, nav, main, form, fieldset, table, dialog, labeled sections, and so on). A region key is the path of regions from the outermost one.
 
 ```text
-main/form:宿泊予約/fieldset:追加プラン   # 種類:名前。名前は aria-label、legend、caption、領域の先頭の見出しから取る
-nav#2                                    # 名前のない同じ種類が並ぶときは順番
+main/form:Reservation/fieldset:Add-ons   # kind:name. The name comes from aria-label, legend, caption, or the region's first heading
+nav#2                                    # sibling regions of the same kind without names are numbered
 ```
 
-- 観測結果の `regions` には、領域ごとに位置（`above` / `visible` / `below`）、テキストと操作の表示数と全数、画面外の操作の数が入ります。Claude には `REGIONS`、Jev には `page.regions` として渡ります。何が切り捨てられたかがわかります。
-- `focus` の領域は先頭に並び、テキストはページ全体から取ります。`skip` の領域は要約にだけ出ます。どちらもないときは、今までどおり画面内を DOM 順に取ります。開いた dialog は、view があるときは常に先頭です。
-- パターンはキーのどこに一致してもよく、一致した領域の内側も含みます。名前や番号のない段（`form`）は、その種類のどの領域にも一致します。focus と skip の両方に一致したら、深いほうが勝ちます（同じ深さなら focus）。
-- 操作の対象は今までどおり画面内だけです。鮮度の判定（`marker`、`page_key`、`guards`）は、view に関係なく同じ入力から計算します。
-- view は、service.toml の `default`、手順書の `focus` / `skip`、Claude の `--focus` / `--skip` の順に重ね、後のものが勝ちます。`run_start` と `plan` のイベントに `view` が残ります。
+- The `regions` field of an observation lists, per region, its position (`above` / `visible` / `below`), shown and total counts of text and actions, and the number of off-screen actions. Claude sees it as `REGIONS` and Jev as `page.regions`, so it is clear what was cut.
+- `focus` regions come first, and their text is taken from the whole page. `skip` regions appear only in the summary. With neither, the visible part of the page is taken in DOM order. An open dialog always comes first when a view is set.
+- A pattern may match anywhere in a key and includes everything inside the matched region. A segment without a name or number (`form`) matches any region of that kind. If a region matches both focus and skip, the deeper match wins (focus on a tie).
+- Action targets are always limited to the visible part, regardless of the view. Freshness checks (`marker`, `page_key`, `guards`) are computed from the same input regardless of the view.
+- Views are layered in this order, later ones winning: `default` in service.toml, the runbook's `focus` / `skip`, then Claude's `--focus` / `--skip`. The `run_start` and `plan` events record the `view`.
 
 ```toml
 # service.toml
 [[pages.regions]]
-key = "main/form:宿泊予約"
-purpose = "予約フォーム"
+key = "main/form:Reservation"
+purpose = "Booking form"
 [[pages.regions]]
 key = "footer"
-purpose = "サイト共通のリンク"
-default = "skip"       # focus か skip。なしなら通常
+purpose = "Site-wide links"
+default = "skip"       # focus or skip; omit for normal
 
-# 手順書
-focus = ["form:宿泊予約"]
+# runbook
+focus = ["form:Reservation"]
 skip = ["header", "footer"]
 ```
 
-学習の記録では、`page` イベントに領域の要約（キーと件数だけ）、`action` イベントに対象の領域キーが入ります。秘密に見える名前の段は `form:<redacted>` になります。
+In learning logs, `page` events carry a region summary (keys and counts only) and `action` events carry the target's region key. Segments whose names look secret become `form:<redacted>`.
 
-`verify()` のないサービスでは `verified` は `None` です。手順書の `done_when` は Claude の確認材料で、成功の証拠にはなりません。
+For services without `verify()`, `verified` is `None`. A runbook's `done_when` is material for Claude's check, not evidence of success.
 
-## ログ
+## Logs
 
-ワークスペースの `runs/<時刻>/` に JSONL で出力されます。
+Logs are written as JSONL to `runs/<timestamp>/` in the user folder (`~/.webhand/runs/` by default).
 
-| type | 内容 |
+| type | Contents |
 | --- | --- |
-| `run_start` | 目標、Chrome（linux / windows）、セッションの種類、git commit、手順書、サービス |
-| `plan` | 試行ごとの手順、入力値のラベル、その出所（`claude` / `runbook`）、`restart` |
-| `call` | Jev の呼び出しごとのトークンと遅延 |
-| `step` / `step_result` | 実行した操作、試行番号、判断者、確信度、ページの変化 |
-| `escalation` | `run` が Claude に返した結果 |
-| `human_step` / `values` | 人の手順の依頼と完了、追加された入力値のラベル |
-| `attempt_end` | 試行の結果と、Claude が書いた見直しの理由 |
-| `handoff` | Claude が読む CLI 出力の文字数 |
-| `run_end` | 自己申告の状態、独立検証の結果、試行回数と試行ごとの結果、役割ごとの集計 |
+| `run_start` | Goal, Chrome (linux / windows), session kind, git commit, runbook, service |
+| `plan` | Steps per attempt, input value labels and their source (`claude` / `runbook`), `restart` |
+| `call` | Tokens and latency of each Jev call |
+| `step` / `step_result` | The action taken, attempt number, decider, confidence, page change |
+| `escalation` | The result `run` returned to Claude |
+| `human_step` / `values` | Requests and completions of human steps, labels of added input values |
+| `attempt_end` | Outcome of the attempt and Claude's reason for replanning |
+| `handoff` | Number of characters of CLI output Claude reads |
+| `run_end` | Self-reported status, independent verification result, attempt count and per-attempt outcomes, per-role totals |
 
-成功判定は `run_end.verified` です。`status=done` は申告にすぎません。Claude Code のトークン数は取得しないため、`handoffs`（Claude に戻した回数）と `handoff_chars`（読ませた文字数）を代理指標にします。
+Success is judged by `run_end.verified`; `status=done` is only a claim. Claude Code's token usage is not available, so `handoffs` (times control returned to Claude) and `handoff_chars` (characters Claude read) serve as proxies.
 
-## タスクの追加（研究用）
+## Adding tasks (research)
 
-タスクは研究用リポジトリの `tasks/` にだけ置き、npm の配布物には含めません。`tasks/<名前>.ts` で次を export します。
+Tasks live only in the research repository's `tasks/` and are not part of the npm package. `tasks/<name>.ts` exports:
 
-- `GOAL`: 自然言語の目標
-- `startUrl(root)`: 開始 URL（`root` はリポジトリのルート）
-- `verify(browser)`: `{success, evidence}` を返す独立検証（async）
-- `SCRIPT`: 基盤の動作確認用の固定手順
+- `GOAL`: the goal in natural language
+- `startUrl(root)`: the start URL (`root` is the repository root)
+- `verify(browser)`: independent verification returning `{success, evidence}` (async)
+- `SCRIPT`: fixed steps for checking the harness itself
 
-`--task` はリポジトリのルートで実行します。Node の型除去でそのまま読み込むため、型注釈を消すだけで動く構文で書きます（Node 22.18 以上）。
+Run `--task` from the repository root. Tasks are loaded directly through Node's type stripping, so use only syntax that works once type annotations are removed (Node 22.18 or later).
 
-## 開発
+## Development
 
-このリポジトリは研究基盤も兼ねています（実験設計は `docs/research-plan.md`）。TypeScript で書かれ、Node.js 22 以上で動きます（開発は Node 24）。リポジトリの `.webhand/runbooks/` が、このリポジトリのプロジェクト単位の手順書です。
+This repository is also a research platform (see `docs/research-plan.md` for the experiment design, in Japanese). It is written in TypeScript and runs on Node.js 22 or later (developed on Node 24). The repository's `.webhand/runbooks/` holds its project-scope runbooks.
 
 ```bash
 npm ci
-npm run build && npm link   # webhand コマンドを作業ツリーのビルドに向ける
+npm run build && npm link   # point the webhand command at the working tree's build
 claude --plugin-dir .
 ```
 
-実行記録をリポジトリの `runs/` に残したい場合は、`.claude/settings.local.json` に `{"env": {"WEBHAND_HOME": "<このリポジトリの絶対パス>"}}` を書きます。このときユーザー単位の手順書は `~/.webhand/runbooks/` ではなく、リポジトリの `runbooks/` から読みます。
+To keep run logs in the repository's `runs/`, put `{"env": {"WEBHAND_HOME": "<absolute path to this repository>"}}` in `.claude/settings.local.json`. User-scope runbooks are then read from the repository's `runbooks/` instead of `~/.webhand/runbooks/`.
 
 ```bash
 npm run lint                               # Biome
 npm run typecheck
-npm test                                   # 有料 API は呼びません。Linux の Chrome を使います
-npm run test:coverage                      # カバレッジ（coverage/index.html）
-npm run smoke -- --task hotel_filter       # モデルなしの動作確認
+npm test                                   # no paid APIs; uses Linux Chrome
+npm run test:coverage                      # coverage (coverage/index.html)
+npm run smoke -- --task hotel_filter       # model-free smoke test
 ```
 
-`tests/golden/` は Python 版の出力の記録です。Claude と Jev が読む文字列（`render`、`report`、Jev への state と質問など）が移行の前後で同じであることを確かめます。
+`tests/golden/` records the output of the earlier Python version. It ensures the strings Claude and Jev read (`render`, `report`, Jev's state and questions, and so on) are unchanged across the migration.
 
-公開は `npm publish`（`prepublishOnly` で lint、型チェック、ビルド）です。`package.json` と `.claude-plugin/plugin.json` の版を揃え、スキルの `webhand@0.2` も合わせて更新します。
+Publish with `npm publish` (`prepublishOnly` runs lint, type checks, knip, and the build). Keep the versions in `package.json` and `.claude-plugin/plugin.json` in sync, and update `webhand@0.2` in the skills to match.
 
-## ライセンス
+## License
 
-MIT License（`LICENSE`）。
+MIT License (`LICENSE`).
 
-`assets/snapshot.js`、`src/policies/base.ts`、`src/policies/jev.ts`、`tasks/fixtures/hotel.html` は [jev-ultrafast](https://github.com/browser-use/jev-ultrafast)（MIT）を改変したものです。`THIRD_PARTY_LICENSE_jev-ultrafast.txt` を参照してください。
+`assets/snapshot.js`, `src/policies/base.ts`, `src/policies/jev.ts`, and `tasks/fixtures/hotel.html` are modified from [jev-ultrafast](https://github.com/browser-use/jev-ultrafast) (MIT). See `THIRD_PARTY_LICENSE_jev-ultrafast.txt`.
