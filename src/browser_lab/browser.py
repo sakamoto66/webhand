@@ -45,10 +45,14 @@ RESOLVE_TARGET = """(action => {
   if (!e?.isConnected || e.matches(':disabled') || c.closest(e,'[aria-disabled="true"],[inert]') ||
       !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
   if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
-  const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
-  if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
-  if (!c.hit(e,x,y)) return null;
-  return {x,y};
+  // The center of the whole box first. An inline element that wraps can leave that center between its lines,
+  // so the center of each line box is tried next.
+  for (const r of [e.getBoundingClientRect(), ...e.getClientRects()]) {
+    const x=r.x+r.width/2, y=r.y+r.height/2;
+    if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
+    if (c.hit(e,x,y)) return {x,y};
+  }
+  return null;
 })"""
 SELECT_OPTION = """(action => {
   const e=window.__browserLab.nodes.get(action.node);

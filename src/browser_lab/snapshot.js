@@ -87,7 +87,9 @@
   };
 
   // Slotted nodes belong to their slot, shadow roots to their host.
-  const flatParent = node => node.assignedSlot || node.parentNode?.host || node.parentNode;
+  // A shadow root's host, never an anchor's .host, which is a URL string.
+  const flatParent = node => node.assignedSlot ||
+    (node.parentNode instanceof ShadowRoot ? node.parentNode.host : node.parentNode);
 
   const flatChildren = element => {
     if (element.shadowRoot) return [...element.shadowRoot.childNodes];
@@ -163,6 +165,29 @@
     return null;
   };
 
+  // An element with no interactive tag or role that a script makes clickable: an onclick attribute, a tabindex,
+  // or the outermost element of a pointer cursor. It must have a name and must not be inside or around a
+  // control, which is acted on directly. A label is acted on through its control.
+  // Frames are not observed inside, so they are not acted on either.
+  const NOT_CLICKABLE_TAGS = ['HTML', 'BODY', 'LABEL', 'OPTION', 'OPTGROUP', 'IFRAME', 'FRAME', 'EMBED', 'OBJECT'];
+  const cursorOf = node => node instanceof Element ? getComputedStyle(node).cursor : null;
+  const isClickable = element => {
+    if (NOT_CLICKABLE_TAGS.includes(element.tagName) || element.matches(INTERACTIVE_SELECTOR)) return false;
+    const signal = element.hasAttribute('onclick') || (element.hasAttribute('tabindex') && element.tabIndex >= 0) ||
+      (cursorOf(element) === 'pointer' && cursorOf(flatParent(element)) !== 'pointer');
+    if (!signal) return false;
+    const parent = flatParent(element);
+    if (parent instanceof Element && closestDeep(parent, INTERACTIVE_SELECTOR)) return false;
+    if (element.querySelector(INTERACTIVE_SELECTOR) || element.shadowRoot?.querySelector(INTERACTIVE_SELECTOR)) {
+      return false;
+    }
+    return Boolean(accessibleName(element));
+  };
+
+  // The role an action on element is observed with, or null when it is not acted on.
+  const targetRole = element =>
+    element.matches(INTERACTIVE_SELECTOR) ? roleOf(element) : isClickable(element) ? 'clickable' : null;
+
   const isEditable = (element, role) => !element.readOnly && element.getAttribute('aria-readonly') !== 'true' &&
     (TEXT_ROLES.includes(role) || (role === 'combobox' && ['INPUT', 'TEXTAREA'].includes(element.tagName)));
 
@@ -186,9 +211,13 @@
   };
 
   state.describe = element => {
-    const target = closestDeep(element, INTERACTIVE_SELECTOR);
+    let target = closestDeep(element, INTERACTIVE_SELECTOR);
+    for (let current = element; !target && current instanceof Element; current = flatParent(current)) {
+      if (isClickable(current)) target = current;
+    }
     if (!target) return null;
-    return {role: roleOf(target), label: accessibleName(target) || roleOf(target) || '', element: target};
+    const role = targetRole(target);
+    return {role, label: accessibleName(target) || role || '', element: target};
   };
 
   state.pageKey = () => [...viewportKey(), formFieldsKey()];
@@ -198,7 +227,7 @@
     if (!element?.isConnected || !isVisible(element)) return null;
     const scope = closestDeep(element, GUARD_SCOPE_SELECTOR) || element.parentElement || element.getRootNode().host;
     return [
-      nodeId(element), roleOf(element), accessibleName(element),
+      nodeId(element), targetRole(element), accessibleName(element),
       element.value ?? null, element.checked ?? null, element.selectedIndex ?? null, element.readOnly ?? null,
       element.matches(':disabled'),
       element.getAttribute('aria-disabled'), element.getAttribute('aria-expanded'),
@@ -258,10 +287,10 @@
   // In DOM order. Each action's region is kept aside so the freshness marker does not depend on it.
   const collectActions = () => {
     const actions = [];
-    for (const element of queryAllDeep(INTERACTIVE_SELECTOR)) {
-      if (!isObservableInput(element) || !isVisible(element) || isDisabled(element)) continue;
+    for (const element of walkDeep(document, NodeFilter.SHOW_ELEMENT)) {
+      const role = targetRole(element);
+      if (!role || !isObservableInput(element) || !isVisible(element) || isDisabled(element)) continue;
       const rect = element.getBoundingClientRect();
-      const role = roleOf(element);
       if (!isTarget(element, role, rect)) continue;
       const region = regionOf(element);
       if (!centerInViewport(rect)) {

@@ -79,6 +79,58 @@ def test_open_shadow_dom_is_observed_and_clickable(browser):
     assert browser.evaluate("({...window.__shadowHost.dataset})") == {"saved": "1", "went": "1"}
 
 
+def test_script_clickable_elements_without_a_role_are_observed_once(browser):
+    browser.evaluate(
+        """(() => {
+          const box=document.createElement('div'); document.body.prepend(box);
+          box.innerHTML='<h3 id="area" style="cursor:pointer">Kanto<span>AREA</span></h3>'+
+            '<div style="cursor:pointer" id="card"><a href="#x">Card link</a></div>'+
+            '<span onclick="1">Inline handler</span><div tabindex="0">Focusable</div>'+
+            '<label style="cursor:pointer">Label text</label><p style="cursor:pointer"></p>'+
+            '<iframe tabindex="0" title="Ad"></iframe>'+
+            // An anchor's .host is a URL string, not a shadow host.
+            '<a id="remote" href="https://example.com/x" style="display:block;padding:0">'+
+            '<span style="display:block;height:40px">Remote link</span></a>';
+          box.querySelector('#area').addEventListener('click', () => box.dataset.opened='1');
+          box.querySelector('#remote').addEventListener('click', e => { e.preventDefault(); box.dataset.went='1'; });
+          window.__box=box;
+        })()"""
+    )
+    page = browser.observe()
+    clickable = [a["label"] for a in page["actions"] if a.get("role") == "clickable"]
+    assert clickable == ["Kanto AREA", "Inline handler", "Focusable"]
+    assert [a["label"] for a in page["actions"]].count("Card link") == 1
+    area = next(a for a in page["actions"] if a["label"] == "Kanto AREA")
+    browser.act(area, page)
+    assert browser.evaluate("window.__box.dataset.opened") == "1"
+    page = browser.observe()
+    remote = next(a for a in page["actions"] if a["label"] == "Remote link")
+    assert remote["role"] == "link"
+    browser.act(remote, page)  # The click lands on the span inside the link.
+    assert browser.evaluate("window.__box.dataset.went") == "1"
+
+
+def test_a_wrapped_inline_link_is_clicked_on_one_of_its_lines(browser):
+    browser.evaluate(
+        """(() => {
+          const li=document.createElement('li'); li.style.cssText='list-style:none;width:400px';
+          li.innerHTML='Leading text that fills most of the line <a id="wrapped" href="#w">Short<br>Next</a>';
+          li.querySelector('a').addEventListener('click', e => { e.preventDefault(); li.dataset.went='1'; });
+          document.body.prepend(li); window.__li=li;
+        })()"""
+    )
+    # The link starts at the end of one line and ends at the start of the next, so its box spans the line and
+    # the center of that box falls on the leading text, outside the link.
+    assert browser.evaluate(
+        "(() => { const r=document.getElementById('wrapped').getBoundingClientRect();"
+        " return document.elementFromPoint(r.x+r.width/2, r.y+r.height/2) === window.__li; })()"
+    )
+    page = browser.observe()
+    link = next(a for a in page["actions"] if a["label"].startswith("Short"))
+    browser.act(link, page)
+    assert browser.evaluate("window.__li.dataset.went") == "1"
+
+
 def test_observe_waits_for_content_rendered_after_load(tmp_path):
     page = tmp_path / "late.html"
     page.write_text(
