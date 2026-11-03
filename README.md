@@ -228,6 +228,8 @@ Run `--task` from the repository root. Tasks are loaded directly through Node's 
 
 ## Development
 
+See [DEVELOPMENT.md](DEVELOPMENT.md) for the code layout, rules, tests, and release steps.
+
 This repository is also a research platform (see `docs/research-plan.md` for the experiment design, in Japanese). It is written in TypeScript and runs on Node.js 22 or later (developed on Node 24). The repository's `.webhand/runbooks/` holds its project-scope runbooks.
 
 ```bash

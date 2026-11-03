@@ -228,6 +228,8 @@ skip = ["header", "footer"]
 
 ## 開発
 
+コード構成、規則、テスト、リリース手順は [DEVELOPMENT.ja.md](DEVELOPMENT.ja.md) を参照してください。
+
 このリポジトリは研究基盤も兼ねています（実験設計は `docs/research-plan.md`）。TypeScript で書かれ、Node.js 22 以上で動きます（開発は Node 24）。リポジトリの `.webhand/runbooks/` が、このリポジトリのプロジェクト単位の手順書です。
 
 ```bash
