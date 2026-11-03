@@ -76,3 +76,40 @@ def test_open_shadow_dom_is_observed_and_clickable(browser):
     browser.act(save, page)
     browser.act(go, browser.observe())
     assert browser.evaluate("({...window.__shadowHost.dataset})") == {"saved": "1", "went": "1"}
+
+
+def test_observe_waits_for_content_rendered_after_load(tmp_path):
+    page = tmp_path / "late.html"
+    page.write_text(
+        "<!doctype html><meta charset='utf-8'><body><h1>Shell</h1><script>"
+        "addEventListener('load', () => setTimeout(() => {"
+        "const b=document.createElement('button'); b.textContent='Loaded later'; document.body.append(b);"
+        "}, 100));</script></body>"
+    )
+    instance = Browser(page.as_uri())
+    try:
+        observed = instance.observe()
+    finally:
+        instance.close()
+    assert "Loaded later" in observed["text"]
+    assert any(a["label"] == "Loaded later" for a in observed["actions"])
+
+
+def test_observe_returns_at_the_cap_on_a_page_that_never_settles(tmp_path):
+    import time
+
+    from browser_lab.browser import SETTLE_CAP_MS
+
+    page = tmp_path / "busy.html"
+    page.write_text(
+        "<!doctype html><body><p id='t'>0</p><script>"
+        "setInterval(() => { t.textContent = Date.now(); }, 20);</script></body>"
+    )
+    instance = Browser(page.as_uri())
+    try:
+        started = time.perf_counter()
+        instance.observe()
+        elapsed = time.perf_counter() - started
+    finally:
+        instance.close()
+    assert elapsed < SETTLE_CAP_MS / 1000 + 1.5

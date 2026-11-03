@@ -12,12 +12,25 @@ from .types import Action, MutationUncertain, Page, StalePage
 
 READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
 MARKER = f"(() => {{ const state={READ_STATE}; return state?.marker ?? null; }})()"
-SETTLE = """new Promise(resolve => {
-  let frames = 0;
-  setTimeout(resolve, 50);
-  const tick = () => { if (++frames >= 2) resolve(); else requestAnimationFrame(tick); };
-  requestAnimationFrame(tick);
-})"""
+# Read only once the document has loaded and the DOM has stopped changing, so content rendered by
+# DOMContentLoaded handlers or after an XHR is observed. A page that never goes quiet is read at the cap.
+SETTLE_QUIET_MS = 150
+SETTLE_CAP_MS = 2000
+SETTLE = f"""new Promise(resolve => {{
+  const start = performance.now();
+  let last = start;
+  const observer = new MutationObserver(() => {{ last = performance.now(); }});
+  observer.observe(document, {{subtree: true, childList: true, attributes: true, characterData: true}});
+  const check = () => {{
+    const now = performance.now();
+    if (now - start >= {SETTLE_CAP_MS} ||
+        (document.readyState === 'complete' && now - last >= {SETTLE_QUIET_MS})) {{
+      observer.disconnect();
+      resolve();
+    }} else setTimeout(check, 25);
+  }};
+  check();
+}})"""
 # Node ids are code-owned references to observed elements, never model output.
 RESOLVE_TARGET = """(action => {
   const c=window.__browserLab, e=c?.nodes.get(action.node);
