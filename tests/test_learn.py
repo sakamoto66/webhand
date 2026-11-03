@@ -103,3 +103,27 @@ def test_forged_events_are_ignored(demo):
     play([lambda p: p.evaluate("document.querySelector('button').click()")])
     steps, _ = actions(log)
     assert not any(s.get("label") == "Continue" for s in steps)
+
+
+SHADOW = """<title>Shadow</title><div id="host"></div><script>
+const root=document.getElementById('host').attachShadow({mode:'open'});
+root.innerHTML='<form action="next.html"><label>City <input name="city"></label>'+
+  '<label><input type="checkbox" name="keep"> Keep me</label><button>Continue</button></form>';
+</script>"""
+
+
+def test_changes_inside_open_shadow_dom_are_recorded(demo, tmp_path):
+    play, log = demo
+    (tmp_path / "form.html").write_text(SHADOW)
+
+    def fill(page):
+        page.get_by_label("City").click()
+        page.keyboard.type("Lisbon")
+        page.get_by_label("Keep me").click()
+
+    play([fill, lambda p: p.get_by_role("button").click()])
+    steps, _ = actions(log)
+    seen = [(s["operation"], s["label"], s.get("value")) for s in steps]
+    assert ("fill", "City", "Lisbon") in seen
+    assert ("toggle", "Keep me", None) in seen
+    assert any(s["operation"] == "submit" for s in steps)

@@ -53,3 +53,26 @@ def test_password_values_are_not_observed(browser):
     page = browser.observe()
     assert "hunter2" not in str(page)
     assert all(a["label"] != "Secret" for a in page["actions"])
+
+
+def test_open_shadow_dom_is_observed_and_clickable(browser):
+    browser.evaluate(
+        """(() => {
+          const host=document.createElement('div'); document.body.prepend(host);
+          const root=host.attachShadow({mode:'open'});
+          root.innerHTML='<p>Shadow notice</p><span id="t">Shadow save</span>'+
+            '<button aria-labelledby="t">x</button><slot-host><span>Slotted go</span></slot-host>';
+          const inner=root.querySelector('slot-host').attachShadow({mode:'open'});
+          inner.innerHTML='<button><slot></slot></button>';
+          root.querySelector('button').onclick=()=>host.dataset.saved='1';
+          inner.querySelector('button').onclick=()=>host.dataset.went='1';
+          window.__shadowHost=host;
+        })()"""
+    )
+    page = browser.observe()
+    assert "Shadow notice" in page["text"]
+    save = next(a for a in page["actions"] if a["label"] == "Shadow save")
+    go = next(a for a in page["actions"] if a["label"] == "Slotted go")
+    browser.act(save, page)
+    browser.act(go, browser.observe())
+    assert browser.evaluate("({...window.__shadowHost.dataset})") == {"saved": "1", "went": "1"}

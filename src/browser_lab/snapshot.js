@@ -6,18 +6,42 @@
     const id=cache.ids.get(e); cache.nodes.set(id,e); return id;
   };
   for (const [id,e] of cache.nodes) if (!e.isConnected) cache.nodes.delete(id);
+  // Open shadow roots are walked as part of the page. Closed roots are not reachable from page script.
+  const walk=function*(root,show){
+    const w=document.createTreeWalker(root,show|NodeFilter.SHOW_ELEMENT);
+    for (let n=w.nextNode(); n; n=w.nextNode()) {
+      if (n.nodeType===1 && n.shadowRoot) yield* walk(n.shadowRoot,show);
+      if ((1<<(n.nodeType-1)) & show) yield n;
+    }
+  };
+  const all=sel=>[...walk(document,NodeFilter.SHOW_ELEMENT)].filter(e=>e.matches(sel));
+  const closest=(e,sel)=>{
+    for (let c=e; c; c=c.getRootNode().host) { const found=c.closest(sel); if (found) return found; }
+    return null;
+  };
+  // Flat-tree parent: slotted nodes belong to their slot, shadow roots to their host.
+  const up=n=>n.assignedSlot || n.parentNode?.host || n.parentNode;
+  const kids=e=>e.shadowRoot ? [...e.shadowRoot.childNodes] :
+    e.tagName==='SLOT' && e.assignedNodes().length ? e.assignedNodes({flatten:true}) : [...e.childNodes];
+  cache.closest=closest;
+  cache.hit=(e,x,y)=>{
+    let h=document.elementFromPoint(x,y);
+    while (h?.shadowRoot) { const inner=h.shadowRoot.elementFromPoint(x,y); if (!inner || inner===h) break; h=inner; }
+    for (; h; h=up(h)) if (h===e) return true;
+    return false;
+  };
   const safe = e => !['password','file','hidden'].includes(e.type);
-  const visible = e => !e.closest('[aria-hidden="true"],[inert]') &&
+  const visible = e => !closest(e,'[aria-hidden="true"],[inert]') &&
     e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
   const name = (e,seen=new Set()) => {
     if (!e || seen.has(e)) return '';
     seen.add(e);
     const referenced=(e.getAttribute('aria-labelledby')||'').split(/\s+/)
-      .map(id=>name(document.getElementById(id),seen)).filter(Boolean).join(' ');
+      .map(id=>name(e.getRootNode().getElementById?.(id),seen)).filter(Boolean).join(' ');
     return referenced || e.getAttribute('aria-label') ||
       [...(e.labels||[])].map(l=>name(l,seen)).filter(Boolean).join(' ') ||
       (['button','submit','reset'].includes(e.type) ? e.value : '') || e.getAttribute('alt') ||
-      (e.tagName==='INPUT' ? '' : [...e.childNodes].map(n=>n.nodeType===3 ? n.textContent :
+      (e.tagName==='INPUT' ? '' : kids(e).map(n=>n.nodeType===3 ? n.textContent :
         n.nodeType===1 && n.getAttribute('aria-hidden')!=='true' ? name(n,seen) : '').join(' ').trim()) ||
       e.getAttribute('title') || e.getAttribute('placeholder') || '';
   };
@@ -42,23 +66,24 @@
     return null;
   };
   cache.describe=e=>{
-    const target=e.closest(selector);
+    const target=closest(e,selector);
     return target ? {role:role(target),label:name(target)||role(target)||'',element:target} : null;
   };
   cache.pageKey=()=>[performance.timeOrigin,location.href,scrollX,scrollY,innerWidth,innerHeight,
-    [...document.querySelectorAll('input,textarea,select')].filter(safe)
+    all('input,textarea,select').filter(safe)
       .map(e=>[identity(e),e.value,e.checked,e.selectedIndex,e.disabled,e.readOnly])];
   cache.guard=e=>{
     if (!e?.isConnected || !visible(e)) return null;
-    const scope=e.closest('form,dialog,[role="dialog"],article,li,tr,[role="row"]') || e.parentElement;
+    const scope=closest(e,'form,dialog,[role="dialog"],article,li,tr,[role="row"]') ||
+      e.parentElement || e.getRootNode().host;
     return [identity(e),role(e),name(e),e.value??null,e.checked??null,e.selectedIndex??null,
       e.readOnly??null,e.matches(':disabled'),e.getAttribute('aria-disabled'),
       e.getAttribute('aria-expanded'),e.getAttribute('aria-checked'),e.getAttribute('aria-selected'),
       e.getAttribute('href'),scope?.innerText?.slice(0,6000)||''];
   };
   const actions=[];
-  for (const e of document.querySelectorAll(selector)) {
-    if (!safe(e) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
+  for (const e of all(selector)) {
+    if (!safe(e) || !visible(e) || e.matches(':disabled') || closest(e,'[aria-disabled="true"]')) continue;
     const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, rname=role(e);
     if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
     if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
@@ -83,9 +108,9 @@
       if (editable) actions.push({...base,kind:'click',value,label:'Open '+base.label});
     }
   }
-  const words=[], walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
-  const range=document.createRange(); let node,length=0;
-  while ((node=walker.nextNode()) && length<6000) {
+  const words=[], range=document.createRange(); let length=0;
+  for (const node of walk(document.body,NodeFilter.SHOW_TEXT)) {
+    if (length>=6000) break;
     const value=node.textContent.trim(), parent=node.parentElement;
     if (!value || !parent || parent.closest('script,style,noscript,template') || !visible(parent)) continue;
     range.selectNodeContents(node); const r=range.getBoundingClientRect();

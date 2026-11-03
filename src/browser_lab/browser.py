@@ -20,13 +20,13 @@ SETTLE = """new Promise(resolve => {
 })"""
 # Node ids are code-owned references to observed elements, never model output.
 RESOLVE_TARGET = """(action => {
-  const e=window.__browserLab?.nodes.get(action.node);
-  if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]') ||
+  const c=window.__browserLab, e=c?.nodes.get(action.node);
+  if (!e?.isConnected || e.matches(':disabled') || c.closest(e,'[aria-disabled="true"],[inert]') ||
       !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
   if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
   const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
   if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
-  if (!e.contains(document.elementFromPoint(x,y))) return null;
+  if (!c.hit(e,x,y)) return null;
   return {x,y};
 })"""
 SELECT_OPTION = """(action => {
