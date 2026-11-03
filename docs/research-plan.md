@@ -121,7 +121,7 @@ TypeScript 版で `hotel_filter` を実行すると、Jev は検索と絞り込�
 
 Chrome の違いと移行は原因ではありません。最後に成功した `runs/20261103T144822/` は `e63a7ca` に未コミットの変更を足した状態で、その後 `043e075` のコミットまでに `offscreen` と `NOT_VISIBLE`（上の「画面外の要素」）が足されていました。Jev への1回目の入力は 4,137 から 4,644 トークンに増えています。`hotel_reserve` でしか確かめていなかった変更です。
 
-そこで、実験用ブランチ `exp/offscreen-notvisible` で、どちらか一方を外して各3回実行しました（`run_start.experiment` で条件を見分けます）。
+そこで、実験用ブランチ（現在はタグ `exp-offscreen-notvisible`、bbe2ec3 の切り替えスイッチ）で、どちらか一方を外して各3回実行しました（`run_start.experiment` で条件を見分けます）。
 
 | 条件 | 外したもの | `verified` | 1回目の入力 |
 | --- | --- | --- | --- |
