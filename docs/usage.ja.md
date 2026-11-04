@@ -23,11 +23,11 @@ webhand は、Claude Code のスキルから CLI を呼び出して使います�
    # 使うモデルを変えるとき: export TYPESAFE_MODEL=...
    ```
 
-3. 動作を確認します。CLI はインストール不要で、スキルは `npx -y webhand@0.2` を使います。`npm i -g webhand` で入れておくと、スキルは `webhand` を直接使い、起動が速くなります。
+3. 動作を確認します。CLI はインストール不要で、スキルは `npx -y webhand@0.3` を使います。`npm i -g webhand` で入れておくと、スキルは `webhand` を直接使い、起動が速くなります。
 
    ```bash
-   npx -y webhand@0.2 --version
-   npx -y webhand@0.2 catalog
+   npx -y webhand@0.3 --version
+   npx -y webhand@0.3 catalog
    ```
 
 必要なもの: Node.js 22 以上、Google Chrome（Linux、または WSL から Windows 側）。
@@ -114,7 +114,7 @@ Claude は次の順に進めます。
 
 ## CLI の使い方
 
-インストールしていない場合は、`webhand` を `npx -y webhand@0.2` に読み替えてください。各コマンドの詳細は `webhand COMMAND --help` で確認できます。
+インストールしていない場合は、`webhand` を `npx -y webhand@0.3` に読み替えてください。各コマンドの詳細は `webhand COMMAND --help` で確認できます。
 
 ### コマンド一覧
 
@@ -284,7 +284,7 @@ networkingMode=mirrored
 | 症状 | 対処 |
 | --- | --- |
 | `TYPESAFE_API_KEY` が未設定と言われる | シェルの設定ファイルで環境変数を設定し、Claude Code を起動し直す |
-| このリポジトリ内で `npx -y webhand@0.2` が `webhand: not found` | `npm run build && npm link` するか、`npx -y webhand@latest` を使う |
+| このリポジトリ内で `npx -y webhand@0.3` が `webhand: not found` | `npm run build && npm link` するか、`npx -y webhand@latest` を使う |
 | draft の手順書が使えない | 試行のときだけ `--allow-draft` を付ける。通常実行は承認後 |
 | 必要な部分がページの観測から切れている | 出力の `REGIONS` で `0/N` や `(skip)` を確認し、`--focus` / `--skip` を指定する |
 | 同じ種類の失敗が続く | `/webhand-learn <log>` でその実行から学習させ、次の計画に反映する |

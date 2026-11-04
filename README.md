@@ -35,10 +35,10 @@ English | [日本語](README.ja.md)
    /webhand On HOTEL PLANISPHERE, book 2 nights for 2 people starting next month's first Saturday
    ```
 
-Requirements: Node.js 22 or later and Google Chrome (on Linux, or the Windows side from WSL; see [Using Windows Chrome from WSL](docs/reference.md#using-windows-chrome-from-wsl)). The CLI needs no installation: the skills run it with `npx -y webhand@0.2 ...`. For faster startup, install it globally with `npm i -g webhand`; the skills then use `webhand ...`.
+Requirements: Node.js 22 or later and Google Chrome (on Linux, or the Windows side from WSL; see [Using Windows Chrome from WSL](docs/reference.md#using-windows-chrome-from-wsl)). The CLI needs no installation: the skills run it with `npx -y webhand@0.3 ...`. For faster startup, install it globally with `npm i -g webhand`; the skills then use `webhand ...`.
 
 ```bash
-npx -y webhand@0.2 catalog   # smoke check
+npx -y webhand@0.3 catalog   # smoke check
 ```
 
 ## How it works

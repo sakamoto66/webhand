@@ -2,12 +2,12 @@
 name: webhand-learn
 description: Teach webhand a service by recording a person's demonstration, by reading the service's source code, or from the log of an earlier webhand run, then write its service information and a runbook for review. Use when asked to learn, record, or document how to operate a web service with webhand.
 argument-hint: "--name SERVICE/PROCEDURE --url URL, a path to the service's source code, or a run log"
-allowed-tools: Bash(webhand:*), Bash(npx -y webhand@0.2:*), Read, Write, Edit, Grep, Glob
+allowed-tools: Bash(webhand:*), Bash(npx -y webhand@0.3:*), Read, Write, Edit, Grep, Glob
 ---
 
 # webhand-learn
 
-You turn a demonstration, source code, or a run log into what the `webhand` skill plans from: service information at `RUNBOOKS/<service>/service.toml`, and a runbook at `RUNBOOKS/<service>/<name>.toml`. Claude reads both through `webhand catalog`; Jev receives the service facts and the runbook's steps and hints on every decision. Use only the `webhand` command: run `webhand --version`, and if that fails, use `npx -y webhand@0.2` in its place for every command below (same arguments).
+You turn a demonstration, source code, or a run log into what the `webhand` skill plans from: service information at `RUNBOOKS/<service>/service.toml`, and a runbook at `RUNBOOKS/<service>/<name>.toml`. Claude reads both through `webhand catalog`; Jev receives the service facts and the runbook's steps and hints on every decision. Use only the `webhand` command: run `webhand --version`, and if that fails, use `npx -y webhand@0.3` in its place for every command below (same arguments).
 
 `RUNBOOKS` is one of two folders, printed on the first two lines of `webhand catalog`:
 

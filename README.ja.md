@@ -35,10 +35,10 @@
    /webhand HOTEL PLANISPHERE で来月の土曜から2泊、2名で予約して
    ```
 
-必要なもの: Node.js 22 以上と Google Chrome（Linux、または WSL から Windows 側。[WSL で Windows 側の Chrome を使う](docs/reference.ja.md#wsl-で-windows-側の-chrome-を使う)を参照）。CLI はインストール不要で、スキルが `npx -y webhand@0.2 ...` で実行します。毎回の起動を速くしたい場合は `npm i -g webhand` で入れておくと、スキルは `webhand ...` を使います。
+必要なもの: Node.js 22 以上と Google Chrome（Linux、または WSL から Windows 側。[WSL で Windows 側の Chrome を使う](docs/reference.ja.md#wsl-で-windows-側の-chrome-を使う)を参照）。CLI はインストール不要で、スキルが `npx -y webhand@0.3 ...` で実行します。毎回の起動を速くしたい場合は `npm i -g webhand` で入れておくと、スキルは `webhand ...` を使います。
 
 ```bash
-npx -y webhand@0.2 catalog   # 動作確認
+npx -y webhand@0.3 catalog   # 動作確認
 ```
 
 ## しくみ
