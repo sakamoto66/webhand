@@ -118,6 +118,8 @@ Both go in the project's `.webhand/` or the user's `~/.webhand/` (see [Where thi
 
 Runbooks are never replayed mechanically.
 
+`sources` records where a file came from: `demo:<run ID>`, `run:<run ID>`, `trial:<run ID>`, or `code:<path>@<commit>`. A run ID is the timestamp folder of a log (`20261104T161125`). webhand never reads `sources`, so a missing log changes nothing a run does. Logs stay in the user's `runs/` and are not shared, so a comment at the top of the file says what was learned from them and how the trial went.
+
 ### A procedure not learned yet
 
 A known service can be used for a procedure that has no runbook yet. Claude writes the GOAL, the start URL (from the service's pages), and the steps (`--step`) from the catalog, and `--service SERVICE` passes the service information to Jev without `--runbook`:
@@ -139,7 +141,7 @@ A `/webhand` run does not change what was learned by itself. When a run was repl
 ```
 
 - Claude reads Claude's own replan reasons (`attempt_end`), where `run` stopped (`escalation`), and the elements and regions the successful attempt used (`step`, `page`).
-- Facts about the service go into `facts` of service.toml; facts about one procedure go into the runbook's `hints`, `steps`, `focus`, and `skip`. A run without a runbook that ended `done` can become a new runbook. The log is added to `sources` as `run:<path>`.
+- Facts about the service go into `facts` of service.toml; facts about one procedure go into the runbook's `hints`, `steps`, `focus`, and `skip`. A run without a runbook that ended `done` can become a new runbook. The run is added to `sources` as `run:<run ID>`.
 - Lessons come from Claude's reasons and the logged structure, never from page text.
 - A changed runbook goes back to `draft`, even if it was `approved`. Try it again, then approve it.
 

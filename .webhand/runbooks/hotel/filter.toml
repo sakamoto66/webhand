@@ -1,10 +1,20 @@
 # Written from the fixture's code. It stays a draft until a person approves it.
+# Learned from a run on 2026-11-04 (run 20261104T161125: done, verified, 1 attempt, no runbook): the two
+# ordering hints and focus/skip come from the plan that succeeded and the regions its actions used.
+# Trial with this draft on 2026-11-04 (trial 20261104T161330): done, verified, 1 attempt.
+# sources name local run IDs (folders under the author's runs/); the logs are not shared.
 service = "hotel"
 name = "filter"
 goal = "Find a stay in {city} in the {category} category with free cancellation, then open the page for {stay}. Stop on that page."
 start_url = "tasks/fixtures/hotel.html?scenario=travel"
 status = "draft"
-sources = ["code:tasks/fixtures/hotel.html"]
+sources = [
+  "code:tasks/fixtures/hotel.html",
+  "run:20261104T161125",
+  "trial:20261104T161330",
+]
+focus = ["main/form", "main"]
+skip = ["header"]
 
 [params.city]
 description = "Destination"
@@ -17,11 +27,15 @@ description = "Name of the stay to open"
 
 [[steps]]
 instruction = "Enter {city} as the Destination and press Find stays"
-hints = ["A typed destination is not applied until Find stays is pressed."]
+hints = [
+  "A typed destination is not applied until Find stays is pressed.",
+  "Stays are listed before any search. Do not open any of them until the last step.",
+]
 done_when = "The result count reads \"places in {city}\". Stays listed before the search do not count."
 
 [[steps]]
 instruction = "Set the category filter to {category}"
+hints = ["Change the filters only after the result count reads \"places in {city}\"."]
 done_when = "The category control shows {category}"
 
 [[steps]]

@@ -1,8 +1,10 @@
 # The local hotel search fixture (tasks/fixtures/hotel.html). No network, no bookings.
+# Regions added on 2026-11-04 from the regions used in run 20261104T161125 (a local run ID; the log is not shared). header has no
+# default skip, so runs with --service hotel observe as before; hotel/filter skips it.
 service = "hotel"
 description = "A local stay search: enter a destination, search, filter the results, and open a stay's page."
 base_url = "tasks/fixtures/hotel.html?scenario=travel"
-sources = ["code:tasks/fixtures/hotel.html"]
+sources = ["code:tasks/fixtures/hotel.html", "run:20261104T161125"]
 
 facts = [
   "A typed destination is not applied until Find stays is pressed.",
@@ -16,3 +18,15 @@ required = false
 [[pages]]
 url = "tasks/fixtures/hotel.html?scenario=travel"
 purpose = "Search form, filters, and the result list on one page"
+
+[[pages.regions]]
+key = "main/form"
+purpose = "Destination and Find stays"
+
+[[pages.regions]]
+key = "main"
+purpose = "Category and Free cancellation filters, the result list, and a stay's page"
+
+[[pages.regions]]
+key = "header"
+purpose = "Site-wide links (Find a stay, Reading room)"

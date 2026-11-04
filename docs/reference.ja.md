@@ -118,6 +118,8 @@ networkingMode=mirrored
 
 手順書は機械的に再生しません。
 
+`sources` はファイルの出どころの記録です。`demo:<実行 ID>`、`run:<実行 ID>`、`trial:<実行 ID>`、`code:<パス>@<commit>` と書きます。実行 ID はログのタイムスタンプのフォルダー名（`20261104T161125`）です。webhand は `sources` を読まないので、ログが手元になくても実行の動きは変わりません。ログはユーザー側の `runs/` にだけあり共有されないため、何を学んだかと試行の結果は、ファイル冒頭のコメントに書きます。
+
 ### まだ学習していない手順
 
 学習済みのサービスであれば、手順書のない手順も実行できます。Claude が catalog から GOAL、開始 URL（サービスのページ一覧から選ぶ）、手順（`--step`）を書きます。`--runbook` がなくても、`--service SERVICE` でサービス情報が Jev に渡ります。
@@ -139,7 +141,7 @@ webhand start --goal "..." --url "..." --step "..." --service myservice --sessio
 ```
 
 - Claude は、自分が書いた見直しの理由（`attempt_end`）、`run` が止まった理由（`escalation`）、成功した試行で操作した要素と領域（`step`、`page`）を読みます。
-- サービスの性質は service.toml の `facts` に、ひとつの手順に関することは手順書の `hints`、`steps`、`focus`、`skip` に書きます。手順書なしで `done` になった実行からは、新しい手順書を作れます。ログは `run:<パス>` として `sources` に加えます。
+- サービスの性質は service.toml の `facts` に、ひとつの手順に関することは手順書の `hints`、`steps`、`focus`、`skip` に書きます。手順書なしで `done` になった実行からは、新しい手順書を作れます。その実行は `run:<実行 ID>` として `sources` に加えます。
 - 根拠にするのは Claude の理由とログの構造だけです。ページ本文は使いません。
 - 変えた手順書は、`approved` だったものも `draft` に戻ります。試行してから承認してください。
 
