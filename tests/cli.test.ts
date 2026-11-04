@@ -73,6 +73,17 @@ test("Jev runs to the goal in one call and verification passes", async () => {
   expect(end.attempts).toBe(1);
   expect(end.providers.typesafe.calls).toBe(6);
   expect(end.handoffs).toBeGreaterThan(0);
+  // The run log keeps what learning needs, without the typed text.
+  const steps = events().filter((e) => e.type === "step");
+  expect(steps[0]).toMatchObject({ value: "Destination", text_chars: 6 });
+  expect("text" in steps[0]).toBe(false);
+  expect(steps.every((s) => typeof s.region === "string")).toBe(true);
+  expect(steps[0].url).toContain("scenario=%3Credacted%3E");
+  const pages = events().filter((e) => e.type === "page");
+  expect(pages.length).toBeGreaterThan(1);
+  expect(pages[0].regions.some((r: Record<string, unknown>) => "shown_actions" in r)).toBe(true);
+  expect(JSON.stringify(pages)).not.toContain("Lisbon");
+  expect([end.service, end.runbook]).toEqual([null, null]);
   expect(end.handoff_chars).toBeGreaterThan(0);
 });
 

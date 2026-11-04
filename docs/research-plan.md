@@ -48,6 +48,8 @@ view が空のとき、`text` と `actions` が変更前と同じであること
 
 `hotel_reserve` を承認済みの `hotel-site/reserve`（digest `b2522df9fb85233a`）、同じパラメータ、`--max-attempts 1`、`--chrome linux`、`--session new` で各1回実行しました。変更前は HEAD（`499a051`）の worktree、要約ありは作業ツリーで、view は空です。Claude は `act` で介入せず、結果の確認と `finish` だけをしました。各1回の動作確認で、結論の根拠にはなりません。
 
+2026-11-04 に手順書から `sources`（実演と試行のログのパス）と日付つきの来歴コメントを外したため、`hotel-site/reserve` の digest は `e9d02d1d511d1ea8` に変わりました（途中の版 `6e7811d250fc5543` は実行に使っていません）。変えたのは `sources` とコメントだけで、goal、steps、hints、params など Jev と Claude に渡る内容は同じです。この前後の実行を比べるときは、digest の違いをこの書き換えとして扱います。
+
 | 項目 | 変更前 | 要約あり（view なし） |
 | --- | --- | --- |
 | `verified` | True | True |

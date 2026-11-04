@@ -528,7 +528,12 @@
   }
   chosen = chosen.slice(0, MAX_ACTIONS);
   const omitted_actions = actions.length - chosen.length;
-  for (const action of chosen) actionRegions.get(action).shown_actions++;
+  // The region key goes on the action for the run log only; the marker above was taken without it.
+  for (const action of chosen) {
+    const region = actionRegions.get(action);
+    region.shown_actions++;
+    action.region = region.key;
+  }
   chosen.forEach((action, index) => action.id = 'e' + (index + 1));
   if (scrollY + innerHeight < height - 2) {
     chosen.push({id: 'scroll_down', kind: 'scroll', label: 'Scroll down', delta: SCROLL_STEP});

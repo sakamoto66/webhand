@@ -98,7 +98,7 @@ networkingMode=mirrored
 
 ## 学習モード
 
-人の操作、またはサービスのソースコードから、次の2種類のファイルを作ります。
+人の操作、サービスのソースコード、または過去の実行ログから、次の2種類のファイルを作ります。
 
 | ファイル | 内容 | 使われ方 |
 | --- | --- | --- |
@@ -117,6 +117,33 @@ networkingMode=mirrored
 4. ユーザーが内容を確認し、`status = "approved"` にします。
 
 手順書は機械的に再生しません。
+
+`sources` は任意の欄で、webhand は読みません。書くのは、誰でもたどれる参照（`code:<パス>@<commit>` など）だけです。実演、実行、試行は書きません。それらのログはユーザー側の `runs/` にしかないためです。実行ログには手順書の `digest` が残る（`run_start` と `run_end`）ので、ある版の手順書を使った実行はログから探せます。ファイルを変えるのは、学習した内容が変わるときと承認するときだけで、試行を記録するためには変えません。何を学んだかはコミットメッセージに書きます。
+
+### まだ学習していない手順
+
+学習済みのサービスであれば、手順書のない手順も実行できます。Claude が catalog から GOAL、開始 URL（サービスのページ一覧から選ぶ）、手順（`--step`）を書きます。`--runbook` がなくても、`--service SERVICE` でサービス情報が Jev に渡ります。
+
+```text
+webhand start --goal "..." --url "..." --step "..." --service myservice --session new
+```
+
+- そのまま効くもの: サービスの `facts`、`default = "skip"` の領域。
+- 使えないもの: 手順書だけが持つ `hints`、`done_when`、`focus`。その分 Claude の計画に頼るため、計画の見直しが増えることがあります。
+- 次回も使うなら、その実行から学習させます（次の節）。`draft` の手順書になります。
+
+### 実行から学ぶ
+
+`/webhand` の実行だけでは、学習済みの内容は変わりません。計画を見直した、`blocked` で終わった、手順書なしで `done` になった実行では、Claude がログの場所を伝えます。そのログから学習させられます。
+
+```text
+/webhand-learn ~/.webhand/runs/<timestamp>/adhoc.jsonl
+```
+
+- Claude は、自分が書いた見直しの理由（`attempt_end`）、`run` が止まった理由（`escalation`）、成功した試行で操作した要素と領域（`step`、`page`）を読みます。
+- サービスの性質は service.toml の `facts` に、ひとつの手順に関することは手順書の `hints`、`steps`、`focus`、`skip` に書きます。手順書なしで `done` になった実行からは、新しい手順書を作れます。
+- 根拠にするのは Claude の理由とログの構造だけです。ページ本文は使いません。
+- 変えた手順書は、`approved` だったものも `draft` に戻ります。試行してから承認してください。
 
 記録の扱い:
 
@@ -169,12 +196,13 @@ skip = ["header", "footer"]
 | `run_start` | 目標、Chrome（linux / windows）、セッションの種類、git commit、手順書、サービス |
 | `plan` | 試行ごとの手順、入力値のラベル、その出所（`claude` / `runbook`）、`restart` |
 | `call` | Jev の呼び出しごとのトークンと遅延 |
-| `step` / `step_result` | 実行した操作、試行番号、判断者、確信度、ページの変化 |
+| `step` / `step_result` | 実行した操作、その領域、入力した値のラベル（値そのものは残さない）と `text_chars`、試行番号、判断者、確信度、ページの変化。URL のクエリ値は伏せる |
+| `page` | 開始時とページが変わるたびの領域の要約（キーと件数だけ。本文は入れない） |
 | `escalation` | `run` が Claude に返した結果 |
 | `human_step` / `values` | 人の手順の依頼と完了、追加された入力値のラベル |
 | `attempt_end` | 試行の結果と、Claude が書いた見直しの理由 |
 | `handoff` | Claude が読む CLI 出力の文字数 |
-| `run_end` | 自己申告の状態、独立検証の結果、試行回数と試行ごとの結果、役割ごとの集計 |
+| `run_end` | 自己申告の状態と Claude の `reason`、サービス、手順書、独立検証の結果、試行回数と試行ごとの結果、役割ごとの集計 |
 
 成功判定は `run_end.verified` です。`status=done` は申告にすぎません。Claude Code のトークン数は取得しないため、`handoffs`（Claude に戻した回数）と `handoff_chars`（読ませた文字数）を代理指標にします。
 

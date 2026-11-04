@@ -1,5 +1,7 @@
 # webhand 利用ガイド（スキルと CLI）
 
+[English](usage.md) | 日本語
+
 webhand は、Claude Code のスキルから CLI を呼び出して使います。普段はスキルだけを使い、CLI は Claude が実行します。CLI を直接使うのは、保存プロファイルの管理、デバッグ、研究用の実行のときです。
 
 - 背景と全体像: [README.ja.md](../README.ja.md)
@@ -47,10 +49,11 @@ webhand は、Claude Code のスキルから CLI を呼び出して使います�
 
 ```mermaid
 flowchart LR
-  L["/webhand-learn<br>記録またはソースから学習"] --> D["下書き（draft）"]
+  L["/webhand-learn<br>記録、ソース、実行ログから学習"] --> D["下書き（draft）"]
   D --> T["/webhand で試行<br>--allow-draft"]
   T --> A["ユーザーが承認<br>status = approved"]
   A --> R["/webhand で通常実行"]
+  R -.->|見直しあり、手順書なし| L
 ```
 
 ### `/webhand` — 用事を頼む
@@ -72,21 +75,29 @@ Claude は次の順に進めます。
    - 値を聞かれる（`NEEDS_VALUE`）
    - Chrome のウィンドウでログインや CAPTCHA を頼まれる（`NEEDS_HUMAN`）。終わったら Claude に伝えます。
 4. **見直し**: GOAL に届かなければ、Claude が原因を書いて計画を見直し、再挑戦します（既定で最大3回）。
-5. **終了**: 最後に `status`、`attempts`、ログのパスが1行で報告されます。`status=done` は Claude の申告で、成功の証拠ではありません。結果は報告されたページで確かめてください。
+5. **終了**: 最後に `status`、`attempts`、ログのパスが1行で報告されます。`status=done` は Claude の申告で、成功の証拠ではありません。結果は報告されたページで確かめてください。計画を見直した、`blocked` で終わった、手順書なしで `done` になった実行では、その実行から学習できることも伝えられます（次の節）。
+
+#### まだ学習していない手順
+
+学習済みのサービスであれば、手順書のない手順も頼めます。Claude がサービス情報から手順を書き、Jev にはサービスの `facts` が渡り、`default = "skip"` の領域も外されます。手順書だけが持つ `hints`、`done_when`、`focus` は使えないため、計画の見直しが増えることがあります。次回も使うなら、その実行から学習させます。
 
 ### `/webhand-learn` — サービスを学習する
 
 ```text
 /webhand-learn --name myservice/search --url https://example.com
-/webhand-learn ./path/to/service-source   # ソースコードから学習
+/webhand-learn ./path/to/service-source                  # ソースコードから学習
+/webhand-learn ~/.webhand/runs/<timestamp>/adhoc.jsonl   # 過去の実行から学習
 ```
 
 1. **集める**
    - **人の操作から**: Chrome が開くので、普段どおり操作し、終わったらウィンドウを閉じます。ログインは Chrome に直接入力します。ログイン済みの状態で見せるときは、保存プロファイルを使うよう伝えます。
    - **ソースコードから**: Claude がルート、フォーム、表示ラベルを読みます。
+   - **実行から**: 過去の `/webhand` の実行ログを読みます。読むのは、Claude が書いた見直しの理由、実行が止まった理由、成功した試行で操作した要素と領域です。ページ本文は根拠にしません。
 2. **下書き**: Claude が次の2つを `status = "draft"` で書きます。
    - `runbooks/<service>/service.toml`: サービスの説明、ログインの要否、ページと領域、Jev 向けの事実
    - `runbooks/<service>/<name>.toml`: 手順書（goal、params、steps、hints、done_when、focus、skip）
+
+   実行から変えた手順書は、`approved` だったものも `draft` に戻ります。
 3. **試行**: `/webhand` で下書きを試し、結果から手順書を直します。
 4. **承認**: 内容と試行結果を確認し、問題なければ承認を伝えます。`approved` にするのはユーザーの承認後だけです。
 
@@ -126,7 +137,7 @@ webhand catalog
 webhand start --goal "..." --url "https://..." --step "..." --value "氏名=..." --session new
 webhand run
 # 結果に応じて run --value / run --human-done / replan / act
-webhand finish --status done
+webhand finish --status done --reason "..."
 ```
 
 `start` から `finish` までが1回の実行です。`finish` は失敗したときも必ず1回実行します。
@@ -139,7 +150,7 @@ webhand finish --status done
 | `--url U` | 開始 URL |
 | `--step S`（複数可） | 手順。`"[person] ..."` は人が行う手順（`--headed` が必要） |
 | `--value LABEL=VALUE`（複数可） | Jev が入力してよい値 |
-| `--service NAME` | Jev に渡すサービス情報（例: `hotel-site`） |
+| `--service NAME` | Jev に渡すサービス情報（例: `hotel-site`）。手順書がなくても使える |
 | `--runbook NAME` | 手順書（例: `hotel/filter`）。GOAL、開始 URL、手順が既定値になる |
 | `--param KEY=VALUE`（複数可） | 手順書のパラメータ。入力値として Jev に渡る |
 | `--allow-draft` | 未承認（draft）の手順書を試行する |
@@ -209,7 +220,7 @@ webhand act SCROLL_DOWN                 # SCROLL_UP、WAIT も可
 webhand finish --status done|blocked|budget|error|abandoned [--reason R]
 ```
 
-ログを書いて Chrome を閉じます。`done` は自己申告で、成功の証拠ではありません。`run_end.verified` は独立検証がないため `null` になります（研究用タスクの独立検証は研究用リポジトリの `/webhand-research` でだけ行います。`DEVELOPMENT.ja.md` を参照）。
+ログを書いて Chrome を閉じます。`--reason` には、`done` なら目で確認した証拠を、それ以外なら終えた理由を書きます。`done` は自己申告で、成功の証拠ではありません。`run_end.verified` は独立検証がないため `null` になります（研究用タスクの独立検証は研究用リポジトリの `/webhand-research` でだけ行います。`DEVELOPMENT.ja.md` を参照）。
 
 ### `learn`
 
@@ -246,7 +257,7 @@ webhand profile delete work
 | --- | --- |
 | `.webhand/runbooks/`（プロジェクト） | プロジェクトのサービス情報と手順書。同じ名前ならユーザー側より優先 |
 | `~/.webhand/runbooks/`（ユーザー） | どのプロジェクトでも使うサービス情報と手順書 |
-| `~/.webhand/runs/` | 実行と学習の記録（JSONL、ページ本文を含む） |
+| `~/.webhand/runs/` | 実行と学習の記録（JSONL）。学習の記録はページ本文を含む。実行ログには入力値ではなく値のラベルを残す |
 | `~/.webhand/state/` | 実行中のセッションと保存プロファイル |
 
 | 環境変数 | 内容 |
@@ -276,3 +287,4 @@ networkingMode=mirrored
 | このリポジトリ内で `npx -y webhand@0.2` が `webhand: not found` | `npm run build && npm link` するか、`npx -y webhand@latest` を使う |
 | draft の手順書が使えない | 試行のときだけ `--allow-draft` を付ける。通常実行は承認後 |
 | 必要な部分がページの観測から切れている | 出力の `REGIONS` で `0/N` や `(skip)` を確認し、`--focus` / `--skip` を指定する |
+| 同じ種類の失敗が続く | `/webhand-learn <log>` でその実行から学習させ、次の計画に反映する |

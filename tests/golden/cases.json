@@ -82,7 +82,7 @@
     "scope": "project",
     "service": "hotel",
     "status": "draft",
-    "digest": "f8671469aef121e1",
+    "digest": "21a138ee2b5973d9",
     "goal": "Find a stay in Lisbon in the Design category with free cancellation, then open the page for Casa Flora. Stop on that page.",
     "start_url": "ROOT/tasks/fixtures/hotel.html?scenario=travel",
     "steps": [
@@ -90,14 +90,17 @@
         "actor": "jev",
         "instruction": "Enter Lisbon as the Destination and press Find stays",
         "hints": [
-          "A typed destination is not applied until Find stays is pressed."
+          "A typed destination is not applied until Find stays is pressed.",
+          "Stays are listed before any search. Do not open any of them until the last step."
         ],
         "done_when": "The result count reads \"places in Lisbon\". Stays listed before the search do not count."
       },
       {
         "actor": "jev",
         "instruction": "Set the category filter to Design",
-        "hints": [],
+        "hints": [
+          "Change the filters only after the result count reads \"places in Lisbon\"."
+        ],
         "done_when": "The category control shows Design"
       },
       {
@@ -115,8 +118,13 @@
         "done_when": "The page heading is Casa Flora"
       }
     ],
-    "focus": [],
-    "skip": []
+    "focus": [
+      "main/form",
+      "main"
+    ],
+    "skip": [
+      "header"
+    ]
   },
   "catalog": [
     {
@@ -133,7 +141,23 @@
           {
             "url": "tasks/fixtures/hotel.html?scenario=travel",
             "purpose": "Search form, filters, and the result list on one page",
-            "regions": []
+            "regions": [
+              {
+                "key": "main/form",
+                "purpose": "Destination and Find stays",
+                "default": null
+              },
+              {
+                "key": "main",
+                "purpose": "Category and Free cancellation filters, the result list, and a stay's page",
+                "default": null
+              },
+              {
+                "key": "header",
+                "purpose": "Site-wide links (Find a stay, Reading room)",
+                "default": null
+              }
+            ]
           }
         ],
         "facts": [
@@ -156,8 +180,13 @@
             "stay": "Name of the stay to open"
           },
           "human_steps": 0,
-          "focus": [],
-          "skip": []
+          "focus": [
+            "main/form",
+            "main"
+          ],
+          "skip": [
+            "header"
+          ]
         }
       ]
     },

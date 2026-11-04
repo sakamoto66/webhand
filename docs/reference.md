@@ -98,7 +98,7 @@ Prefix a step with `[person]` to make it a step a human performs (requires `--he
 
 ## Learning mode
 
-From a human demonstration or the service's source code, webhand produces two kinds of files:
+From a human demonstration, the service's source code, or the log of an earlier run, webhand produces two kinds of files:
 
 | File | Contents | How it is used |
 | --- | --- | --- |
@@ -117,6 +117,33 @@ Both go in the project's `.webhand/` or the user's `~/.webhand/` (see [Where thi
 4. You review the content and set `status = "approved"`.
 
 Runbooks are never replayed mechanically.
+
+`sources` is optional and never read by webhand. It holds only references anyone can follow, such as `code:<path>@<commit>`; demonstrations, runs, and trials are not listed, because their logs stay in the user's `runs/`. Every run log records the runbook's `digest` (`run_start` and `run_end`), so the runs of one version are found from the logs. The files change only when what was learned changes or a runbook is approved, not to record a trial; what was learned goes in the commit message.
+
+### A procedure not learned yet
+
+A known service can be used for a procedure that has no runbook yet. Claude writes the GOAL, the start URL (from the service's pages), and the steps (`--step`) from the catalog, and `--service SERVICE` passes the service information to Jev without `--runbook`:
+
+```text
+webhand start --goal "..." --url "..." --step "..." --service myservice --session new
+```
+
+- Used as usual: the service's `facts`, and its regions with `default = "skip"`.
+- Not available: what only a runbook holds (`hints`, `done_when`, `focus`). The run relies more on Claude's plan and may need more replans.
+- To reuse the procedure, learn it from the run (below); it becomes a `draft` runbook.
+
+### Learning from a run
+
+A `/webhand` run does not change what was learned by itself. When a run was replanned, ended `blocked`, or ended `done` without a runbook, Claude points you to the log, and you can teach webhand from it:
+
+```text
+/webhand-learn ~/.webhand/runs/<timestamp>/adhoc.jsonl
+```
+
+- Claude reads Claude's own replan reasons (`attempt_end`), where `run` stopped (`escalation`), and the elements and regions the successful attempt used (`step`, `page`).
+- Facts about the service go into `facts` of service.toml; facts about one procedure go into the runbook's `hints`, `steps`, `focus`, and `skip`. A run without a runbook that ended `done` can become a new runbook.
+- Lessons come from Claude's reasons and the logged structure, never from page text.
+- A changed runbook goes back to `draft`, even if it was `approved`. Try it again, then approve it.
 
 How recordings are handled:
 
@@ -169,12 +196,13 @@ Logs are written as JSONL to `runs/<timestamp>/` in the user folder (`~/.webhand
 | `run_start` | Goal, Chrome (linux / windows), session kind, git commit, runbook, service |
 | `plan` | Steps per attempt, input value labels and their source (`claude` / `runbook`), `restart` |
 | `call` | Tokens and latency of each Jev call |
-| `step` / `step_result` | The action taken, attempt number, decider, confidence, page change |
+| `step` / `step_result` | The action taken, its region, the label of the value typed (never the text) and `text_chars`, attempt number, decider, confidence, page change. URL query values are masked |
+| `page` | The region outline at start and after each page change (keys and counts only, no page text) |
 | `escalation` | The result `run` returned to Claude |
 | `human_step` / `values` | Requests and completions of human steps, labels of added input values |
 | `attempt_end` | Outcome of the attempt and Claude's reason for replanning |
 | `handoff` | Number of characters of CLI output Claude reads |
-| `run_end` | Self-reported status, independent verification result, attempt count and per-attempt outcomes, per-role totals |
+| `run_end` | Self-reported status and Claude's `reason`, service, runbook, independent verification result, attempt count and per-attempt outcomes, per-role totals |
 
 Success is judged by `run_end.verified`; `status=done` is only a claim. Claude Code's token usage is not available, so `handoffs` (times control returned to Claude) and `handoff_chars` (characters Claude read) serve as proxies.
 

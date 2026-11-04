@@ -157,7 +157,7 @@ npm run smoke -- --task hotel_filter   # タスクの SCRIPT をモデルなし�
 
 - `main` からブランチを切る。CI が通ること。
 - `.env`、`runs/`、`state/`（保存プロファイルを含む）、`.claude/settings.local.json` はコミットしない（`.gitignore` 済み）。
-- README.md と README.ja.md、`docs/reference.md` と `docs/reference.ja.md`、このファイルと DEVELOPMENT.md は内容をそろえる。
+- README.md と README.ja.md、`docs/reference.md` と `docs/reference.ja.md`、`docs/usage.md` と `docs/usage.ja.md`、このファイルと DEVELOPMENT.md は内容をそろえる。
 
 ## リリース
 

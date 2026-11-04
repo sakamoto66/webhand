@@ -85,7 +85,9 @@ Then `run` again. `STALE` means nothing ran; decide again from the new page prin
 
 ## 6. Finish
 
-Always end with exactly one `webhand finish --status done|blocked|budget|error`, even after a failure. Use `done` only with visible evidence that every requirement is satisfied. Report `status`, `attempts`, and the log path in one line. Your own belief is not the result.
+Always end with exactly one `webhand finish --status done|blocked|budget|error --reason "..."`, even after a failure. Use `done` only with visible evidence that every requirement is satisfied, and put that evidence in `--reason` ("予約を完了しました is shown"); for other statuses, say why. Report `status`, `attempts`, and the log path in one line. Your own belief is not the result.
+
+The run is not learned by itself. If you replanned, the run ended `blocked`, or it ended `done` without a runbook, add one line: the user can teach webhand from this run with `/webhand-learn <log path>`. Do not write anything yourself.
 
 ## Safety
 

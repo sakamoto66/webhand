@@ -1,18 +1,11 @@
 # Reserve a stay on HOTEL PLANISPHERE without signing in. Nothing is sent to a server.
-# Rewritten from a demonstration on 2026-11-03. The plan-id is not in the record (query values are hidden);
+# Written from a demonstration. The plan-id is not in the record (query values are hidden);
 # it comes from the plan the person chose, the first one on the list, as shown on the confirmation page.
-# Approved by the user on 2026-11-03 after a verified trial (runs/20261103T153818).
 service = "hotel-site"
 name = "reserve"
 goal = "Reserve the お得な特典付きプラン: check-in {check_in}, {term} nights, {head_count} guests, with 朝食バイキング and no other additional plans. Name {username}. Confirmation by email to {email}. Leave the request field empty. Review the confirmation page, then press この内容で予約する. Stop when 予約を完了しました is shown. Do not close that dialog."
 start_url = "https://hotel-example-site.takeyaqa.dev/ja/reserve.html?plan-id=0"
 status = "approved"
-sources = [
-  "demo:runs/20261103T145531/learn-hotel-site-reserve.jsonl",
-  "trial:runs/20261103T145758/hotel_reserve.jsonl",
-  "trial:runs/20261103T151940/adhoc.jsonl",
-  "trial:runs/20261103T153818/hotel_reserve.jsonl",
-]
 
 [params.check_in]
 description = "Check-in date as YYYY/MM/DD, within 3 months"

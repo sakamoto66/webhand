@@ -192,7 +192,7 @@ export function loadService(service: string): ServiceInfo | null {
   if (!found) return null;
   const { file, scope } = found;
   const { data } = readToml(file);
-  const missing = ["service", "description", "base_url", "sources"].filter((key) => blank(data[key]));
+  const missing = ["service", "description", "base_url"].filter((key) => blank(data[key]));
   if (missing.length) throw new RunbookError(`${file}: missing ${missing.join(", ")}`);
   const login = get(data, "login", {});
   return {
@@ -323,7 +323,7 @@ export function loadFile(
   base = process.cwd(),
 ): Runbook {
   const { raw, data } = readToml(file);
-  const required = ["service", "name", "goal", "start_url", "status", "sources", "steps"];
+  const required = ["service", "name", "goal", "start_url", "status", "steps"];
   const missing = required.filter((key) => blank(data[key]));
   if (missing.length) throw new RunbookError(`${file}: missing ${missing.join(", ")}`);
   if (!STATUSES.has(data.status)) throw new RunbookError(`${file}: unknown status ${quote(data.status)}`);

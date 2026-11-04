@@ -204,6 +204,25 @@ test("a value chosen by Jev is typed and a missing one types nothing", async () 
   expect(result.field?.label).toBe("Destination");
 });
 
+test("the run log names the value and region, never the typed text", async () => {
+  const browser = new FakeBrowser();
+  const at = { ...FILL, region: "main/form:Search" };
+  const start = { ...page(), url: "https://x.test/s?q=secret#a=b" };
+  await runAgent(
+    browser,
+    new FakePolicy([new Decision("TYPE_TEXT", at, { text: "Lisbon" }), new Decision("DONE")]),
+    PLAN,
+    recorder,
+    undefined,
+    { page: start },
+  );
+  const step = readEvents(recorder.path).find((e) => e.type === "step");
+  expect(step).toMatchObject({ value: "Destination", text_chars: 6, region: "main/form:Search" });
+  expect(step.url).toBe("https://x.test/s?q=%3Credacted%3E#%3Credacted%3E");
+  expect(JSON.stringify(readEvents(recorder.path))).not.toContain("Lisbon");
+  expect(readEvents(recorder.path).filter((e) => e.type === "page")).toHaveLength(1);
+});
+
 test("history is extended in place with the attempt", async () => {
   const history: HistoryEntry[] = Array.from({ length: 3 }, () => ({ attempt: 1, kind: "click", page_changed: false }));
   const result = await runAgent(

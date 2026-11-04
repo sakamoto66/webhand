@@ -74,3 +74,43 @@ export function logOnce(path: string, type: string, fields: Record<string, unkno
     recorder.close();
   }
 }
+
+/** A URL for the run log: query values and a hash that holds values are hidden, as in a learn record. */
+export function safeUrl(url: unknown): string | null {
+  if (typeof url !== "string") return null;
+  try {
+    const parsed = new URL(url);
+    for (const key of [...parsed.searchParams.keys()]) parsed.searchParams.set(key, "<redacted>");
+    if (parsed.hash.includes("=")) parsed.hash = "<redacted>";
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}
+
+const OUTLINE_FIELDS = [
+  "key",
+  "position",
+  "text_chars",
+  "shown_chars",
+  "actions",
+  "shown_actions",
+  "offscreen_actions",
+  "view",
+];
+
+/** An observed page for the run log: where it was and its region outline. No page text. */
+// biome-ignore lint/suspicious/noExplicitAny: pages come from the page script as untyped JSON.
+export function pageEvent(page: Record<string, any>, attempt: number): Record<string, unknown> {
+  const regions = Array.isArray(page.regions) ? page.regions : [];
+  return {
+    attempt,
+    url: safeUrl(page.url),
+    regions: regions.map((region: Record<string, unknown>) => {
+      const kept: Record<string, unknown> = {};
+      for (const key of OUTLINE_FIELDS) if (key in region) kept[key] = region[key];
+      return kept;
+    }),
+    omitted_regions: page.omitted_regions ?? 0,
+  };
+}
