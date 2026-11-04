@@ -4,7 +4,7 @@
 
 webhand 自体を変更する人向けのガイドです。インストールと使い方は [README.ja.md](README.ja.md)、実験設計は [docs/research-plan.md](docs/research-plan.md) を参照してください。
 
-webhand は npm で配布する Claude Code プラグインであると同時に、研究基盤でもあります。以下の規則の多くは、コードの整理のためだけでなく、実験の妥当性を守るためにあります。
+webhand は npm で配布する Claude Code プラグインであると同時に、研究基盤でもあります。研究では「AI も人と同じように、サービスを学ぶほど操作の成功率が上がる」という仮説を確かめます。成功は独立した検証だけで判定し、失敗した実行も残します。以下の規則の多くは、コードの整理のためだけでなく、実験の妥当性を守るためにあります。
 
 ## セットアップ
 
@@ -143,7 +143,7 @@ npm run smoke -- --task hotel_filter   # タスクの SCRIPT をモデルなし�
 
 ## 追加するとき
 
-**CLI のコマンドやオプション**: `src/cli.ts` の `commands()` に追加し（パーサーは argparse 風のメッセージを出す）、`tests/cli.test.ts` でテストする。README のコマンド表（両言語）と、それを使う `skills/` のスキルも更新する。
+**CLI のコマンドやオプション**: `src/cli.ts` の `commands()` に追加し（パーサーは argparse 風のメッセージを出す）、`tests/cli.test.ts` でテストする。`docs/reference.md` と `docs/reference.ja.md` のコマンド表と、それを使う `skills/` のスキルも更新する。
 
 **研究用タスク**: `tasks/<name>.ts` を追加し、`GOAL`、`startUrl(root)`、`{ success, evidence }` を返す非同期の `verify(browser)`、`SCRIPT`（`npm run smoke` 用の固定手順）を export する。フィクスチャは `tasks/fixtures/` にローカルで置く。Node の型除去でそのまま読み込むため、型注釈を消すだけで動く構文で書く（Node 22.18 以上）。
 
@@ -157,12 +157,12 @@ npm run smoke -- --task hotel_filter   # タスクの SCRIPT をモデルなし�
 
 - `main` からブランチを切る。CI が通ること。
 - `.env`、`runs/`、`state/`（保存プロファイルを含む）、`.claude/settings.local.json` はコミットしない（`.gitignore` 済み）。
-- README.md と README.ja.md（このファイルと DEVELOPMENT.md も）は内容をそろえる。
+- README.md と README.ja.md、`docs/reference.md` と `docs/reference.ja.md`、このファイルと DEVELOPMENT.md は内容をそろえる。
 
 ## リリース
 
 1. `package.json` と `.claude-plugin/plugin.json` のバージョンを一緒に上げる。
-2. メジャーかマイナーが変わるときは、`skills/*/SKILL.md` と README の `webhand@0.2` も更新する。
+2. メジャーかマイナーが変わるときは、`skills/*/SKILL.md`、README、`docs/reference*.md` の `webhand@0.2` も更新する。
 3. `npm publish`。`prepublishOnly` が `npm run check` とビルドを実行する。配布物は `dist/`、`assets/`、ライセンス、README だけ（`package.json` の `files`）。
 
 ## サードパーティのコード
