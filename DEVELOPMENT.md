@@ -51,12 +51,14 @@ src/                 the CLI (shipped as dist/ after the build)
   metrics.ts         append-only JSONL logs, token totals, git state
   format.ts          quoting and compact JSON for what Claude and Jev read, run stamps
   types.ts           shared shapes and errors (StalePage, MutationUncertain, PolicyError)
-  tasks.ts           loads research tasks
-  run.ts             model-free smoke test (npm run smoke)
   policies/
     base.ts          action space, model state, and instructions shared by every arm
     jev.ts           Jev via the TypeSafe API
     scripted.ts      fixed steps from a task file; tests the harness only
+research/            research-only entry points; not shipped
+  webhand.ts         the CLI plus --task: start takes a task's goal, finish runs its verify()
+  tasks.ts           loads research tasks
+  smoke.ts           model-free smoke test (npm run smoke)
 assets/              page scripts injected into Chrome (snapshot.js, recorder.js)
 skills/              the Claude Code skills (webhand, webhand-learn)
 .claude-plugin/      plugin and marketplace manifests
@@ -74,7 +76,7 @@ Each CLI call is one short process. State that must survive between calls (the C
 1. `start` saves the plan and opens Chrome through `session.startChrome`.
 2. `run` attaches to that Chrome, then `agent.runAgent` loops: `Browser.observe` → `Policy.choose` → `agent.execute` → `Browser.act`.
 3. The loop returns one outcome (`GOAL_REPORTED`, `NEEDS_VALUE`, `NEEDS_HUMAN`, `BLOCKED`, `STUCK`, `ATTEMPT_BUDGET`, `JEV_FAILED`, `UNCERTAIN`) and `cli.report` prints it for Claude.
-4. Claude calls `replan`, `act`, `run --value`, `run --human-done`, or `finish`. `finish` runs independent verification (when a task has `verify()`), writes `run_end`, and closes Chrome.
+4. Claude calls `replan`, `act`, `run --value`, `run --human-done`, or `finish`. `finish` runs independent verification (when the research wrapper gives it a task's `verify()`), writes `run_end`, and closes Chrome.
 
 Exit codes: `0` OK, `1` failed or `CliExit`, `2` usage error, `3` stale page, `4` mutation uncertain, `5` budget.
 
@@ -128,7 +130,7 @@ npm run smoke -- --task hotel_filter   # model-free run of a task's SCRIPT
 
 - `tests/setup.ts` gives every test its own `WEBHAND_HOME` and replaces `deps.policy` with a function that throws, so a test can never call Jev or read your `~/.webhand`.
 - `tests/jev.ts` provides `ScriptedJev` and `isolate()`. Set `ScriptedJev.moves` to `[operation, element label, value label]` triples to script Jev's choices, then inspect `ScriptedJev.plans` / `states` for what Jev was given.
-- `tests/helpers.ts` provides `cli(...)` (exit code and stdout), `cliExit(...)` (the stop message), `readEvents(log)`, and `inDirectory(dir, fn)`.
+- `tests/helpers.ts` provides `cli(...)` (exit code and stdout), `cliExit(...)` (the stop message), `research(...)` / `researchExit(...)` (the same through `research/webhand.ts`), `readEvents(log)`, and `inDirectory(dir, fn)`.
 - Tests run real Chrome, one file at a time (`fileParallelism: false`), with a 60 s timeout. Call `cleanup()` from `isolate()` so Chrome does not leak.
 - Fixtures are local files under `tasks/fixtures/`. Tests do not use the network or paid APIs.
 
@@ -143,7 +145,9 @@ npm run smoke -- --task hotel_filter   # model-free run of a task's SCRIPT
 
 **A CLI command or option**: add it to `commands()` in `src/cli.ts` (the parser writes argparse-style messages), cover it in `tests/cli.test.ts`, then update the README command table (both languages) and the skill in `skills/` that uses it.
 
-**A research task**: add `tasks/<name>.ts` exporting `GOAL`, `startUrl(root)`, async `verify(browser)` returning `{ success, evidence }`, and `SCRIPT` (fixed steps for `npm run smoke`). Keep fixtures local under `tasks/fixtures/`. `tasks/` is not shipped in the npm package.
+**A research task**: add `tasks/<name>.ts` exporting `GOAL`, `startUrl(root)`, async `verify(browser)` returning `{ success, evidence }`, and `SCRIPT` (fixed steps for `npm run smoke`). Keep fixtures local under `tasks/fixtures/`. Tasks are loaded through Node's type stripping, so use only syntax that works once type annotations are removed (Node 22.18 or later).
+
+Tasks are research-only: neither `tasks/` nor `research/` is shipped, and the shipped CLI and skills have no `--task`. Run a task from the repository root with `/webhand-research NAME` (`.claude/skills/webhand-research`), which follows the `webhand` skill but calls `node research/webhand.ts` in place of `webhand`. The wrapper passes `--task NAME` to `start` as the task's goal and start URL, records the task in the run, and at `finish` gives the CLI the task's `verify()` through `main`'s hooks. Every other command passes through unchanged.
 
 **A project runbook**: put it in `.webhand/runbooks/<service>/`. Start as `status = "draft"`; only the user approves it.
 

@@ -4,11 +4,11 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import { loadTask } from "../research/tasks.ts";
 import { runAgent } from "../src/agent.ts";
 import { Browser, SETTLE_CAP_MS } from "../src/browser.ts";
 import { Recorder } from "../src/metrics.ts";
 import { ScriptedPolicy } from "../src/policies/scripted.ts";
-import { loadTask } from "../src/tasks.ts";
 import { type Page, StalePage } from "../src/types.ts";
 import { ROOT, tmpPath } from "./helpers.ts";
 

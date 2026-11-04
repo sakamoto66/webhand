@@ -215,20 +215,9 @@ skip = ["header", "footer"]
 
 成功判定は `run_end.verified` です。`status=done` は申告にすぎません。Claude Code のトークン数は取得しないため、`handoffs`（Claude に戻した回数）と `handoff_chars`（読ませた文字数）を代理指標にします。
 
-## タスクの追加（研究用）
-
-タスクは研究用リポジトリの `tasks/` にだけ置き、npm の配布物には含めません。`tasks/<名前>.ts` で次を export します。
-
-- `GOAL`: 自然言語の目標
-- `startUrl(root)`: 開始 URL（`root` はリポジトリのルート）
-- `verify(browser)`: `{success, evidence}` を返す独立検証（async）
-- `SCRIPT`: 基盤の動作確認用の固定手順
-
-`--task` はリポジトリのルートで実行します。Node の型除去でそのまま読み込むため、型注釈を消すだけで動く構文で書きます（Node 22.18 以上）。
-
 ## 開発
 
-コード構成、規則、テスト、リリース手順は [DEVELOPMENT.ja.md](DEVELOPMENT.ja.md) を参照してください。
+コード構成、規則、テスト、研究用タスク、リリース手順は [DEVELOPMENT.ja.md](DEVELOPMENT.ja.md) を参照してください。
 
 このリポジトリは研究基盤も兼ねています（実験設計は `docs/research-plan.md`）。TypeScript で書かれ、Node.js 22 以上で動きます（開発は Node 24）。リポジトリの `.webhand/runbooks/` が、このリポジトリのプロジェクト単位の手順書です。
 
@@ -247,7 +236,6 @@ npm run lint                               # Biome
 npm run typecheck
 npm test                                   # 有料 API は呼びません。Linux の Chrome を使います
 npm run test:coverage                      # カバレッジ（coverage/index.html）
-npm run smoke -- --task hotel_filter       # モデルなしの動作確認
 ```
 
 `tests/golden/` は Claude と Jev が読む文字列（`render`、`report`、Jev への state と質問など）の基準出力です。意図しない変化を防ぎます。再生成は `npm run test:golden:update` です。

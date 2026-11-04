@@ -20,6 +20,12 @@ export class MutationUncertain extends Error {
   override name = "MutationUncertain";
 }
 
+/** An independent check of the final page. Only research tasks supply one; it never sees the agent's DONE. */
+export interface Verdict {
+  success: boolean | null;
+  evidence: unknown;
+}
+
 export interface ModelCall {
   provider: string;
   model: string;

@@ -8,10 +8,10 @@ import { Browser } from "../src/browser.ts";
 import * as cliModule from "../src/cli.ts";
 import { actionSpace } from "../src/policies/base.ts";
 import * as session from "../src/session.ts";
-import { cli, cliExit, readEvents, tmpPath } from "./helpers.ts";
+import { cli, readEvents, research, researchExit, tmpPath } from "./helpers.ts";
 import { isolate, type Move, ScriptedJev } from "./jev.ts";
 
-const { OK, FAILED, UNCERTAIN, BUDGET } = cliModule;
+const { OK, FAILED, UNCERTAIN, BUDGET, UsageError } = cliModule;
 
 let log: string;
 let cleanup: () => Promise<void>;
@@ -27,7 +27,7 @@ afterEach(async () => {
 const events = () => readEvents(log);
 
 async function begin(...options: string[]) {
-  const { code } = await cli(
+  const { code } = await research(
     "start",
     "--task",
     "hotel_filter",
@@ -64,7 +64,7 @@ test("Jev runs to the goal in one call and verification passes", async () => {
     ["TYPE_TEXT", "jev", "Lisbon"],
     ["CLICK", "jev", null],
   ]);
-  await cli("finish", "--status", "done");
+  await research("finish", "--status", "done");
   expect(session.load()).toBeNull();
   const end = events().at(-1);
   expect(end.verified).toBe(true);
@@ -128,9 +128,9 @@ test("a person acts while nothing else does", async () => {
 });
 
 test("person steps need a visible window", async () => {
-  expect(await cliExit("start", "--task", "hotel_filter", "--chrome", "linux", "--step", "[person] Sign in")).toMatch(
-    /--headed/,
-  );
+  expect(
+    await researchExit("start", "--task", "hotel_filter", "--chrome", "linux", "--step", "[person] Sign in"),
+  ).toMatch(/--headed/);
   expect(session.load()).toBeNull();
 });
 
@@ -162,7 +162,7 @@ test("a stuck attempt is replanned from the start URL", async () => {
   expect(plan?.notes).toEqual(["Attempt 1 ended with STUCK. Claude: Search did nothing; type first"]);
   const first = ScriptedJev.states[0] as { action_history: { attempt: number }[] };
   expect(first.action_history[0].attempt).toBe(1); // Earlier attempts stay visible.
-  await cli("finish", "--status", "done");
+  await research("finish", "--status", "done");
   const end = events().at(-1);
   expect([end.verified, end.attempts]).toEqual([true, 2]);
   expect(end.attempt_outcomes.map((o: { outcome: string }) => o.outcome)).toEqual(["STUCK", "GOAL_REPORTED"]);
@@ -213,8 +213,8 @@ test("the attempt budget returns to Claude", async () => {
 });
 
 test("a claimed done does not pass verification", async () => {
-  await cli("start", "--task", "hotel_filter", "--chrome", "linux");
-  await cli("finish", "--status", "done");
+  await research("start", "--task", "hotel_filter", "--chrome", "linux");
+  await research("finish", "--status", "done");
   const end = events().at(-1);
   expect([end.status, end.verified]).toEqual(["done", false]);
 });
@@ -227,15 +227,15 @@ test("an invalid override is rejected without a step", async () => {
 
 test("a missing Jev key is reported before Chrome starts", async () => {
   vi.stubEnv("TYPESAFE_API_KEY", undefined);
-  expect(await cliExit("start", "--task", "hotel_filter", "--chrome", "linux")).toMatch(/TYPESAFE_API_KEY/);
+  expect(await researchExit("start", "--task", "hotel_filter", "--chrome", "linux")).toMatch(/TYPESAFE_API_KEY/);
   expect(session.load()).toBeNull();
 });
 
 test("a new session uses a temporary profile", async () => {
-  await cli("start", "--task", "hotel_filter", "--chrome", "linux");
+  await research("start", "--task", "hotel_filter", "--chrome", "linux");
   const state = session.load() as session.State;
   expect(basename(state.profile).startsWith("webhand-")).toBe(true);
-  await cli("finish", "--status", "abandoned");
+  await research("finish", "--status", "abandoned");
   expect(existsSync(state.profile)).toBe(false);
 });
 
@@ -259,7 +259,7 @@ test("a saved profile keeps its sign-in between runs", async () => {
   ]);
   await browser.close();
   const profile = session.load()?.profile;
-  await cli("finish", "--status", "abandoned");
+  await research("finish", "--status", "abandoned");
   expect(existsSync(profile)).toBe(true);
 
   await cli("start", ...options);
@@ -271,7 +271,33 @@ test("a saved profile keeps its sign-in between runs", async () => {
 });
 
 test("a task keeps its own goal", async () => {
-  expect(await cliExit("start", "--task", "hotel_filter", "--goal", "Something else")).toMatch(/own goal/);
+  expect(await researchExit("start", "--task", "hotel_filter", "--goal", "Something else")).toMatch(/own goal/);
+  expect(await researchExit("start", "--task=hotel_filter", "--url=about:blank")).toMatch(/own goal/);
+  expect(session.load()).toBeNull();
+});
+
+test("an unknown task stops before Chrome starts", async () => {
+  expect(await researchExit("start", "--task", "no_such_task", "--chrome", "linux")).toMatch(/Unknown task/);
+  expect(session.load()).toBeNull();
+});
+
+test("the shipped CLI has no --task", async () => {
+  await expect(cli("start", "--task", "hotel_filter")).rejects.toThrow(UsageError);
+  expect((await cli("start", "--help")).out).not.toContain("--task");
+});
+
+test("without a task, finish verifies nothing", async () => {
+  await cli("start", "--goal", "Open the page", "--url", "about:blank", "--chrome", "linux");
+  await cli("finish", "--status", "done");
+  expect(events().find((e) => e.type === "run_start").task).toBeNull();
+  expect([events().at(-1).verified, events().at(-1).evidence]).toEqual([null, "no verifier"]);
+});
+
+test("the research wrapper passes other commands through", async () => {
+  await research("start", "--goal", "Open the page", "--url", "about:blank", "--chrome", "linux");
+  expect((await research("observe")).out).toContain("about:blank");
+  await research("finish", "--status", "abandoned");
+  expect(events().at(-1).verified).toBeNull();
 });
 
 test("catalog lists learned services and procedures", async () => {
@@ -284,7 +310,7 @@ test("catalog lists learned services and procedures", async () => {
 });
 
 test("Claude chooses regions and Jev sees the outline", async () => {
-  const started = await cli(
+  const started = await research(
     "start",
     "--task",
     "hotel_filter",

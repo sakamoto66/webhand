@@ -1,7 +1,7 @@
 ---
 name: webhand
-description: Do something on a web page through the webhand CLI. Claude plans the goal from what webhand has learned, asks for missing information, lets Jev operate the browser toward the goal, and replans when an attempt falls short. Use when asked to do something on a web page with webhand, or to run a webhand task.
-argument-hint: "what you want done, or --task NAME"
+description: Do something on a web page through the webhand CLI. Claude plans the goal from what webhand has learned, asks for missing information, lets Jev operate the browser toward the goal, and replans when an attempt falls short. Use when asked to do something on a web page with webhand.
+argument-hint: "what you want done"
 allowed-tools: Bash(webhand:*), Bash(npx -y webhand@0.2:*), AskUserQuestion
 ---
 
@@ -25,8 +25,6 @@ From the request and the catalog, write:
 - **Steps**: ordered, each ending in something visible. Start from a matching procedure (`--runbook NAME --param k=v`; only `approved` ones, or `--allow-draft` for a trial the user asked for). Otherwise write your own with `--step`. Put easy-to-skip requirements in a step, such as submitting a search. When the page offers a shortcut to a later step (a result already listed before the search), say in the first step what not to do yet ("Do not open any result yet. Search for ..."), and give the later step the visible condition it waits for ("Open X only after the results show ..."). Only do this where such a shortcut exists, and end that step with what shows it is done ("; done when ... is shown"), since the condition may no longer hold after the step (a submitted form clears its fields). Mark a step a person does as `[person] Sign in`. Do not name element indices.
 - **Values**: every text Jev may type, as `--value "LABEL=VALUE"`. Runbook params become values automatically.
 - **Regions** (optional): the catalog lists each page's learned regions and each procedure's `focus` / `skip`, which apply automatically with `--runbook` and `--service`. Add `--focus REGION` for the parts of a page the goal works in and `--skip REGION` for parts that crowd them out, using keys from the catalog or from `REGIONS` in earlier output. A bare kind such as `form` matches any form. Leave them out when nothing was learned and nothing was cut.
-
-For a request with `--task NAME` (research repository only), also pass `--task NAME` to `start`. The task supplies the GOAL and start URL in place of `--goal` and `--url`, and `finish` checks it independently. Write the steps and values as above.
 
 If a needed value is missing, ask the user with AskUserQuestion. Never invent personal information. Never ask for passwords, codes, or card numbers: make that a `[person]` step.
 
@@ -87,7 +85,7 @@ Then `run` again. `STALE` means nothing ran; decide again from the new page prin
 
 ## 6. Finish
 
-Always end with exactly one `webhand finish --status done|blocked|budget|error`, even after a failure. Use `done` only with visible evidence that every requirement is satisfied. `finish` verifies independently when the run has a task. Report `status`, `verified`, `attempts`, and the log path in one line. Your own belief is not the result.
+Always end with exactly one `webhand finish --status done|blocked|budget|error`, even after a failure. Use `done` only with visible evidence that every requirement is satisfied. Report `status`, `attempts`, and the log path in one line. Your own belief is not the result.
 
 ## Safety
 

@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, test } from "vitest";
 import { deps } from "../src/cli.ts";
 import * as runbook from "../src/runbook.ts";
 import * as session from "../src/session.ts";
-import { cli, cliExit, inDirectory, readEvents, tmpPath } from "./helpers.ts";
+import { cli, cliExit, inDirectory, readEvents, research, researchExit, tmpPath } from "./helpers.ts";
 import { isolate, ScriptedJev } from "./jev.ts";
 
 const HUMAN = `
@@ -108,12 +108,12 @@ test("a missing local start_url is an error", () => {
 });
 
 test("a draft needs explicit permission", async () => {
-  expect(await cliExit("start", "--task", "hotel_filter", "--runbook", "hotel/filter", ...HOTEL)).toMatch(/draft/);
+  expect(await researchExit("start", "--task", "hotel_filter", "--runbook", "hotel/filter", ...HOTEL)).toMatch(/draft/);
   expect(session.load()).toBeNull();
 });
 
 test("Jev gets the runbook plan, service facts, and params as values", async () => {
-  await cli(
+  await research(
     "start",
     "--task",
     "hotel_filter",
@@ -137,7 +137,7 @@ test("Jev gets the runbook plan, service facts, and params as values", async () 
 });
 
 test("steps from Claude replace the runbook steps", async () => {
-  await cli(
+  await research(
     "start",
     "--task",
     "hotel_filter",
