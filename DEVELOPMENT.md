@@ -4,7 +4,7 @@ English | [日本語](DEVELOPMENT.ja.md)
 
 This guide is for people changing webhand itself. For installing and using it, see [README.md](README.md). For the experiment design, see [docs/research-plan.md](docs/research-plan.md) (Japanese).
 
-webhand is two things at once: a Claude Code plugin distributed through npm, and a research platform. Many rules below exist to keep experiments valid, not only to keep the code clean.
+webhand is two things at once: a Claude Code plugin distributed through npm, and a research platform. The research tests the hypothesis that an AI, like a person, operates a service more successfully the more it has learned about that service; success is judged only by independent verification, and failed runs are kept. Many rules below exist to keep experiments valid, not only to keep the code clean.
 
 ## Setup
 
@@ -143,7 +143,7 @@ npm run smoke -- --task hotel_filter   # model-free run of a task's SCRIPT
 
 ## Adding things
 
-**A CLI command or option**: add it to `commands()` in `src/cli.ts` (the parser writes argparse-style messages), cover it in `tests/cli.test.ts`, then update the README command table (both languages) and the skill in `skills/` that uses it.
+**A CLI command or option**: add it to `commands()` in `src/cli.ts` (the parser writes argparse-style messages), cover it in `tests/cli.test.ts`, then update the command table in `docs/reference.md` and `docs/reference.ja.md` and the skill in `skills/` that uses it.
 
 **A research task**: add `tasks/<name>.ts` exporting `GOAL`, `startUrl(root)`, async `verify(browser)` returning `{ success, evidence }`, and `SCRIPT` (fixed steps for `npm run smoke`). Keep fixtures local under `tasks/fixtures/`. Tasks are loaded through Node's type stripping, so use only syntax that works once type annotations are removed (Node 22.18 or later).
 
@@ -157,12 +157,12 @@ Tasks are research-only: neither `tasks/` nor `research/` is shipped, and the sh
 
 - Branch from `main`. CI must pass.
 - Never commit `.env`, `runs/`, `state/` (it holds saved profiles), or `.claude/settings.local.json`. These are already in `.gitignore`.
-- Keep README.md and README.ja.md (and this file and DEVELOPMENT.ja.md) in sync.
+- Keep README.md and README.ja.md, `docs/reference.md` and `docs/reference.ja.md`, and this file and DEVELOPMENT.ja.md in sync.
 
 ## Releasing
 
 1. Bump the version in `package.json` and `.claude-plugin/plugin.json` together.
-2. If the major or minor version changes, update `webhand@0.2` in `skills/*/SKILL.md` and the READMEs.
+2. If the major or minor version changes, update `webhand@0.2` in `skills/*/SKILL.md`, the READMEs, and `docs/reference*.md`.
 3. `npm publish`. `prepublishOnly` runs `npm run check` and the build. The package ships only `dist/`, `assets/`, the licenses, and the READMEs (`files` in `package.json`).
 
 ## Third-party code
