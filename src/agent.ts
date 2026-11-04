@@ -5,7 +5,7 @@
  */
 
 import { quote } from "./format.ts";
-import type { Recorder } from "./metrics.ts";
+import { pageEvent, type Recorder, safeUrl } from "./metrics.ts";
 import {
   type Decision,
   type HistoryEntry,
@@ -15,6 +15,7 @@ import {
   type Policy,
   PolicyError,
   StalePage,
+  type Value,
 } from "./types.ts";
 
 // Why the loop handed control back to Claude.
@@ -63,6 +64,16 @@ function stuck(history: HistoryEntry[], attempt = 1): boolean {
 
 type OnChange = (page: Page) => void;
 
+/** A step for the run log: the value's label instead of the typed text, and the URL without query values. */
+function logged(step: HistoryEntry, region: unknown, values: Value[]): Record<string, unknown> {
+  const { text, url, ...rest } = step;
+  const entry: Record<string, unknown> = { ...rest, region: typeof region === "string" ? region : null };
+  entry.url = safeUrl(url);
+  entry.value = text === null ? null : (values.find((v) => v.value === text)?.label ?? null);
+  if (text !== null) entry.text_chars = [...String(text)].length;
+  return entry;
+}
+
 /** Runs once. Logged before the next observation so a navigation cannot erase it. */
 export async function execute(
   browser: Actor,
@@ -70,7 +81,7 @@ export async function execute(
   decision: Decision,
   history: HistoryEntry[],
   recorder: Recorder,
-  options: { decidedBy: string; attempt: number; onChange?: OnChange },
+  options: { decidedBy: string; attempt: number; onChange?: OnChange; values?: Value[] },
 ): Promise<Page> {
   const onChange = options.onChange ?? (() => {});
   const action = decision.action as Page;
@@ -88,11 +99,12 @@ export async function execute(
     page_changed: null,
   };
   history.push(step);
-  recorder.event("step", step);
+  recorder.event("step", logged(step, action.region, options.values ?? []));
   onChange(page);
   const newPage = await browser.observe();
   step.page_changed = !sameMarker(newPage.marker, page.marker);
   recorder.event("step_result", { step: step.step, page_changed: step.page_changed });
+  if (step.page_changed) recorder.event("page", pageEvent(newPage, options.attempt));
   onChange(newPage);
   return newPage;
 }
@@ -193,6 +205,7 @@ export async function runAgent(
         decidedBy: policy.name,
         attempt,
         onChange,
+        values: plan.values,
       });
     } catch (error) {
       if (error instanceof StalePage) {

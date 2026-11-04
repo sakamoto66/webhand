@@ -12,7 +12,7 @@ import { Budget, execute, runAgent } from "./agent.ts";
 import { Browser } from "./browser.ts";
 import { describeError, quote, show, stamp, toJson } from "./format.ts";
 import * as learn from "./learn.ts";
-import { gitState, logOnce, Recorder, summarize } from "./metrics.ts";
+import { gitState, logOnce, pageEvent, Recorder, summarize } from "./metrics.ts";
 import { actionSpace, offscreen, planText, resolve } from "./policies/base.ts";
 import { JevPolicy } from "./policies/jev.ts";
 import * as runbook from "./runbook.ts";
@@ -339,6 +339,7 @@ async function commandStart(args: Args): Promise<number> {
     start_url: session.browserUrl(url, chrome),
     plan,
     runbook: book ? { name: book.name, status: book.status, digest: book.digest, scope: book.scope } : null,
+    service: serviceName,
     history: [],
     decisions: 0,
     attempt_decisions: 0,
@@ -376,6 +377,7 @@ async function commandStart(args: Args): Promise<number> {
       view: state.view,
       source: book && !args.step.length ? "runbook" : "claude",
     });
+    recorder.event("page", pageEvent(state.page, 1));
   } catch (error) {
     await session.stopChrome(chromeState);
     throw error;
@@ -598,6 +600,7 @@ async function commandAct(args: Args): Promise<number> {
     await execute(browser, state.page, decision, state.history, recorder, {
       decidedBy: "claude",
       attempt: state.plan.attempt,
+      values: state.plan.values,
       onChange: (page) => {
         state.page = page;
         session.save(state);
@@ -685,6 +688,8 @@ async function commandFinish(args: Args): Promise<number> {
   logOnce(state.log, "run_end", {
     status: args.status,
     reason: args.reason,
+    service: state.service ?? null,
+    runbook: state.runbook ?? null,
     goal: plan.goal,
     plan: planText(plan),
     attempts: plan.attempt,

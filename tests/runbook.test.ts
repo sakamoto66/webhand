@@ -134,6 +134,9 @@ test("Jev gets the runbook plan, service facts, and params as values", async () 
   const events = readEvents(log);
   expect(events.find((e) => e.type === "run_start").runbook.name).toBe("hotel/filter");
   expect(events.find((e) => e.type === "plan").source).toBe("runbook");
+  await cli("finish", "--status", "blocked");
+  const end = readEvents(log).at(-1);
+  expect([end.service, end.runbook.name, end.runbook.status]).toEqual(["hotel", "hotel/filter", "draft"]);
 });
 
 test("steps from Claude replace the runbook steps", async () => {
