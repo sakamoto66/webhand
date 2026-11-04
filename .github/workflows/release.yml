@@ -1,0 +1,48 @@
+name: release
+
+# Publishes to npm when a GitHub Release is published. No npm token: npm trusted publishing (OIDC)
+# authenticates this workflow and adds provenance. Register it on npmjs.com under the package's
+# settings: repository sakamoto66/webhand, workflow release.yml, environment npm.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Check the tag matches the versions and is on main
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          node -e '
+            const { readFileSync } = require("node:fs");
+            const pkg = JSON.parse(readFileSync("package.json", "utf8")).version;
+            const plugin = JSON.parse(readFileSync(".claude-plugin/plugin.json", "utf8")).version;
+            const tag = process.env.TAG;
+            if (tag !== `v${pkg}` || plugin !== pkg) {
+              console.error(`tag ${tag}, package.json ${pkg}, plugin.json ${plugin}: they must match (tag v${pkg})`);
+              process.exit(1);
+            }
+          '
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "$TAG is not on main"; exit 1; }
+      - run: npm ci
+      - run: npm test
+      # prepublishOnly runs npm run check, the build, and npm run check:package.
+      - run: npm publish
