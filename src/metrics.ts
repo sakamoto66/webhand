@@ -1,8 +1,8 @@
 /** Append-only run logs and token cost. Every line is written at once so a crashed run keeps its data. */
 
 import { execFileSync } from "node:child_process";
-import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
-import { dirname } from "node:path";
+import { closeSync, mkdirSync, openSync, writeFileSync, writeSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { toJson } from "./format.ts";
 import type { ModelCall } from "./types.ts";
 
@@ -52,6 +52,15 @@ export class Recorder {
   event(type: string, fields: Record<string, unknown> = {}): void {
     if (this.fd === null) throw new Error(`Recorder for ${this.path} is closed`);
     writeSync(this.fd, `${toJson({ type, ...fields })}\n`);
+  }
+
+  /** Saves a PNG beside the log as <log>-screenshots/step-NNNN.png and logs which step it follows. */
+  screenshot(step: number, attempt: number, png: Buffer, url: unknown): void {
+    const name = basename(this.path, ".jsonl");
+    const file = join(`${name}-screenshots`, `step-${String(step).padStart(4, "0")}.png`);
+    mkdirSync(join(dirname(this.path), `${name}-screenshots`), { recursive: true });
+    writeFileSync(join(dirname(this.path), file), png);
+    this.event("screenshot", { step, attempt, file, url: safeUrl(url) });
   }
 
   call(call: ModelCall): void {

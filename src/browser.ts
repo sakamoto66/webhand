@@ -242,6 +242,12 @@ export class Browser {
     await this.call("Input.insertText", { text });
   }
 
+  /** A PNG of the viewport. Read-only; typed values show in it. */
+  async screenshot(): Promise<Buffer> {
+    const response = await this.call("Page.captureScreenshot", { format: "png" });
+    return Buffer.from(response.data, "base64");
+  }
+
   /**
    * An attached session Chrome stays alive; only session.stopChrome() ends it. Closing a browser that
    * connectOverCDP attached to only disconnects: Chrome keeps its tabs and pages.

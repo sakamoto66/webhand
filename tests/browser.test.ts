@@ -286,3 +286,8 @@ test.each([null, { focus: ["form:Booking"], skip: ["header"] }])(
     expect((await denseTask.verify(instance)).success).toBe(true);
   },
 );
+
+test("a screenshot is a PNG of the page", async () => {
+  const png = await browser.screenshot();
+  expect(png.subarray(1, 4).toString("latin1")).toBe("PNG");
+});

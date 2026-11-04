@@ -1,7 +1,8 @@
 /** Offline loop behaviour with a fake browser. No model or Chrome. */
 
-import { join } from "node:path";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { type Actor, Budget, runAgent } from "../src/agent.ts";
 import { Recorder } from "../src/metrics.ts";
 import {
@@ -253,4 +254,45 @@ test("three targets Jev cannot see are stuck", async () => {
   const missing = new Decision("NOT_VISIBLE", null, { wanted: "CLICK" });
   const result = await run(new FakeBrowser(), [missing, missing, missing]);
   expect(result.outcome).toBe("STUCK");
+});
+
+class ShootingBrowser extends FakeBrowser {
+  shots = 0;
+  fail = false;
+
+  async screenshot(): Promise<Buffer> {
+    this.shots += 1;
+    if (this.fail) throw new Error("capture failed");
+    return Buffer.from(`png${this.shots}`);
+  }
+}
+
+test("screenshots are taken only when WEBHAND_SCREENSHOTS=1", async () => {
+  const browser = new ShootingBrowser();
+  await run(browser, [new Decision("CLICK", CLICK), new Decision("DONE")]);
+  expect(browser.shots).toBe(0);
+  expect(readEvents(recorder.path).some((e) => e.type === "screenshot")).toBe(false);
+});
+
+test("each action is followed by a screenshot beside the log", async () => {
+  vi.stubEnv("WEBHAND_SCREENSHOTS", "1");
+  const browser = new ShootingBrowser();
+  await run(browser, [new Decision("CLICK", CLICK), new Decision("CLICK", CLICK), new Decision("DONE")]);
+  const shots = readEvents(recorder.path).filter((e) => e.type === "screenshot");
+  expect(shots.map((e) => [e.step, e.attempt, e.file])).toEqual([
+    [1, 1, join("run-screenshots", "step-0001.png")],
+    [2, 1, join("run-screenshots", "step-0002.png")],
+  ]);
+  expect(readFileSync(join(dirname(recorder.path), shots[1].file), "utf8")).toBe("png2");
+});
+
+test("a failed screenshot is logged and the run goes on", async () => {
+  vi.stubEnv("WEBHAND_SCREENSHOTS", "1");
+  const browser = new ShootingBrowser();
+  browser.fail = true;
+  const result = await run(browser, [new Decision("CLICK", CLICK), new Decision("DONE")]);
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect(result.actions).toBe(1);
+  const failed = readEvents(recorder.path).filter((e) => e.type === "screenshot_failed");
+  expect(failed.map((e) => [e.step, e.error])).toEqual([[1, "capture failed"]]);
 });

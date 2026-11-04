@@ -367,3 +367,20 @@ test("usage errors name the problem", () => {
   expect("args" in parsed && parsed.args.step).toEqual(["a", "b"]);
   expect("args" in parsed && parsed.args.max_attempts).toBe(3);
 });
+
+test("with WEBHAND_SCREENSHOTS=1 the start page and each action are captured; stdout is unchanged", async () => {
+  await begin();
+  ScriptedJev.moves = [...FULL];
+  const plain = (await cli("run")).out;
+  await cli("finish", "--status", "done");
+  expect(events().some((e) => e.type === "screenshot")).toBe(false);
+
+  ({ log, cleanup } = isolate());
+  vi.stubEnv("WEBHAND_SCREENSHOTS", "1");
+  await begin();
+  ScriptedJev.moves = [...FULL];
+  expect((await cli("run")).out).toBe(plain);
+  const shots = events().filter((e) => e.type === "screenshot");
+  expect(shots.map((e) => e.step)).toEqual([0, 1, 2, 3, 4, 5]);
+  for (const shot of shots) expect(existsSync(join(log, "..", shot.file))).toBe(true);
+});

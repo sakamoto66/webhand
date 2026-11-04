@@ -378,6 +378,7 @@ async function commandStart(args: Args): Promise<number> {
       source: book && !args.step.length ? "runbook" : "claude",
     });
     recorder.event("page", pageEvent(state.page, 1));
+    await agent.captureScreenshot(browser, recorder, 0, 1, state.page.url);
   } catch (error) {
     await session.stopChrome(chromeState);
     throw error;
