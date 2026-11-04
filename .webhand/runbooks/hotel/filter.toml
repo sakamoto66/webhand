@@ -1,18 +1,11 @@
-# Written from the fixture's code. It stays a draft until a person approves it.
-# Learned from a run on 2026-11-04 (run 20261104T161125: done, verified, 1 attempt, no runbook): the two
-# ordering hints and focus/skip come from the plan that succeeded and the regions its actions used.
-# Trial with this draft on 2026-11-04 (trial 20261104T161330): done, verified, 1 attempt.
-# sources name local run IDs (folders under the author's runs/); the logs are not shared.
+# Written from the fixture's code, then learned from a run: the two ordering hints and focus/skip come from
+# the plan that succeeded and the regions its actions used. It stays a draft until a person approves it.
 service = "hotel"
 name = "filter"
 goal = "Find a stay in {city} in the {category} category with free cancellation, then open the page for {stay}. Stop on that page."
 start_url = "tasks/fixtures/hotel.html?scenario=travel"
 status = "draft"
-sources = [
-  "code:tasks/fixtures/hotel.html",
-  "run:20261104T161125",
-  "trial:20261104T161330",
-]
+sources = ["code:tasks/fixtures/hotel.html@963593f"]
 focus = ["main/form", "main"]
 skip = ["header"]
 

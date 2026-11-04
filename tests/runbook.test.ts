@@ -69,6 +69,12 @@ test("parameters are filled everywhere", () => {
   expect(loaded.steps[0].actor).toBe("human");
 });
 
+test("sources are optional and never read", () => {
+  const without = HUMAN.replace('sources = ["code:test"]\n', "");
+  expect(without).not.toContain("sources");
+  expect(book(without)(values()).goal).toBe(book(HUMAN)(values()).goal);
+});
+
 test("a missing parameter is an error", () => {
   expect(() => book(HUMAN)({ url: "about:blank" })).toThrow(/section/);
 });

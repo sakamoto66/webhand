@@ -1,9 +1,8 @@
 # HOTEL PLANISPHERE, a public practice site for test automation. Reservations stay in the browser.
-# Rewritten from a demonstration on 2026-11-03. sources name local run IDs; the logs are not shared.
+# Written from a demonstration.
 service = "hotel-site"
 description = "A hotel reservation practice site: choose a plan, fill the reservation form, review it, and confirm."
 base_url = "https://hotel-example-site.takeyaqa.dev/ja/"
-sources = ["demo:20261103T145531"]
 
 facts = [
   "このプランで予約 on the plan list opens the reservation form in a new tab, which the agent cannot follow. Start from reserve.html with the plan's plan-id instead.",

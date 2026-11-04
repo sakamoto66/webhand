@@ -82,7 +82,7 @@
     "scope": "project",
     "service": "hotel",
     "status": "draft",
-    "digest": "f8a9909dc6ae1a61",
+    "digest": "21a138ee2b5973d9",
     "goal": "Find a stay in Lisbon in the Design category with free cancellation, then open the page for Casa Flora. Stop on that page.",
     "start_url": "ROOT/tasks/fixtures/hotel.html?scenario=travel",
     "steps": [
