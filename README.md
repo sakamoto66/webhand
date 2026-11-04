@@ -215,20 +215,9 @@ Logs are written as JSONL to `runs/<timestamp>/` in the user folder (`~/.webhand
 
 Success is judged by `run_end.verified`; `status=done` is only a claim. Claude Code's token usage is not available, so `handoffs` (times control returned to Claude) and `handoff_chars` (characters Claude read) serve as proxies.
 
-## Adding tasks (research)
-
-Tasks live only in the research repository's `tasks/` and are not part of the npm package. `tasks/<name>.ts` exports:
-
-- `GOAL`: the goal in natural language
-- `startUrl(root)`: the start URL (`root` is the repository root)
-- `verify(browser)`: independent verification returning `{success, evidence}` (async)
-- `SCRIPT`: fixed steps for checking the harness itself
-
-Run `--task` from the repository root. Tasks are loaded directly through Node's type stripping, so use only syntax that works once type annotations are removed (Node 22.18 or later).
-
 ## Development
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for the code layout, rules, tests, and release steps.
+See [DEVELOPMENT.md](DEVELOPMENT.md) for the code layout, rules, tests, research tasks, and release steps.
 
 This repository is also a research platform (see `docs/research-plan.md` for the experiment design, in Japanese). It is written in TypeScript and runs on Node.js 22 or later (developed on Node 24). The repository's `.webhand/runbooks/` holds its project-scope runbooks.
 
@@ -247,7 +236,6 @@ npm run lint                               # Biome
 npm run typecheck
 npm test                                   # no paid APIs; uses Linux Chrome
 npm run test:coverage                      # coverage (coverage/index.html)
-npm run smoke -- --task hotel_filter       # model-free smoke test
 ```
 
 `tests/golden/` records the reference output of the strings Claude and Jev read (`render`, `report`, Jev's state and questions, and so on), so they change only on purpose. Regenerate it with `npm run test:golden:update`.

@@ -99,7 +99,7 @@ done_when = "The visible result"
 
 ## 3. Trial
 
-Run the draft through the `webhand` skill with `--runbook SERVICE/NAME --param KEY=VALUE --allow-draft`, adding `--headed` for human steps, or `--session profile:NAME` if the user already signed in to a saved profile. Before signing in on a real service, tell the user that the signed-in pages are sent to Jev (TypeSafe). Get their agreement before any step that changes data on a real service. Check the `REGIONS` in the output: a region the procedure needs must not be `(skip)` or shown as `0/N`. Fix the runbook from what the trial shows, and do not loosen a step or a task's `verify()` to make it pass.
+Run the draft through the `webhand` skill with `--runbook SERVICE/NAME --param KEY=VALUE --allow-draft`, adding `--headed` for human steps, or `--session profile:NAME` if the user already signed in to a saved profile. Before signing in on a real service, tell the user that the signed-in pages are sent to Jev (TypeSafe). Get their agreement before any step that changes data on a real service. Check the `REGIONS` in the output: a region the procedure needs must not be `(skip)` or shown as `0/N`. Fix the runbook from what the trial shows, and do not loosen a step to make it pass.
 
 ## 4. Approve
 

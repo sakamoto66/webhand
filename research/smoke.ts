@@ -1,13 +1,14 @@
-/** Harness smoke test: the fixed script, no model. Agent runs go through the webhand CLI. */
+/** Harness smoke test: the fixed script, no model. Agent runs go through research/webhand.ts. */
 
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { Budget, GOAL_REPORTED, runAgent } from "./agent.ts";
-import { Browser } from "./browser.ts";
-import { describeError, show, stamp } from "./format.ts";
-import { gitState, Recorder, summarize } from "./metrics.ts";
-import { ScriptedPolicy } from "./policies/scripted.ts";
-import { loadTask, type Task, type Verdict } from "./tasks.ts";
+import { Budget, GOAL_REPORTED, runAgent } from "../src/agent.ts";
+import { Browser } from "../src/browser.ts";
+import { describeError, show, stamp } from "../src/format.ts";
+import { gitState, Recorder, summarize } from "../src/metrics.ts";
+import { ScriptedPolicy } from "../src/policies/scripted.ts";
+import type { Verdict } from "../src/types.ts";
+import { loadTask, type Task } from "./tasks.ts";
 
 const ROOT = process.cwd();
 

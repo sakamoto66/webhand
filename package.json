@@ -40,7 +40,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:golden:update": "UPDATE_GOLDEN=1 vitest run tests/golden.test.ts",
-    "smoke": "node src/run.ts",
+    "smoke": "node research/smoke.ts",
     "prepare": "husky",
     "prepublishOnly": "npm run check && npm run build"
   },

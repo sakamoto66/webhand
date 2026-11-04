@@ -51,12 +51,14 @@ src/                 CLI（ビルド後 dist/ として配布）
   metrics.ts         追記専用の JSONL ログ、トークン集計、git の状態
   format.ts          Claude と Jev が読む値の引用と compact JSON、実行フォルダー名
   types.ts           共有の型とエラー（StalePage、MutationUncertain、PolicyError）
-  tasks.ts           研究用タスクの読み込み
-  run.ts             モデルを使わないスモークテスト（npm run smoke）
   policies/
     base.ts          全方式で共通の行動空間、状態、指示
     jev.ts           TypeSafe API 経由の Jev
     scripted.ts      タスクファイルの固定手順。ハーネスの確認専用
+research/            研究専用の入口。配布しない
+  webhand.ts         CLI に --task を足したもの。start はタスクの GOAL を使い、finish は verify() を走らせる
+  tasks.ts           研究用タスクの読み込み
+  smoke.ts           モデルを使わないスモークテスト（npm run smoke）
 assets/              Chrome に注入するページスクリプト（snapshot.js、recorder.js）
 skills/              Claude Code のスキル（webhand、webhand-learn）
 .claude-plugin/      プラグインとマーケットプレイスのマニフェスト
@@ -74,7 +76,7 @@ CLI の呼び出しは1回ずつ短いプロセスです。呼び出しをまた
 1. `start` が計画を保存し、`session.startChrome` で Chrome を開く。
 2. `run` がその Chrome に接続し、`agent.runAgent` が `Browser.observe` → `Policy.choose` → `agent.execute` → `Browser.act` を繰り返す。
 3. ループは結果を1つ返し（`GOAL_REPORTED`、`NEEDS_VALUE`、`NEEDS_HUMAN`、`BLOCKED`、`STUCK`、`ATTEMPT_BUDGET`、`JEV_FAILED`、`UNCERTAIN`）、`cli.report` が Claude 向けに出力する。
-4. Claude が `replan`、`act`、`run --value`、`run --human-done`、`finish` のいずれかを呼ぶ。`finish` は独立検証（タスクに `verify()` がある場合）を行い、`run_end` を書いて Chrome を閉じる。
+4. Claude が `replan`、`act`、`run --value`、`run --human-done`、`finish` のいずれかを呼ぶ。`finish` は独立検証（研究用ラッパーがタスクの `verify()` を渡した場合）を行い、`run_end` を書いて Chrome を閉じる。
 
 終了コード: `0` 正常、`1` 失敗または `CliExit`、`2` 使い方の誤り、`3` ページが古い、`4` 変更操作の結果が不確か、`5` 予算切れ。
 
@@ -128,7 +130,7 @@ npm run smoke -- --task hotel_filter   # タスクの SCRIPT をモデルなし�
 
 - `tests/setup.ts` はテストごとに専用の `WEBHAND_HOME` を用意し、`deps.policy` を例外を投げる関数に差し替える。テストから Jev を呼んだり、手元の `~/.webhand` を読んだりすることはない。
 - `tests/jev.ts` は `ScriptedJev` と `isolate()` を提供する。`ScriptedJev.moves` に `[操作, 要素ラベル, 入力値ラベル]` を並べて Jev の選択を台本化し、`ScriptedJev.plans` / `states` で Jev に渡った内容を確認する。
-- `tests/helpers.ts` は `cli(...)`（終了コードと標準出力）、`cliExit(...)`（停止メッセージ）、`readEvents(log)`、`inDirectory(dir, fn)` を提供する。
+- `tests/helpers.ts` は `cli(...)`（終了コードと標準出力）、`cliExit(...)`（停止メッセージ）、`research(...)` / `researchExit(...)`（同じものを `research/webhand.ts` 経由で）、`readEvents(log)`、`inDirectory(dir, fn)` を提供する。
 - テストは実際の Chrome を使い、ファイル単位で順番に実行する（`fileParallelism: false`、タイムアウト 60 秒）。Chrome を残さないよう `isolate()` の `cleanup()` を呼ぶ。
 - フィクスチャは `tasks/fixtures/` のローカルファイル。テストはネットワークも有料 API も使わない。
 
@@ -143,7 +145,9 @@ npm run smoke -- --task hotel_filter   # タスクの SCRIPT をモデルなし�
 
 **CLI のコマンドやオプション**: `src/cli.ts` の `commands()` に追加し（パーサーは argparse 風のメッセージを出す）、`tests/cli.test.ts` でテストする。README のコマンド表（両言語）と、それを使う `skills/` のスキルも更新する。
 
-**研究用タスク**: `tasks/<name>.ts` を追加し、`GOAL`、`startUrl(root)`、`{ success, evidence }` を返す非同期の `verify(browser)`、`SCRIPT`（`npm run smoke` 用の固定手順）を export する。フィクスチャは `tasks/fixtures/` にローカルで置く。`tasks/` は npm パッケージに含めない。
+**研究用タスク**: `tasks/<name>.ts` を追加し、`GOAL`、`startUrl(root)`、`{ success, evidence }` を返す非同期の `verify(browser)`、`SCRIPT`（`npm run smoke` 用の固定手順）を export する。フィクスチャは `tasks/fixtures/` にローカルで置く。Node の型除去でそのまま読み込むため、型注釈を消すだけで動く構文で書く（Node 22.18 以上）。
+
+タスクは研究専用で、`tasks/` も `research/` も配布しない。配布する CLI とスキルには `--task` がない。タスクはリポジトリのルートで `/webhand-research NAME`（`.claude/skills/webhand-research`）として実行する。このスキルは `webhand` スキルに従い、`webhand` の代わりに `node research/webhand.ts` を呼ぶ。ラッパーは `start` の `--task NAME` をタスクの GOAL と開始 URL に置き換えて実行にタスク名を記録し、`finish` では `main` のフック経由でタスクの `verify()` を CLI に渡す。ほかのコマンドはそのまま通す。
 
 **プロジェクトの手順書**: `.webhand/runbooks/<service>/` に置く。`status = "draft"` から始め、承認はユーザーだけが行う。
 

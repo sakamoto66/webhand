@@ -17,7 +17,6 @@ import { actionSpace, offscreen, planText, resolve } from "./policies/base.ts";
 import { JevPolicy } from "./policies/jev.ts";
 import * as runbook from "./runbook.ts";
 import * as session from "./session.ts";
-import { loadTask, TaskError, type Verdict } from "./tasks.ts";
 import {
   type HistoryEntry,
   type ModelCall,
@@ -29,6 +28,7 @@ import {
   StalePage,
   type Step,
   type Value,
+  type Verdict,
 } from "./types.ts";
 import * as workspace from "./workspace.ts";
 
@@ -60,13 +60,25 @@ export const deps = {
 // biome-ignore lint/suspicious/noExplicitAny: parsed arguments, keyed by option name with dashes as underscores.
 type Args = Record<string, any>;
 
+/**
+ * What a caller outside the CLI may add. The research wrapper (research/webhand.ts) labels a run with its
+ * task and verifies it at finish; the shipped CLI passes none.
+ */
+export interface Hooks {
+  /** Recorded as the run's task and used to name its log. */
+  task?: string;
+  /** Checks the final page before Chrome closes. */
+  verify?: (browser: Browser, state: session.State) => Promise<Verdict>;
+}
+
 interface Context {
   out: string[];
   err: (text: string) => void;
   log: string | null;
+  hooks: Hooks;
 }
 
-let context: Context = { out: [], err: () => {}, log: null };
+let context: Context = { out: [], err: () => {}, log: null, hooks: {} };
 
 function print(text = ""): void {
   context.out.push(`${text}\n`);
@@ -75,7 +87,7 @@ function print(text = ""): void {
 /** Runs fn and returns what it printed. For tests of the output Claude reads. */
 export function captured<T>(fn: () => T): { result: T; text: string } {
   const saved = context;
-  context = { out: [], err: saved.err, log: null };
+  context = { out: [], err: saved.err, log: null, hooks: {} };
   try {
     const result = fn();
     return { result, text: context.out.join("") };
@@ -259,16 +271,7 @@ function chooseChrome(choice: string): [string, string | null] {
 
 async function commandStart(args: Args): Promise<number> {
   if (session.load()) throw new CliExit("A session is active. Run: webhand finish --status abandoned");
-  let task = null;
-  if (args.task) {
-    try {
-      task = await loadTask(args.task);
-    } catch (error) {
-      if (error instanceof TaskError) throw new CliExit(error.message);
-      throw error;
-    }
-  }
-  if (task && args.goal) throw new CliExit("A task supplies its own goal. Drop --goal");
+  const task = context.hooks.task ?? null;
   let book: runbook.Runbook | null = null;
   let service: runbook.ServiceInfo | null = null;
   let serviceName: string | null = null;
@@ -292,9 +295,9 @@ async function commandStart(args: Args): Promise<number> {
     }
     throw error;
   }
-  const goal: string | null = task ? task.GOAL : args.goal || (book ? book.goal : null);
-  const url: string | null = task ? task.startUrl(process.cwd()) : args.url || (book ? book.start_url : null);
-  if (!(goal && url)) throw new CliExit("Give --task, --runbook, or both --goal and --url");
+  const goal: string | null = args.goal || (book ? book.goal : null);
+  const url: string | null = args.url || (book ? book.start_url : null);
+  if (!(goal && url)) throw new CliExit("Give --runbook, or both --goal and --url");
   let steps: Step[] = [];
   if (args.step.length) steps = parseSteps(args.step);
   else if (book) steps = book.steps;
@@ -332,7 +335,7 @@ async function commandStart(args: Args): Promise<number> {
     view_learned: learned,
     view_claude: claudeView,
     view: runbook.view(learned, claudeView),
-    task: args.task ?? null,
+    task,
     start_url: session.browserUrl(url, chrome),
     plan,
     runbook: book ? { name: book.name, status: book.status, digest: book.digest, scope: book.scope } : null,
@@ -345,7 +348,7 @@ async function commandStart(args: Args): Promise<number> {
     max_actions: args.max_actions,
     max_decisions: args.max_decisions,
     started: Date.now() / 1000,
-    log: defaultLog(args.task || "adhoc"),
+    log: defaultLog(task || "adhoc"),
   };
   context.log = state.log;
   const recorder = new Recorder(state.log);
@@ -354,7 +357,7 @@ async function commandStart(args: Args): Promise<number> {
     browser = await Browser.open(state.start_url, { port: chromeState.port, view: state.view });
     state.page = await browser.observe();
     recorder.event("run_start", {
-      task: args.task ?? null,
+      task,
       goal,
       chrome: browser.version,
       chrome_host: chrome,
@@ -655,16 +658,17 @@ function runTotals(log: string): Record<string, unknown> {
   };
 }
 
-/** Verifies the page independently. The status is what the agent claims, nothing more. */
+/** Verifies the page independently when a verifier was given. The status is what the agent claims, nothing more. */
 async function commandFinish(args: Args): Promise<number> {
   const state = session.load();
   if (state === null) throw new CliExit("No active session. Run: webhand start");
   let verdict: Verdict = { success: null, evidence: "no verifier" };
   try {
-    if (state.task) {
+    const verify = context.hooks.verify;
+    if (verify) {
       const browser = await Browser.open(null, { port: state.port });
       try {
-        verdict = await (await loadTask(state.task)).verify(browser);
+        verdict = await verify(browser, state);
       } finally {
         await browser.close();
       }
@@ -917,7 +921,6 @@ function commands(): Record<string, CommandSpec> {
         { name: "param", type: "string", multiple: true, metavar: "KEY=VALUE", help: "A runbook parameter" },
         { name: "allow-draft", type: "boolean", help: "Trial a runbook no person has approved yet" },
         ...viewOptions,
-        { name: "task", type: "string", help: "A task in tasks/ with an independent verify() (research repository)" },
         { name: "session", type: "string", default: "new", help: "new (temporary) or profile:NAME (saved sign-in)" },
         chromeOption,
         { name: "headed", type: "boolean" },
@@ -1167,13 +1170,13 @@ const processIO: IO = {
  * Runs one command and returns its exit code. A CliExit or UsageError is thrown after the output is written,
  * so the caller prints its message and exits with 1 or 2.
  */
-export async function main(argv: string[], io: IO = processIO): Promise<number> {
+export async function main(argv: string[], io: IO = processIO, hooks: Hooks = {}): Promise<number> {
   const parsed = parse(argv);
   if ("help" in parsed) {
     io.out(parsed.help);
     return OK;
   }
-  context = { out: [], err: io.err, log: null };
+  context = { out: [], err: io.err, log: null, hooks };
   const current = context;
   // What Claude must read is a real cost of this design, so every handoff is sized and logged.
   try {

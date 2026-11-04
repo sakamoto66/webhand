@@ -1,7 +1,8 @@
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CliExit, main } from "../src/cli.ts";
+import { run } from "../research/webhand.ts";
+import { CliExit, type IO, main } from "../src/cli.ts";
 
 export const ROOT = process.cwd();
 
@@ -9,10 +10,11 @@ export function tmpPath(): string {
   return mkdtempSync(join(tmpdir(), "webhand-test-"));
 }
 
-/** Runs the CLI and returns its exit code and stdout. */
-export async function cli(...argv: string[]): Promise<{ code: number; out: string }> {
+type Runner = (argv: string[], io: IO) => Promise<number>;
+
+async function capture(runner: Runner, argv: string[]): Promise<{ code: number; out: string }> {
   let out = "";
-  const code = await main(argv, {
+  const code = await runner(argv, {
     out: (text) => {
       out += text;
     },
@@ -21,16 +23,27 @@ export async function cli(...argv: string[]): Promise<{ code: number; out: strin
   return { code, out };
 }
 
-/** Runs the CLI and returns the message it stopped with. */
-export async function cliExit(...argv: string[]): Promise<string> {
+async function stopMessage(runner: Runner, argv: string[]): Promise<string> {
   try {
-    await cli(...argv);
+    await capture(runner, argv);
   } catch (error) {
     if (error instanceof CliExit) return error.message;
     throw error;
   }
   throw new Error(`Expected ${argv.join(" ")} to stop with a message`);
 }
+
+/** Runs the shipped CLI and returns its exit code and stdout. */
+export const cli = (...argv: string[]) => capture(main, argv);
+
+/** Runs the shipped CLI and returns the message it stopped with. */
+export const cliExit = (...argv: string[]) => stopMessage(main, argv);
+
+/** Runs the research wrapper (research/webhand.ts), which adds --task to start and verify() to finish. */
+export const research = (...argv: string[]) => capture(run, argv);
+
+/** Runs the research wrapper and returns the message it stopped with. */
+export const researchExit = (...argv: string[]) => stopMessage(run, argv);
 
 // biome-ignore lint/suspicious/noExplicitAny: log events are untyped JSON.
 export function readEvents(log: string): any[] {

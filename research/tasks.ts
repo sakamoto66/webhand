@@ -1,18 +1,15 @@
 /**
  * Research tasks: a fixed goal and an independent verify(). They live in the research repository's
- * tasks/ folder, are never shipped in the package, and are the only evidence of success in experiments.
+ * tasks/ folder and, like this loader, are never shipped in the package. They are the only evidence of
+ * success in experiments.
  */
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { Browser } from "./browser.ts";
-import type { ScriptStep } from "./policies/scripted.ts";
-
-export interface Verdict {
-  success: boolean | null;
-  evidence: unknown;
-}
+import type { Browser } from "../src/browser.ts";
+import type { ScriptStep } from "../src/policies/scripted.ts";
+import type { Verdict } from "../src/types.ts";
 
 export interface Task {
   GOAL: string;

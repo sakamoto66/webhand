@@ -387,6 +387,12 @@ Claude Code と実際の Jev（`jev-1.14.0`）で `hotel_filter` を1回実行�
 
 メールアドレスを入力したあと、「予約内容を確認する」は画面の上の外にあり、要素の一覧に入っていませんでした。クリック対象の質問には「該当なし」がないため、Jev は見えている朝食バイキングを選び続けました。切り替えのたびにページが変わるので、`STUCK` も働きません。offscreen を渡すと減りましたが、なくなってはいません（まず下にスクロールしてから、2回クリックしています）。そこまでの2回は、どちらも偶数回の切り替えで、チェックは結果的に残りました。`NOT_VISIBLE` を足すと、Jev は代わりの要素を押さずに「見えていない」と答えました。何も実行されず、次の判断で上にスクロールして、そのまま進みました。
 
+## タスクを配布物から外した変更（2026-11-04）
+
+`--task` を配布する CLI（`webhand start`）と公開スキル `skills/webhand` から外しました。タスクは研究用リポジトリにしかないため、一般の利用者には使えない入口でした。タスクの読み込みと `--task` は、配布しない `research/webhand.ts` に移しました。このラッパーは `start --task NAME` をタスクの GOAL と開始 URL に置き換え、`finish` ではタスクの `verify()` を CLI に渡します。ログの形（`run_start.task`、`run_end.verified`）は変わりません。
+
+公開スキルからは `--task` の段落と、`finish` の報告にある `verified` を削りました。これは Claude が読む文面の変更なので、実験の変数にあたります。以後の実験は研究用スキル `/webhand-research NAME`（`.claude/skills/webhand-research`）で行います。このスキルは公開スキルに従い、コマンドを `node research/webhand.ts` で呼んで `--task` を渡し、`verified` を報告します。これまでの記録にある `/webhand --task NAME` の実行は、変更前のスキルの文面によるものです。
+
 ## 次の手順
 
 1. GOAL 単位の設計で `hotel_filter` と `hotel_reserve` を実行し、変更後の基準値を取る。
