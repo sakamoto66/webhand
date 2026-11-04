@@ -118,6 +118,18 @@ Both go in the project's `.webhand/` or the user's `~/.webhand/` (see [Where thi
 
 Runbooks are never replayed mechanically.
 
+### A procedure not learned yet
+
+A known service can be used for a procedure that has no runbook yet. Claude writes the GOAL, the start URL (from the service's pages), and the steps (`--step`) from the catalog, and `--service SERVICE` passes the service information to Jev without `--runbook`:
+
+```text
+webhand start --goal "..." --url "..." --step "..." --service myservice --session new
+```
+
+- Used as usual: the service's `facts`, and its regions with `default = "skip"`.
+- Not available: what only a runbook holds (`hints`, `done_when`, `focus`). The run relies more on Claude's plan and may need more replans.
+- To reuse the procedure, learn it from the run (below); it becomes a `draft` runbook.
+
 ### Learning from a run
 
 A `/webhand` run does not change what was learned by itself. When a run was replanned, ended `blocked`, or ended `done` without a runbook, Claude points you to the log, and you can teach webhand from it:

@@ -118,6 +118,18 @@ networkingMode=mirrored
 
 手順書は機械的に再生しません。
 
+### まだ学習していない手順
+
+学習済みのサービスであれば、手順書のない手順も実行できます。Claude が catalog から GOAL、開始 URL（サービスのページ一覧から選ぶ）、手順（`--step`）を書きます。`--runbook` がなくても、`--service SERVICE` でサービス情報が Jev に渡ります。
+
+```text
+webhand start --goal "..." --url "..." --step "..." --service myservice --session new
+```
+
+- そのまま効くもの: サービスの `facts`、`default = "skip"` の領域。
+- 使えないもの: 手順書だけが持つ `hints`、`done_when`、`focus`。その分 Claude の計画に頼るため、計画の見直しが増えることがあります。
+- 次回も使うなら、その実行から学習させます（次の節）。`draft` の手順書になります。
+
 ### 実行から学ぶ
 
 `/webhand` の実行だけでは、学習済みの内容は変わりません。計画を見直した、`blocked` で終わった、手順書なしで `done` になった実行では、Claude がログの場所を伝えます。そのログから学習させられます。
