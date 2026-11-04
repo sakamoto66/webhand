@@ -191,10 +191,25 @@ function requireSession(): session.State {
   return state;
 }
 
-async function openPage(state: session.State, url: string | null = null): Promise<void> {
+async function openPage(state: session.State, url: string | null = null, restart = false): Promise<void> {
   const browser = await Browser.open(url, { port: state.port, view: state.view ?? null });
   try {
     state.page = await browser.observe();
+    if (restart && process.env.WEBHAND_SCREENSHOTS === "1") {
+      const recorder = new Recorder(state.log);
+      try {
+        await agent.captureScreenshot(
+          browser,
+          recorder,
+          state.history.length,
+          state.plan.attempt,
+          "restart",
+          state.page.url,
+        );
+      } finally {
+        recorder.close();
+      }
+    }
   } finally {
     await browser.close();
   }
@@ -378,6 +393,7 @@ async function commandStart(args: Args): Promise<number> {
       source: book && !args.step.length ? "runbook" : "claude",
     });
     recorder.event("page", pageEvent(state.page, 1));
+    await agent.captureScreenshot(browser, recorder, 0, 1, "start", state.page.url);
   } catch (error) {
     await session.stopChrome(chromeState);
     throw error;
@@ -544,7 +560,7 @@ async function commandReplan(args: Args): Promise<number> {
     restart: args.restart,
     source: "claude",
   });
-  if (args.restart) await openPage(state, state.start_url); // Navigation only; no earlier mutation is repeated.
+  if (args.restart) await openPage(state, state.start_url, true); // Navigation only; no earlier mutation is repeated.
   if (!args.restart && viewChanged) await openPage(state); // Observe again with the new regions.
   print(
     `${describePlan(plan, state.view ?? null)}\nATTEMPT ${plan.attempt}/${state.max_attempts}\n${headline(state.page)}`,

@@ -257,7 +257,7 @@ webhand profile delete work
 | --- | --- |
 | `.webhand/runbooks/`（プロジェクト） | プロジェクトのサービス情報と手順書。同じ名前ならユーザー側より優先 |
 | `~/.webhand/runbooks/`（ユーザー） | どのプロジェクトでも使うサービス情報と手順書 |
-| `~/.webhand/runs/` | 実行と学習の記録（JSONL）。学習の記録はページ本文を含む。実行ログには入力値ではなく値のラベルを残す |
+| `~/.webhand/runs/` | 実行と学習の記録（JSONL）。学習の記録はページ本文を含む。実行ログには入力値ではなく値のラベルを残す。`WEBHAND_SCREENSHOTS=1` のときは実行ログの隣にスクリーンショットを保存し、入力値も写る |
 | `~/.webhand/state/` | 実行中のセッションと保存プロファイル |
 
 | 環境変数 | 内容 |
@@ -266,6 +266,7 @@ webhand profile delete work
 | `TYPESAFE_MODEL` | Jev が使うモデル |
 | `WEBHAND_HOME` | ユーザー単位の保存場所（既定は `~/.webhand`） |
 | `WEBHAND_CHROME` | `auto` / `linux` / `windows` |
+| `WEBHAND_SCREENSHOTS` | `1` にすると、開始時、各操作のあと、開き直したあとのページの PNG を実行ログの隣（`<ログ名>-screenshots/`）に保存する。webhand の外で実行を採点するためのもの。入力した値も画像に写る。Jev には送らない |
 
 ## WSL で Windows 側の Chrome を使う
 

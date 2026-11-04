@@ -35,6 +35,7 @@ User-scope runbooks are then read from the repository's `runbooks/` (ignored by 
 | `WEBHAND_HOME` | User folder (default `~/.webhand`) |
 | `WEBHAND_CHROME` | `auto` / `windows` / `linux` (same as `--chrome`) |
 | `WEBHAND_LOG` | Log file path override (used by tests) |
+| `WEBHAND_SCREENSHOTS` | `1` captures the page at start, after each action, and after `replan --restart` into `<log>-screenshots/step-NNNN-attempt-N.png` and logs a `screenshot` event with the step. Off by default; stdout and Jev input are unchanged |
 
 ## Repository layout
 

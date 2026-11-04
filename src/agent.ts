@@ -5,7 +5,7 @@
  */
 
 import { quote } from "./format.ts";
-import { pageEvent, type Recorder, safeUrl } from "./metrics.ts";
+import { pageEvent, type Recorder, type ScreenshotAfter, safeUrl } from "./metrics.ts";
 import {
   type Decision,
   type HistoryEntry,
@@ -49,6 +49,28 @@ export interface Actor {
   observe(): Promise<Page>;
   fresh(page: Page, action?: Page | null): Promise<boolean>;
   act(action: Page, page: Page, text?: string | null): Promise<void>;
+  screenshot?(): Promise<Buffer>;
+}
+
+/**
+ * Opt-in with WEBHAND_SCREENSHOTS=1: the harness, not a model, captures the page after each action so an
+ * outside judge can check the run. Never sent to Jev. A failed capture is logged and never stops the run.
+ */
+export async function captureScreenshot(
+  browser: Actor,
+  recorder: Recorder,
+  step: number,
+  attempt: number,
+  after: ScreenshotAfter,
+  url: unknown,
+): Promise<void> {
+  if (process.env.WEBHAND_SCREENSHOTS !== "1" || !browser.screenshot) return;
+  try {
+    recorder.screenshot(step, attempt, after, await browser.screenshot(), url);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    recorder.event("screenshot_failed", { step, attempt, error: message });
+  }
 }
 
 /** Executed actions only; they count against the budget. */
@@ -105,6 +127,7 @@ export async function execute(
   step.page_changed = !sameMarker(newPage.marker, page.marker);
   recorder.event("step_result", { step: step.step, page_changed: step.page_changed });
   if (step.page_changed) recorder.event("page", pageEvent(newPage, options.attempt));
+  await captureScreenshot(browser, recorder, step.step, options.attempt, "action", newPage.url);
   onChange(newPage);
   return newPage;
 }

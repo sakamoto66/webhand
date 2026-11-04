@@ -257,7 +257,7 @@ Saved profiles are dedicated to webhand. webhand never connects to your everyday
 | --- | --- |
 | `.webhand/runbooks/` (project) | The project's service information and runbooks. Wins over the user's of the same name |
 | `~/.webhand/runbooks/` (user) | Service information and runbooks used in every project |
-| `~/.webhand/runs/` | Run and learning logs (JSONL). Learning logs contain page text; run logs keep value labels, not typed values |
+| `~/.webhand/runs/` | Run and learning logs (JSONL). Learning logs contain page text; run logs keep value labels, not typed values. With `WEBHAND_SCREENSHOTS=1`, screenshots go beside the run log and show typed values |
 | `~/.webhand/state/` | Active sessions and saved profiles |
 
 | Variable | Meaning |
@@ -266,6 +266,7 @@ Saved profiles are dedicated to webhand. webhand never connects to your everyday
 | `TYPESAFE_MODEL` | The model Jev uses |
 | `WEBHAND_HOME` | The per-user location (default `~/.webhand`) |
 | `WEBHAND_CHROME` | `auto` / `linux` / `windows` |
+| `WEBHAND_SCREENSHOTS` | `1` saves a PNG of the page at start, after each action, and after a restart beside the run log (`<log>-screenshots/`), for scoring a run outside webhand. Typed values show in the images. Never sent to Jev |
 
 ## Using Windows Chrome from WSL
 
