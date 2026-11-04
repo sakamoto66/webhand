@@ -257,7 +257,7 @@ Saved profiles are dedicated to webhand. webhand never connects to your everyday
 | --- | --- |
 | `.webhand/runbooks/` (project) | The project's service information and runbooks. Wins over the user's of the same name |
 | `~/.webhand/runbooks/` (user) | Service information and runbooks used in every project |
-| `~/.webhand/runs/` | Run and learning logs (JSONL). Learning logs contain page text; run logs keep value labels, not typed values |
+| `~/.webhand/runs/` | Run and learning logs (JSONL). Learning logs contain page text; run logs keep value labels, not typed values. With `WEBHAND_SCREENSHOTS=1`, screenshots go beside the run log and show typed values |
 | `~/.webhand/state/` | Active sessions and saved profiles |
 
 | Variable | Meaning |

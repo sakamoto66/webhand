@@ -10,7 +10,7 @@ Like Claude Code's `~/.claude/` and `.claude/`, webhand uses two locations: one 
 
 | Scope | Path | Contents |
 | --- | --- | --- |
-| User | `~/.webhand/` (override with `WEBHAND_HOME`) | `runbooks/` (service information and runbooks used in every project), `runs/` (run and learning logs, including page text), `state/` (active sessions and saved profiles) |
+| User | `~/.webhand/` (override with `WEBHAND_HOME`) | `runbooks/` (service information and runbooks used in every project), `runs/` (run and learning logs, including page text, and screenshots when `WEBHAND_SCREENSHOTS=1`), `state/` (active sessions and saved profiles) |
 | Project | The first `.webhand/` found walking up from the current directory (stops at the home directory) | `runbooks/` (the project's service information and runbooks; can be shared through git) |
 
 - Runbooks and service information are looked up in the project first, then the user folder. When names collide, the project's version wins. `catalog` lists both and marks each entry `(project)` or `(user)`.
@@ -202,6 +202,7 @@ Logs are written as JSONL to `runs/<timestamp>/` in the user folder (`~/.webhand
 | `human_step` / `values` | Requests and completions of human steps, labels of added input values |
 | `attempt_end` | Outcome of the attempt and Claude's reason for replanning |
 | `handoff` | Number of characters of CLI output Claude reads |
+| `screenshot` / `screenshot_failed` | Only with `WEBHAND_SCREENSHOTS=1`: the step and attempt an image follows, what it follows (`start` / `action` / `restart`), its file in `<log>-screenshots/`, and the URL with query values masked. A failed capture is logged and the run goes on |
 | `run_end` | Self-reported status and Claude's `reason`, service, runbook, independent verification result, attempt count and per-attempt outcomes, per-role totals |
 
 Success is judged by `run_end.verified`; `status=done` is only a claim. Claude Code's token usage is not available, so `handoffs` (times control returned to Claude) and `handoff_chars` (characters Claude read) serve as proxies.
