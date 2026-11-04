@@ -5,7 +5,7 @@
  */
 
 import { Agent, fetch as undiciFetch } from "undici";
-import { pyJson, pyRound, sleep } from "../py.ts";
+import { sleep, toJson } from "../format.ts";
 import {
   type Action,
   Decision,
@@ -54,7 +54,7 @@ async function postJson(fetchJson: Fetch, key: string, body: unknown): Promise<J
       response = await fetchJson(URL, {
         method: "POST",
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: pyJson(body, true),
+        body: toJson(body),
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
     } catch {
@@ -176,7 +176,7 @@ export class JevPolicy implements Policy {
       this.fetchJson = options.fetch;
       this.agent = null;
     } else {
-      // HTTP/2 when the server offers it, as the Python client did; HTTP/1.1 otherwise.
+      // HTTP/2 when the server offers it; HTTP/1.1 otherwise.
       const agent = new Agent({ allowH2: true });
       this.agent = agent;
       this.fetchJson = (url, init) => undiciFetch(url, { ...init, dispatcher: agent });
@@ -207,7 +207,7 @@ export class JevPolicy implements Policy {
         "typesafe",
         this.servedModel as string,
         "choose",
-        pyRound(performance.now() - started),
+        Math.round(performance.now() - started),
         "input_tokens" in usage ? usage.input_tokens : (usage.prompt_tokens ?? null),
         "output_tokens" in usage ? usage.output_tokens : (usage.completion_tokens ?? null),
       ),

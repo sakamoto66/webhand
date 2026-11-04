@@ -6,7 +6,6 @@
 
 import { asset, type Browser, READ_STATE } from "./browser.ts";
 import type { Recorder } from "./metrics.ts";
-import { pyRound } from "./py.ts";
 
 // A function replacer: the snapshot holds "$" sequences that a string replacement would expand.
 const RECORDER = asset("recorder.js").replaceAll("__SNAPSHOT__", () => READ_STATE.trim());
@@ -54,7 +53,7 @@ export async function record(
 
   const write = (kind: string, fields: Record<string, unknown>) => {
     counts[kind] = (counts[kind] ?? 0) + 1;
-    recorder.event(kind, { at_ms: pyRound(performance.now() - started), ...fields });
+    recorder.event(kind, { at_ms: Math.round(performance.now() - started), ...fields });
   };
 
   const receive = (_source: unknown, event: unknown) => {

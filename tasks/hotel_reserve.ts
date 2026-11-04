@@ -27,7 +27,7 @@ function addDays(day: Date, days: number): Date {
   return new Date(day.getFullYear(), day.getMonth(), day.getDate() + days);
 }
 
-/** Monday is 0 and Sunday is 6, as Python's date.weekday(). */
+/** Monday is 0 and Sunday is 6 (Monday-first weekday). */
 function weekday(day: Date): number {
   return (day.getDay() + 6) % 7;
 }

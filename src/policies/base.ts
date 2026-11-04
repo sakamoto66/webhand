@@ -4,7 +4,7 @@
  * Adapted from jev-ultrafast (MIT); see THIRD_PARTY_LICENSE_jev-ultrafast.txt.
  */
 
-import { pyRepr, pyRound } from "../py.ts";
+import { quote } from "../format.ts";
 import { type Action, Decision, type HistoryEntry, type Page, type Plan, PolicyError, type Value } from "../types.ts";
 
 export const NEXT_ACTION = `Advance the user's entire goal from the CURRENT page using one operation.
@@ -126,8 +126,8 @@ export function offscreen(page: Page): { above_px: number; below_px: number } {
   const height = page.h || 0;
   const y = "y" in scroll ? scroll.y : 0;
   const total = "height" in scroll ? scroll.height : 0;
-  const above = pyRound(y);
-  const below = height ? Math.max(0, pyRound(total - y - height)) : 0;
+  const above = Math.round(y);
+  const below = height ? Math.max(0, Math.round(total - y - height)) : 0;
   return { above_px: above, below_px: below };
 }
 
@@ -178,9 +178,9 @@ export function resolve(page: Page, operation: string, target: string | null | u
   const control = controls.get(operation);
   if (control) return new Decision(operation, control);
   const choices = targets.get(operation);
-  if (!choices) throw new PolicyError(`Operation ${pyRepr(operation)} is unavailable; no action executed.`);
+  if (!choices) throw new PolicyError(`Operation ${quote(operation)} is unavailable; no action executed.`);
   const action = target === null || target === undefined ? undefined : choices.get(target);
   if (!action)
-    throw new PolicyError(`Target ${pyRepr(target ?? null)} is invalid for ${operation}; no action executed.`);
+    throw new PolicyError(`Target ${quote(target ?? null)} is invalid for ${operation}; no action executed.`);
   return new Decision(operation, action);
 }

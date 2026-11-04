@@ -4,8 +4,8 @@
  * The loop returns to Claude only when it cannot continue on its own. The task's verify() decides success.
  */
 
+import { quote } from "./format.ts";
 import type { Recorder } from "./metrics.ts";
-import { pyRepr, pyRound } from "./py.ts";
 import {
   type Decision,
   type HistoryEntry,
@@ -146,7 +146,7 @@ export async function runAgent(
     page,
     actions: actionsIn(history, attempt).length,
     decisions,
-    elapsed_ms: pyRound(performance.now() - started),
+    elapsed_ms: Math.round(performance.now() - started),
     ...extra,
   });
 
@@ -205,7 +205,7 @@ export async function runAgent(
             attempt,
             operation: "STALE",
             kind: STALE,
-            action: `${decision.operation} ${pyRepr(decision.action.label)} did not run: ${error.message}`,
+            action: `${decision.operation} ${quote(decision.action.label)} did not run: ${error.message}`,
             text: null,
             url: observed.url,
             // Unchanged: the same choice would be refused again, so it counts toward STUCK.

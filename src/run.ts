@@ -4,9 +4,9 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { Budget, GOAL_REPORTED, runAgent } from "./agent.ts";
 import { Browser } from "./browser.ts";
+import { describeError, show, stamp } from "./format.ts";
 import { gitState, Recorder, summarize } from "./metrics.ts";
 import { ScriptedPolicy } from "./policies/scripted.ts";
-import { describeError, pyStr, stamp, utcIso } from "./py.ts";
 import { loadTask, type Task, type Verdict } from "./tasks.ts";
 
 const ROOT = process.cwd();
@@ -33,7 +33,7 @@ async function runOnce(taskName: string, task: Task, repeat: number, folder: str
       config: policy.config(),
       chrome: browser.version,
       git: gitState(),
-      started_at: utcIso(),
+      started_at: new Date().toISOString(),
     });
     const plan = { goal: task.GOAL, steps: [], values: [] };
     const { page: _page, ...outcome } = await runAgent(
@@ -55,7 +55,7 @@ async function runOnce(taskName: string, task: Task, repeat: number, folder: str
   recorder.event("run_end", { ...result, verified: verdict.success, evidence: verdict.evidence, ...summary });
   recorder.close();
   const reason = result.reason || result.detail || null;
-  console.log(`${taskName}#${repeat}: ${result.status} verified=${pyStr(verdict.success)} reason=${pyStr(reason)}`);
+  console.log(`${taskName}#${repeat}: ${result.status} verified=${show(verdict.success)} reason=${show(reason)}`);
   return verdict.success === true;
 }
 

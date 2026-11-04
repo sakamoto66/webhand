@@ -9,7 +9,7 @@ import {
   type Browser as PlaywrightBrowser,
   type Page as PlaywrightPage,
 } from "playwright-core";
-import { sleep } from "./py.ts";
+import { sleep } from "./format.ts";
 import { type Action, MutationUncertain, type Page, StalePage } from "./types.ts";
 
 export function asset(name: string): string {

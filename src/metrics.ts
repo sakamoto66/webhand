@@ -3,7 +3,7 @@
 import { execFileSync } from "node:child_process";
 import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
-import { pyJson } from "./py.ts";
+import { toJson } from "./format.ts";
 import type { ModelCall } from "./types.ts";
 
 interface Totals {
@@ -51,7 +51,7 @@ export class Recorder {
 
   event(type: string, fields: Record<string, unknown> = {}): void {
     if (this.fd === null) throw new Error(`Recorder for ${this.path} is closed`);
-    writeSync(this.fd, `${pyJson({ type, ...fields })}\n`);
+    writeSync(this.fd, `${toJson({ type, ...fields })}\n`);
   }
 
   call(call: ModelCall): void {

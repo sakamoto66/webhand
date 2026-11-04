@@ -1,6 +1,6 @@
 /** Fixed steps from the task file. No API. It tests the harness, not an agent. */
 
-import { pyRepr } from "../py.ts";
+import { quote } from "../format.ts";
 import { type Decision, type HistoryEntry, type ModelCall, type Page, type Policy, PolicyError } from "../types.ts";
 import { actionSpace, OPERATIONS, resolve } from "./base.ts";
 
@@ -51,6 +51,6 @@ export class ScriptedPolicy implements Policy {
       }
     }
     if (controls.has("SCROLL_DOWN")) return resolve(page, "SCROLL_DOWN", null);
-    throw new PolicyError(`Scripted step not found: ${pyRepr(step)}`);
+    throw new PolicyError(`Scripted step not found: ${quote(step)}`);
   }
 }
