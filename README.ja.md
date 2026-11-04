@@ -195,7 +195,7 @@ skip = ["header", "footer"]
 
 学習の記録では、`page` イベントに領域の要約（キーと件数だけ）、`action` イベントに対象の領域キーが入ります。秘密に見える名前の段は `form:<redacted>` になります。
 
-`verify()` のないサービスでは `verified` は `None` です。手順書の `done_when` は Claude の確認材料で、成功の証拠にはなりません。
+`verify()` のないサービスでは `verified` は `null` です。手順書の `done_when` は Claude の確認材料で、成功の証拠にはなりません。
 
 ## ログ
 
@@ -250,7 +250,7 @@ npm run test:coverage                      # カバレッジ（coverage/index.ht
 npm run smoke -- --task hotel_filter       # モデルなしの動作確認
 ```
 
-`tests/golden/` は Python 版の出力の記録です。Claude と Jev が読む文字列（`render`、`report`、Jev への state と質問など）が移行の前後で同じであることを確かめます。
+`tests/golden/` は Claude と Jev が読む文字列（`render`、`report`、Jev への state と質問など）の基準出力です。意図しない変化を防ぎます。再生成は `npm run test:golden:update` です。
 
 公開は `npm publish`（`prepublishOnly` で lint、型チェック、knip、ビルド）です。`package.json` と `.claude-plugin/plugin.json` の版を揃え、スキルの `webhand@0.2` も合わせて更新します。
 

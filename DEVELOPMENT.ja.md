@@ -49,7 +49,7 @@ src/                 CLI（ビルド後 dist/ として配布）
   learn.ts           人の操作の記録
   workspace.ts       プロジェクト（.webhand/）とユーザー（~/.webhand/）のフォルダー
   metrics.ts         追記専用の JSONL ログ、トークン集計、git の状態
-  py.ts              golden 出力用の Python 互換フォーマット（repr、json、round）
+  format.ts          Claude と Jev が読む値の引用と compact JSON、実行フォルダー名
   types.ts           共有の型とエラー（StalePage、MutationUncertain、PolicyError）
   tasks.ts           研究用タスクの読み込み
   run.ts             モデルを使わないスモークテスト（npm run smoke）
@@ -134,14 +134,14 @@ npm run smoke -- --task hotel_filter   # タスクの SCRIPT をモデルなし�
 
 ### golden 出力
 
-`tests/golden/` には以前の Python 実装の出力が記録されており、`tests/golden.test.ts` が文字単位で比較します（`render`、`report`、`describePlan`、Jev への state と質問など）。これは Claude と Jev が読むものなので、実験の一部です。
+`tests/golden/cases.json` には基準の出力が記録されており、`tests/golden.test.ts` が文字単位で比較します（`render`、`report`、`describePlan`、Jev への state と質問など）。これは Claude と Jev が読むものなので、実験の一部です。
 
-- `py.ts` は Python の `repr`、`json.dumps`、`round` を再現する。Claude に出力するものや Jev に送るものには、`JSON.stringify` やテンプレートの既定の文字列化ではなくこちらを使う。
-- このテキストを意図して変えるときは実験の変数として扱い、golden を更新して理由をコミットメッセージに残す。
+- Claude に出力するものや Jev に送るものには、テンプレートの既定の文字列化ではなく `format.ts` の `quote`、`show`、`toJson` を使う。`toJson` は `Map` の順序を保つ（通常のオブジェクトでは `"2"` と `"1"` のようなキーの順序が失われる）。
+- このテキストを意図して変えるときは実験の変数として扱い、`npm run test:golden:update` で再生成して `cases.json` の差分を確かめ、理由をコミットメッセージに残す。`tests/golden/pages.json` は入力の記録なので変えない。
 
 ## 追加するとき
 
-**CLI のコマンドやオプション**: `src/cli.ts` の `commands()` に追加し（パーサーは argparse のメッセージを再現している）、`tests/cli.test.ts` でテストする。README のコマンド表（両言語）と、それを使う `skills/` のスキルも更新する。
+**CLI のコマンドやオプション**: `src/cli.ts` の `commands()` に追加し（パーサーは argparse 風のメッセージを出す）、`tests/cli.test.ts` でテストする。README のコマンド表（両言語）と、それを使う `skills/` のスキルも更新する。
 
 **研究用タスク**: `tasks/<name>.ts` を追加し、`GOAL`、`startUrl(root)`、`{ success, evidence }` を返す非同期の `verify(browser)`、`SCRIPT`（`npm run smoke` 用の固定手順）を export する。フィクスチャは `tasks/fixtures/` にローカルで置く。`tasks/` は npm パッケージに含めない。
 
