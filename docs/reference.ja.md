@@ -98,7 +98,7 @@ networkingMode=mirrored
 
 ## 学習モード
 
-人の操作、またはサービスのソースコードから、次の2種類のファイルを作ります。
+人の操作、サービスのソースコード、または過去の実行ログから、次の2種類のファイルを作ります。
 
 | ファイル | 内容 | 使われ方 |
 | --- | --- | --- |
@@ -117,6 +117,19 @@ networkingMode=mirrored
 4. ユーザーが内容を確認し、`status = "approved"` にします。
 
 手順書は機械的に再生しません。
+
+### 実行から学ぶ
+
+`/webhand` の実行だけでは、学習済みの内容は変わりません。計画を見直した、`blocked` で終わった、手順書なしで `done` になった実行では、Claude がログの場所を伝えます。そのログから学習させられます。
+
+```text
+/webhand-learn ~/.webhand/runs/<timestamp>/adhoc.jsonl
+```
+
+- Claude は、自分が書いた見直しの理由（`attempt_end`）、`run` が止まった理由（`escalation`）、成功した試行で操作した要素と領域（`step`、`page`）を読みます。
+- サービスの性質は service.toml の `facts` に、ひとつの手順に関することは手順書の `hints`、`steps`、`focus`、`skip` に書きます。手順書なしで `done` になった実行からは、新しい手順書を作れます。ログは `run:<パス>` として `sources` に加えます。
+- 根拠にするのは Claude の理由とログの構造だけです。ページ本文は使いません。
+- 変えた手順書は、`approved` だったものも `draft` に戻ります。試行してから承認してください。
 
 記録の扱い:
 
@@ -169,12 +182,13 @@ skip = ["header", "footer"]
 | `run_start` | 目標、Chrome（linux / windows）、セッションの種類、git commit、手順書、サービス |
 | `plan` | 試行ごとの手順、入力値のラベル、その出所（`claude` / `runbook`）、`restart` |
 | `call` | Jev の呼び出しごとのトークンと遅延 |
-| `step` / `step_result` | 実行した操作、試行番号、判断者、確信度、ページの変化 |
+| `step` / `step_result` | 実行した操作、その領域、入力した値のラベル（値そのものは残さない）と `text_chars`、試行番号、判断者、確信度、ページの変化。URL のクエリ値は伏せる |
+| `page` | 開始時とページが変わるたびの領域の要約（キーと件数だけ。本文は入れない） |
 | `escalation` | `run` が Claude に返した結果 |
 | `human_step` / `values` | 人の手順の依頼と完了、追加された入力値のラベル |
 | `attempt_end` | 試行の結果と、Claude が書いた見直しの理由 |
 | `handoff` | Claude が読む CLI 出力の文字数 |
-| `run_end` | 自己申告の状態、独立検証の結果、試行回数と試行ごとの結果、役割ごとの集計 |
+| `run_end` | 自己申告の状態と Claude の `reason`、サービス、手順書、独立検証の結果、試行回数と試行ごとの結果、役割ごとの集計 |
 
 成功判定は `run_end.verified` です。`status=done` は申告にすぎません。Claude Code のトークン数は取得しないため、`handoffs`（Claude に戻した回数）と `handoff_chars`（読ませた文字数）を代理指標にします。
 

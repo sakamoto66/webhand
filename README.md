@@ -55,7 +55,7 @@ flowchart LR
     C -->|missing value, login, CAPTCHA| U
 ```
 
-1. **Learn**: `/webhand-learn` turns a recorded demonstration, or the service's source code, into service information and a runbook.
+1. **Learn**: `/webhand-learn` turns a recorded demonstration, the service's source code, or the log of an earlier run into service information and a runbook.
 2. **Ask**: Post a request such as `/webhand book a hotel`. Claude plans the GOAL, steps, and input values from what webhand has learned, and asks you for anything missing.
 3. **Choose a session**: A fresh, throwaway session (the default), or a saved profile that keeps you logged in.
 4. **Run**: The planned URL opens. Jev picks the next action from the service information, the plan, the current page, and the action history, and loops until the GOAL.
@@ -71,7 +71,7 @@ Claude makes the judgment calls (the plan, the values, the check, the replan), a
 - **No guessed input**: The only values entered are the ones Claude wrote in the plan and the ones you gave. If something is missing, it asks.
 - **No blind retries**: A change to the page is never retried. If webhand cannot tell whether an action took effect, it stops instead of trying again.
 - **Page text is untrusted**: Content on the page is treated as data, never as instructions.
-- **Recordings and logs**: Learning mode masks password, one-time code, and card fields and all URL query values. Logs under `~/.webhand/runs/` still contain page text, so do not share them.
+- **Recordings and logs**: Learning mode masks password, one-time code, and card fields and all URL query values. Run logs keep the label of each typed value, not the value. Logs under `~/.webhand/runs/` still contain page text, so do not share them.
 - **Review before use**: Runbooks start as `draft` and are used for normal runs only after you set them to `approved`. Keep secrets and personal data out of runbooks; pass them as `params`.
 
 ## Documentation
