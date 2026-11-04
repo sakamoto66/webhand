@@ -266,7 +266,7 @@ Saved profiles are dedicated to webhand. webhand never connects to your everyday
 | `TYPESAFE_MODEL` | The model Jev uses |
 | `WEBHAND_HOME` | The per-user location (default `~/.webhand`) |
 | `WEBHAND_CHROME` | `auto` / `linux` / `windows` |
-| `WEBHAND_SCREENSHOTS` | `1` saves a PNG of the page at start and after each action beside the run log (`<log>-screenshots/`), for scoring a run outside webhand. Typed values show in the images. Never sent to Jev |
+| `WEBHAND_SCREENSHOTS` | `1` saves a PNG of the page at start, after each action, and after a restart beside the run log (`<log>-screenshots/`), for scoring a run outside webhand. Typed values show in the images. Never sent to Jev |
 
 ## Using Windows Chrome from WSL
 

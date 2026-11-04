@@ -38,6 +38,8 @@ export function gitState(): { commit: string | null; dirty: boolean } {
   return { commit: git("rev-parse", "HEAD"), dirty: Boolean(git("status", "--porcelain")) };
 }
 
+export type ScreenshotAfter = "start" | "action" | "restart";
+
 export class Recorder {
   readonly path: string;
   readonly calls: ModelCall[] = [];
@@ -54,13 +56,16 @@ export class Recorder {
     writeSync(this.fd, `${toJson({ type, ...fields })}\n`);
   }
 
-  /** Saves a PNG beside the log as <log>-screenshots/step-NNNN.png and logs which step it follows. */
-  screenshot(step: number, attempt: number, png: Buffer, url: unknown): void {
+  /**
+   * Saves a PNG beside the log as <log>-screenshots/step-NNNN-attempt-N.png and logs what it follows: the
+   * start page (step 0), an action (that step), or a restart (the last step, in the new attempt).
+   */
+  screenshot(step: number, attempt: number, after: ScreenshotAfter, png: Buffer, url: unknown): void {
     const name = basename(this.path, ".jsonl");
-    const file = join(`${name}-screenshots`, `step-${String(step).padStart(4, "0")}.png`);
+    const file = join(`${name}-screenshots`, `step-${String(step).padStart(4, "0")}-attempt-${attempt}.png`);
     mkdirSync(join(dirname(this.path), `${name}-screenshots`), { recursive: true });
     writeFileSync(join(dirname(this.path), file), png);
-    this.event("screenshot", { step, attempt, file, url: safeUrl(url) });
+    this.event("screenshot", { step, attempt, after, file, url: safeUrl(url) });
   }
 
   call(call: ModelCall): void {

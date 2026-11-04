@@ -35,7 +35,7 @@ claude --plugin-dir .          # このチェックアウトのスキルを読�
 | `WEBHAND_HOME` | ユーザーフォルダー（既定は `~/.webhand`） |
 | `WEBHAND_CHROME` | `auto` / `windows` / `linux`（`--chrome` と同じ） |
 | `WEBHAND_LOG` | ログファイルの出力先の上書き（テストで使う） |
-| `WEBHAND_SCREENSHOTS` | `1` にすると、開始時と各操作のあとのページを `<ログ名>-screenshots/step-NNNN.png` に保存し、手順番号つきの `screenshot` イベントをログに書く。既定は無効。標準出力と Jev への入力は変わらない |
+| `WEBHAND_SCREENSHOTS` | `1` にすると、開始時、各操作のあと、`replan --restart` のあとのページを `<ログ名>-screenshots/step-NNNN-attempt-N.png` に保存し、手順番号つきの `screenshot` イベントをログに書く。既定は無効。標準出力と Jev への入力は変わらない |
 
 ## リポジトリ構成
 

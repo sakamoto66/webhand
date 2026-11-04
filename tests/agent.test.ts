@@ -279,9 +279,9 @@ test("each action is followed by a screenshot beside the log", async () => {
   const browser = new ShootingBrowser();
   await run(browser, [new Decision("CLICK", CLICK), new Decision("CLICK", CLICK), new Decision("DONE")]);
   const shots = readEvents(recorder.path).filter((e) => e.type === "screenshot");
-  expect(shots.map((e) => [e.step, e.attempt, e.file])).toEqual([
-    [1, 1, join("run-screenshots", "step-0001.png")],
-    [2, 1, join("run-screenshots", "step-0002.png")],
+  expect(shots.map((e) => [e.step, e.attempt, e.after, e.file])).toEqual([
+    [1, 1, "action", join("run-screenshots", "step-0001-attempt-1.png")],
+    [2, 1, "action", join("run-screenshots", "step-0002-attempt-1.png")],
   ]);
   expect(readFileSync(join(dirname(recorder.path), shots[1].file), "utf8")).toBe("png2");
 });

@@ -5,7 +5,7 @@
  */
 
 import { quote } from "./format.ts";
-import { pageEvent, type Recorder, safeUrl } from "./metrics.ts";
+import { pageEvent, type Recorder, type ScreenshotAfter, safeUrl } from "./metrics.ts";
 import {
   type Decision,
   type HistoryEntry,
@@ -61,11 +61,12 @@ export async function captureScreenshot(
   recorder: Recorder,
   step: number,
   attempt: number,
+  after: ScreenshotAfter,
   url: unknown,
 ): Promise<void> {
   if (process.env.WEBHAND_SCREENSHOTS !== "1" || !browser.screenshot) return;
   try {
-    recorder.screenshot(step, attempt, await browser.screenshot(), url);
+    recorder.screenshot(step, attempt, after, await browser.screenshot(), url);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     recorder.event("screenshot_failed", { step, attempt, error: message });
@@ -126,7 +127,7 @@ export async function execute(
   step.page_changed = !sameMarker(newPage.marker, page.marker);
   recorder.event("step_result", { step: step.step, page_changed: step.page_changed });
   if (step.page_changed) recorder.event("page", pageEvent(newPage, options.attempt));
-  await captureScreenshot(browser, recorder, step.step, options.attempt, newPage.url);
+  await captureScreenshot(browser, recorder, step.step, options.attempt, "action", newPage.url);
   onChange(newPage);
   return newPage;
 }

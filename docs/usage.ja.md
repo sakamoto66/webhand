@@ -266,7 +266,7 @@ webhand profile delete work
 | `TYPESAFE_MODEL` | Jev が使うモデル |
 | `WEBHAND_HOME` | ユーザー単位の保存場所（既定は `~/.webhand`） |
 | `WEBHAND_CHROME` | `auto` / `linux` / `windows` |
-| `WEBHAND_SCREENSHOTS` | `1` にすると、開始時と各操作のあとのページの PNG を実行ログの隣（`<ログ名>-screenshots/`）に保存する。webhand の外で実行を採点するためのもの。入力した値も画像に写る。Jev には送らない |
+| `WEBHAND_SCREENSHOTS` | `1` にすると、開始時、各操作のあと、開き直したあとのページの PNG を実行ログの隣（`<ログ名>-screenshots/`）に保存する。webhand の外で実行を採点するためのもの。入力した値も画像に写る。Jev には送らない |
 
 ## WSL で Windows 側の Chrome を使う
 

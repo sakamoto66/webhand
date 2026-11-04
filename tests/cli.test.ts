@@ -380,7 +380,17 @@ test("with WEBHAND_SCREENSHOTS=1 the start page and each action are captured; st
   await begin();
   ScriptedJev.moves = [...FULL];
   expect((await cli("run")).out).toBe(plain);
+  expect((await cli("replan", "--reason", "Check the restart", "--restart")).code).toBe(OK);
   const shots = events().filter((e) => e.type === "screenshot");
-  expect(shots.map((e) => e.step)).toEqual([0, 1, 2, 3, 4, 5]);
+  expect(shots.map((e) => [e.step, e.attempt, e.after])).toEqual([
+    [0, 1, "start"],
+    [1, 1, "action"],
+    [2, 1, "action"],
+    [3, 1, "action"],
+    [4, 1, "action"],
+    [5, 1, "action"],
+    [5, 2, "restart"],
+  ]);
+  expect(new Set(shots.map((e) => e.file)).size).toBe(shots.length);
   for (const shot of shots) expect(existsSync(join(log, "..", shot.file))).toBe(true);
 });
