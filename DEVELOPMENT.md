@@ -157,7 +157,7 @@ Tasks are research-only: neither `tasks/` nor `research/` is shipped, and the sh
 
 - Branch from `main`. CI must pass.
 - Never commit `.env`, `runs/`, `state/` (it holds saved profiles), or `.claude/settings.local.json`. These are already in `.gitignore`.
-- Keep README.md and README.ja.md, `docs/reference.md` and `docs/reference.ja.md`, and this file and DEVELOPMENT.ja.md in sync.
+- Keep README.md and README.ja.md, `docs/reference.md` and `docs/reference.ja.md`, `docs/usage.md` and `docs/usage.ja.md`, and this file and DEVELOPMENT.ja.md in sync.
 
 ## Releasing
 

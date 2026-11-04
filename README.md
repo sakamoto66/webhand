@@ -79,7 +79,7 @@ Claude makes the judgment calls (the plan, the values, the check, the replan), a
 | Document | Contents |
 | --- | --- |
 | [Reference](docs/reference.md) | Where files live, roles and results, sessions, commands, learning mode, page regions, logs |
-| [Usage guide](docs/usage.ja.md) (Japanese) | Skills and CLI step by step, common pitfalls |
+| [Usage guide](docs/usage.md) | Skills and CLI step by step, common pitfalls |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | For contributors: code layout, rules, tests, research, release steps |
 
 ## License
