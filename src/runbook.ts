@@ -10,7 +10,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse } from "smol-toml";
-import { pyRepr, pyStr, pyTruthy } from "./py.ts";
+import { quote, show } from "./format.ts";
 import { roots, type Scope, scopeRoot } from "./workspace.ts";
 
 const WORD = "[\\p{L}\\p{N}_-]+";
@@ -48,13 +48,13 @@ export class RunbookError extends Error {
 /** Checks a runbook name such as hotel/filter. */
 function checkName(name: string): string {
   if (!NAME.test(name) || name.split("/").at(-1) === SERVICE_FILE) {
-    throw new RunbookError(`Invalid runbook name: ${pyRepr(name)}`);
+    throw new RunbookError(`Invalid runbook name: ${quote(name)}`);
   }
   return name;
 }
 
 function checkService(service: string): string {
-  if (!SERVICE_NAME.test(service)) throw new RunbookError(`Invalid service name: ${pyRepr(service)}`);
+  if (!SERVICE_NAME.test(service)) throw new RunbookError(`Invalid service name: ${quote(service)}`);
   return service;
 }
 
@@ -109,6 +109,14 @@ function readToml(file: string): { raw: Buffer; data: Doc } {
   }
 }
 
+/** Missing, false, zero, or an empty string, list, or table. */
+function blank(value: unknown): boolean {
+  if (value === null || value === undefined || value === false || value === 0 || value === "") return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object") return Object.keys(value).length === 0;
+  return false;
+}
+
 const get = (doc: Doc, key: string, fallback: unknown = undefined) => (key in doc ? doc[key] : fallback);
 
 /** Region patterns, such as "main/form:宿泊予約" or "footer". Anything else is an error. */
@@ -134,7 +142,7 @@ function regions(file: string, page: Doc): Region[] {
     if (!key.length) throw new RunbookError(`${file}: a region on ${get(page, "url", "?")} has no key`);
     const fallback = get(region, "default", null);
     if (fallback !== null && !DEFAULTS.has(fallback)) {
-      throw new RunbookError(`${file}: region ${pyRepr(key[0])} has unknown default ${pyRepr(fallback)}`);
+      throw new RunbookError(`${file}: region ${quote(key[0])} has unknown default ${quote(fallback)}`);
     }
     found.push({ key: key[0], purpose: get(region, "purpose", ""), default: fallback });
   }
@@ -149,7 +157,7 @@ export function view(...layers: (Partial<View> | null | undefined)[]): View {
   let focus: string[] = [];
   let skip: string[] = [];
   for (const layer of layers) {
-    if (!pyTruthy(layer)) continue;
+    if (blank(layer)) continue;
     const newFocus = [...(layer?.focus ?? [])];
     const newSkip = [...(layer?.skip ?? [])];
     const kept = (p: string) => !newFocus.includes(p) && !newSkip.includes(p);
@@ -184,20 +192,20 @@ export function loadService(service: string): ServiceInfo | null {
   if (!found) return null;
   const { file, scope } = found;
   const { data } = readToml(file);
-  const missing = ["service", "description", "base_url", "sources"].filter((key) => !pyTruthy(data[key]));
+  const missing = ["service", "description", "base_url", "sources"].filter((key) => blank(data[key]));
   if (missing.length) throw new RunbookError(`${file}: missing ${missing.join(", ")}`);
   const login = get(data, "login", {});
   return {
     service: data.service,
     description: String(data.description).trim(),
     base_url: data.base_url,
-    login: { required: pyTruthy(get(login, "required")), url: get(login, "url", null) },
+    login: { required: !blank(get(login, "required")), url: get(login, "url", null) },
     pages: (get(data, "pages", []) as Doc[]).map((p) => ({
       url: get(p, "url", ""),
       purpose: get(p, "purpose", ""),
       regions: regions(file, p),
     })),
-    facts: (get(data, "facts", []) as unknown[]).map(pyStr),
+    facts: (get(data, "facts", []) as unknown[]).map(show),
     scope,
   };
 }
@@ -268,7 +276,7 @@ export function parseValues(pairs: string[]): Record<string, string> {
   const values: Record<string, string> = {};
   for (const pair of pairs) {
     const at = pair.indexOf("=");
-    if (at <= 0) throw new RunbookError(`Expected KEY=VALUE, got ${pyRepr(pair)}`);
+    if (at <= 0) throw new RunbookError(`Expected KEY=VALUE, got ${quote(pair)}`);
     values[pair.slice(0, at)] = pair.slice(at + 1);
   }
   return values;
@@ -316,15 +324,15 @@ export function loadFile(
 ): Runbook {
   const { raw, data } = readToml(file);
   const required = ["service", "name", "goal", "start_url", "status", "sources", "steps"];
-  const missing = required.filter((key) => !pyTruthy(data[key]));
+  const missing = required.filter((key) => blank(data[key]));
   if (missing.length) throw new RunbookError(`${file}: missing ${missing.join(", ")}`);
-  if (!STATUSES.has(data.status)) throw new RunbookError(`${file}: unknown status ${pyRepr(data.status)}`);
+  if (!STATUSES.has(data.status)) throw new RunbookError(`${file}: unknown status ${quote(data.status)}`);
 
   const declared = get(data, "params", {}) as Doc;
   const unknown = Object.keys(values)
     .filter((key) => !(key in declared))
     .sort();
-  if (unknown.length) throw new RunbookError(`${file}: unknown parameters ${pyRepr(unknown)}`);
+  if (unknown.length) throw new RunbookError(`${file}: unknown parameters ${quote(unknown)}`);
   const filled: Record<string, unknown> = {};
   for (const [key, spec] of Object.entries(declared)) filled[key] = key in values ? values[key] : get(spec, "default");
 
@@ -332,21 +340,21 @@ export function loadFile(
     String(text).replace(PARAM, (_match, param: string) => {
       const value = filled[param];
       if (value === null || value === undefined) {
-        throw new RunbookError(`${file}: parameter ${pyRepr(param)} has no value. Pass --param ${param}=VALUE`);
+        throw new RunbookError(`${file}: parameter ${quote(param)} has no value. Pass --param ${param}=VALUE`);
       }
-      return pyStr(value);
+      return show(value);
     });
 
   const steps = (data.steps as Doc[]).map((step, i) => {
     const number = i + 1;
     const actor = get(step, "actor", "jev");
-    if (!ACTORS.has(actor)) throw new RunbookError(`${file}: step ${number} has unknown actor ${pyRepr(actor)}`);
-    if (!pyTruthy(step.instruction)) throw new RunbookError(`${file}: step ${number} has no instruction`);
+    if (!ACTORS.has(actor)) throw new RunbookError(`${file}: step ${number} has unknown actor ${quote(actor)}`);
+    if (blank(step.instruction)) throw new RunbookError(`${file}: step ${number} has no instruction`);
     return {
       actor,
       instruction: fill(step.instruction),
       hints: (get(step, "hints", []) as string[]).map(fill),
-      done_when: pyTruthy(step.done_when) ? fill(step.done_when) : null,
+      done_when: blank(step.done_when) ? null : fill(step.done_when),
     };
   });
   return {

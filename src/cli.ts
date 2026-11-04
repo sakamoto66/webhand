@@ -10,11 +10,11 @@ import { join } from "node:path";
 import * as agent from "./agent.ts";
 import { Budget, execute, runAgent } from "./agent.ts";
 import { Browser } from "./browser.ts";
+import { describeError, quote, show, stamp, toJson } from "./format.ts";
 import * as learn from "./learn.ts";
 import { gitState, logOnce, Recorder, summarize } from "./metrics.ts";
 import { actionSpace, offscreen, planText, resolve } from "./policies/base.ts";
 import { JevPolicy } from "./policies/jev.ts";
-import { describeError, pyJson, pyLen, pyRepr, pyRound, pyStr, stamp, utcIso } from "./py.ts";
 import * as runbook from "./runbook.ts";
 import * as session from "./session.ts";
 import { loadTask, TaskError, type Verdict } from "./tasks.ts";
@@ -41,7 +41,7 @@ const DEFAULT_ATTEMPTS = 3;
 const PERSON = "[person]";
 const RECENT = 8; // Actions shown to Claude when an attempt stops.
 
-/** What a command needs to stop with a message, as Python's SystemExit("...") did: stderr, exit code 1. */
+/** What a command needs to stop with a message, on stderr with exit code 1. */
 export class CliExit extends Error {
   override name = "CliExit";
 }
@@ -57,7 +57,7 @@ export const deps = {
   startChrome: session.startChrome,
 };
 
-// biome-ignore lint/suspicious/noExplicitAny: parsed arguments, keyed like the Python argparse names.
+// biome-ignore lint/suspicious/noExplicitAny: parsed arguments, keyed by option name with dashes as underscores.
 type Args = Record<string, any>;
 
 interface Context {
@@ -91,14 +91,12 @@ export function render(page: Page): string {
   const [elements, , controls] = actionSpace(page.actions);
   for (const element of elements) {
     // Claude sees every option with its own line.
-    const details = element.value ? [`value=${pyRepr(element.value)}`] : [];
+    const details = element.value ? [`value=${quote(element.value)}`] : [];
     for (const key of ["checked", "selected", "expanded"]) {
-      if (key in element) details.push(`${key}=${pyStr(element[key])}`);
+      if (key in element) details.push(`${key}=${show(element[key])}`);
     }
     const operations = element.operations.join(",");
-    lines.push(
-      `[${element.index}] ${pyStr(element.role)} ${pyRepr(element.label)} ${details.join(" ")} (${operations})`,
-    );
+    lines.push(`[${element.index}] ${show(element.role)} ${quote(element.label)} ${details.join(" ")} (${operations})`);
     for (const option of element.options ?? []) {
       lines.push(`  [${option.index}] ${String(option.label).split(" → ").at(-1)}`);
     }
@@ -142,8 +140,8 @@ export function recentActions(state: Record<string, any>): string {
   const rows = (state.history as HistoryEntry[]).filter((h) => h.attempt === state.plan.attempt).slice(-RECENT);
   const lines = rows.map(
     (h) =>
-      `  ${h.step}. ${h.kind !== "human" ? h.operation : "HUMAN"} ${pyRepr(h.action)}` +
-      (h.text ? ` text=${pyRepr(h.text)}` : "") +
+      `  ${h.step}. ${h.kind !== "human" ? h.operation : "HUMAN"} ${quote(h.action)}` +
+      (h.text ? ` text=${quote(h.text)}` : "") +
       (h.page_changed ? "" : " (page unchanged)"),
   );
   return `ACTIONS THIS ATTEMPT:\n${lines.length ? lines.join("\n") : "  (none)"}`;
@@ -155,7 +153,7 @@ function parseValues(pairs: string[]): Value[] {
   return pairs.map((pair) => {
     const at = pair.indexOf("=");
     const label = at < 0 ? "" : pair.slice(0, at).trim();
-    if (at < 0 || !label) throw new CliExit(`Expected --value LABEL=VALUE, got ${pyRepr(pair)}`);
+    if (at < 0 || !label) throw new CliExit(`Expected --value LABEL=VALUE, got ${quote(pair)}`);
     return { label, value: pair.slice(at + 1) };
   });
 }
@@ -234,10 +232,8 @@ async function commandCatalog(args: Args): Promise<number> {
       print("  (no service.toml)");
     }
     for (const procedure of entry.procedures) {
-      print(
-        `  PROCEDURE ${procedure.name} [${pyStr(procedure.status)}] (${procedure.scope}): ${pyStr(procedure.goal)}`,
-      );
-      print(`    start_url: ${pyStr(procedure.start_url)}`);
+      print(`  PROCEDURE ${procedure.name} [${show(procedure.status)}] (${procedure.scope}): ${show(procedure.goal)}`);
+      print(`    start_url: ${show(procedure.start_url)}`);
       for (const [key, description] of Object.entries(procedure.params)) print(`    param ${key}: ${description}`);
       if (procedure.human_steps) print(`    human steps: ${procedure.human_steps} (needs --headed)`);
       for (const key of ["focus", "skip"] as const) {
@@ -368,7 +364,7 @@ async function commandStart(args: Args): Promise<number> {
       service: serviceName,
       view: state.view,
       max_attempts: args.max_attempts,
-      started_at: utcIso(),
+      started_at: new Date().toISOString(),
     });
     recorder.event("plan", {
       attempt: 1,
@@ -394,7 +390,7 @@ async function commandStart(args: Args): Promise<number> {
 /** What Claude needs for this outcome, and nothing more. */
 export function report(state: session.State, result: agent.AgentResult): number {
   const outcome = result.outcome;
-  print(`OUTCOME ${outcome} (${attemptLabel(state)}): ${pyStr(result.detail)}`);
+  print(`OUTCOME ${outcome} (${attemptLabel(state)}): ${show(result.detail)}`);
   if (outcome === agent.UNCERTAIN) {
     print("Do not repeat or replan. Run: webhand finish --status error");
     return UNCERTAIN;
@@ -404,7 +400,7 @@ export function report(state: session.State, result: agent.AgentResult): number 
     return OK;
   }
   if (outcome === agent.NEEDS_VALUE) {
-    print(`FIELD: ${pyJson(result.field)}`);
+    print(`FIELD: ${toJson(result.field)}`);
     print("Give the value with: run --value 'LABEL=VALUE'. Never invent personal data; ask the person");
     return OK;
   }
@@ -691,12 +687,12 @@ async function commandFinish(args: Args): Promise<number> {
     attempt_outcomes: outcomes,
     actions: state.history.length,
     decisions: state.decisions,
-    elapsed_ms: pyRound((Date.now() / 1000 - state.started) * 1000),
+    elapsed_ms: Math.round((Date.now() / 1000 - state.started) * 1000),
     verified: verdict.success,
     evidence: verdict.evidence,
     ...totals,
   });
-  print(`FINISHED status=${args.status} verified=${pyStr(verdict.success)} attempts=${plan.attempt} log=${state.log}`);
+  print(`FINISHED status=${args.status} verified=${show(verdict.success)} attempts=${plan.attempt} log=${state.log}`);
   return OK;
 }
 
@@ -775,7 +771,7 @@ async function commandLearn(args: Args): Promise<number> {
       chrome_host: chrome,
       session: profile ? "profile" : "new",
       git: gitState(),
-      started_at: utcIso(),
+      started_at: new Date().toISOString(),
     });
     counts = await learn.record(
       browser,
@@ -791,7 +787,7 @@ async function commandLearn(args: Args): Promise<number> {
     recorder.close();
   }
   if (note) print(`NOTE: ${note}`);
-  print(`RECORDED ${pyRepr(counts)} log=${log}`);
+  print(`RECORDED ${quote(counts)} log=${log}`);
   print(`WRITE THE RUNBOOK TO ${runbookFile}`);
   if (serviceFile) print(`WRITE THE SERVICE INFORMATION TO ${serviceFile}`);
   if (counts.unsupported) {
@@ -1060,7 +1056,7 @@ export interface Parsed {
   run: (args: Args) => Promise<number>;
 }
 
-/** Parses argv as argparse did. Throws UsageError, or returns help text to print. */
+/** Parses argv, with argparse-style messages. Throws UsageError, or returns help text to print. */
 export function parse(argv: string[]): Parsed | { help: string } {
   const specs = commands();
   const [name, ...rest] = argv;
@@ -1068,7 +1064,7 @@ export function parse(argv: string[]): Parsed | { help: string } {
   if (name === "-h" || name === "--help") return { help: mainHelp(specs) };
   if (name === "-V" || name === "--version") return { help: `${version()}\n` };
   const spec = specs[name];
-  if (!spec) throw new UsageError(`argument command: invalid choice: ${pyRepr(name)}`);
+  if (!spec) throw new UsageError(`argument command: invalid choice: ${quote(name)}`);
   const args: Args = {};
   const positionals: string[] = [];
   const byName = new Map(spec.options.map((option) => [option.name, option]));
@@ -1096,7 +1092,7 @@ export function parse(argv: string[]): Parsed | { help: string } {
     const key = option.name.replaceAll("-", "_");
     seen.add(option.name);
     if (option.type === "boolean") {
-      if (at >= 0) throw fail(`argument --${option.name}: ignored explicit argument ${pyRepr(token.slice(at + 1))}`);
+      if (at >= 0) throw fail(`argument --${option.name}: ignored explicit argument ${quote(token.slice(at + 1))}`);
       args[key] = true;
       continue;
     }
@@ -1112,18 +1108,18 @@ export function parse(argv: string[]): Parsed | { help: string } {
     }
     let value: unknown = raw;
     if (option.type === "int") {
-      if (!/^\s*[-+]?\d+\s*$/.test(raw)) throw fail(`argument --${option.name}: invalid int value: ${pyRepr(raw)}`);
+      if (!/^\s*[-+]?\d+\s*$/.test(raw)) throw fail(`argument --${option.name}: invalid int value: ${quote(raw)}`);
       value = Number.parseInt(raw, 10);
     } else if (option.type === "float") {
       const number = Number(raw);
       if (!raw.trim() || Number.isNaN(number)) {
-        throw fail(`argument --${option.name}: invalid float value: ${pyRepr(raw)}`);
+        throw fail(`argument --${option.name}: invalid float value: ${quote(raw)}`);
       }
       value = number;
     }
     if (option.choices && !option.choices.includes(String(value))) {
       throw fail(
-        `argument --${option.name}: invalid choice: ${pyRepr(value)} (choose from ${option.choices.map(pyRepr).join(", ")})`,
+        `argument --${option.name}: invalid choice: ${quote(value)} (choose from ${option.choices.map(quote).join(", ")})`,
       );
     }
     if (option.multiple) args[key].push(value);
@@ -1141,7 +1137,7 @@ export function parse(argv: string[]): Parsed | { help: string } {
     const value = positionals[i] ?? null;
     if (value !== null && positional.choices && !positional.choices.includes(value)) {
       throw fail(
-        `argument ${positional.name}: invalid choice: ${pyRepr(value)} (choose from ${positional.choices.map(pyRepr).join(", ")})`,
+        `argument ${positional.name}: invalid choice: ${quote(value)} (choose from ${positional.choices.map(quote).join(", ")})`,
       );
     }
     args[positional.name] = value;
@@ -1185,6 +1181,6 @@ export async function main(argv: string[], io: IO = processIO): Promise<number> 
   } finally {
     const text = current.out.join("");
     io.out(text);
-    if (current.log) logOnce(current.log, "handoff", { command: parsed.command, chars: pyLen(text) });
+    if (current.log) logOnce(current.log, "handoff", { command: parsed.command, chars: [...text].length });
   }
 }

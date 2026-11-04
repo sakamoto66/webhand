@@ -25,7 +25,7 @@ import {
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { chromium } from "playwright-core";
-import { pyRepr, sleep } from "./py.ts";
+import { quote, sleep } from "./format.ts";
 import * as workspace from "./workspace.ts";
 
 const STARTUP_MS = 15_000;
@@ -74,7 +74,7 @@ export function parseSession(spec: string): string | null {
   const kind = at < 0 ? spec : spec.slice(0, at);
   const name = at < 0 ? "" : spec.slice(at + 1);
   if (kind !== "profile" || !PROFILE_NAME.test(name)) {
-    throw new SessionError(`Expected --session new or profile:NAME, got ${pyRepr(spec)}`);
+    throw new SessionError(`Expected --session new or profile:NAME, got ${quote(spec)}`);
   }
   return name;
 }
@@ -128,7 +128,7 @@ function windowsLocalAppData(): string {
 
 /** Returns ['linux' or 'windows', a note for the person when auto fell back]. */
 export function chooseChrome(choice: string): [string, string | null] {
-  if (!CHROMES.includes(choice)) throw new SessionError(`Unknown --chrome ${pyRepr(choice)}`);
+  if (!CHROMES.includes(choice)) throw new SessionError(`Unknown --chrome ${quote(choice)}`);
   if (choice === "linux") return ["linux", null];
   let reason: string | null = null;
   if (!probes.onWsl()) reason = "not running on WSL";
@@ -149,7 +149,7 @@ function profilesRoot(chrome: string): string {
 }
 
 export function profileDir(chrome: string, name: string): string {
-  if (!PROFILE_NAME.test(name)) throw new SessionError(`Invalid profile name: ${pyRepr(name)}`);
+  if (!PROFILE_NAME.test(name)) throw new SessionError(`Invalid profile name: ${quote(name)}`);
   return join(profilesRoot(chrome), name);
 }
 
@@ -269,7 +269,7 @@ export async function startChrome(
   }
   await stopChrome(state);
   if (profile && childExited(pid)) {
-    throw new SessionError(`Chrome exited at once. Is profile ${pyRepr(profile)} open in another Chrome window?`);
+    throw new SessionError(`Chrome exited at once. Is profile ${quote(profile)} open in another Chrome window?`);
   }
   throw new SessionError("Chrome did not open a reachable debugging port");
 }

@@ -103,4 +103,4 @@ Run the draft through the `webhand` skill with `--runbook SERVICE/NAME --param K
 
 ## 4. Approve
 
-Show the user the service information, the runbook, and the trial result: `status`, `verified`, `attempts`, and what you changed. Set `status = "approved"` only after the user approves. `verified=None` means nothing checked the result independently, so say so.
+Show the user the service information, the runbook, and the trial result: `status`, `verified`, `attempts`, and what you changed. Set `status = "approved"` only after the user approves. `verified=null` means nothing checked the result independently, so say so.

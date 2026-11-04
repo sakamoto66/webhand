@@ -195,7 +195,7 @@ skip = ["header", "footer"]
 
 In learning logs, `page` events carry a region summary (keys and counts only) and `action` events carry the target's region key. Segments whose names look secret become `form:<redacted>`.
 
-For services without `verify()`, `verified` is `None`. A runbook's `done_when` is material for Claude's check, not evidence of success.
+For services without `verify()`, `verified` is `null`. A runbook's `done_when` is material for Claude's check, not evidence of success.
 
 ## Logs
 
@@ -250,7 +250,7 @@ npm run test:coverage                      # coverage (coverage/index.html)
 npm run smoke -- --task hotel_filter       # model-free smoke test
 ```
 
-`tests/golden/` records the output of the earlier Python version. It ensures the strings Claude and Jev read (`render`, `report`, Jev's state and questions, and so on) are unchanged across the migration.
+`tests/golden/` records the reference output of the strings Claude and Jev read (`render`, `report`, Jev's state and questions, and so on), so they change only on purpose. Regenerate it with `npm run test:golden:update`.
 
 Publish with `npm publish` (`prepublishOnly` runs lint, type checks, knip, and the build). Keep the versions in `package.json` and `.claude-plugin/plugin.json` in sync, and update `webhand@0.2` in the skills to match.
 

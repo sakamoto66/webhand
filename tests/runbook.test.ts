@@ -45,7 +45,7 @@ afterEach(async () => {
   await cleanup();
 });
 
-/** A runbook file outside any scope, loaded as the Python tests loaded runbook.path(). */
+/** A runbook file outside any scope, loaded straight from its path. */
 function book(text: string) {
   const file = join(tmpPath(), "demo.toml");
   writeFileSync(file, text);
@@ -74,7 +74,7 @@ test("a missing parameter is an error", () => {
 });
 
 test("an unknown parameter is an error", () => {
-  expect(() => book(HUMAN)({ ...values(), typo: "x" })).toThrow(/unknown parameters \['typo'\]/);
+  expect(() => book(HUMAN)({ ...values(), typo: "x" })).toThrow(/unknown parameters \["typo"\]/);
 });
 
 test("a parameter value is not expanded again", () => {

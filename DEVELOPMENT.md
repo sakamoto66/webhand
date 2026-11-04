@@ -49,7 +49,7 @@ src/                 the CLI (shipped as dist/ after the build)
   learn.ts           recording a person's demonstration
   workspace.ts       project (.webhand/) and user (~/.webhand/) folders
   metrics.ts         append-only JSONL logs, token totals, git state
-  py.ts              Python-compatible formatting (repr, json, round) for golden output
+  format.ts          quoting and compact JSON for what Claude and Jev read, run stamps
   types.ts           shared shapes and errors (StalePage, MutationUncertain, PolicyError)
   tasks.ts           loads research tasks
   run.ts             model-free smoke test (npm run smoke)
@@ -134,14 +134,14 @@ npm run smoke -- --task hotel_filter   # model-free run of a task's SCRIPT
 
 ### Golden output
 
-`tests/golden/` holds outputs recorded from the earlier Python implementation, compared character for character by `tests/golden.test.ts`: `render`, `report`, `describePlan`, Jev's state and questions, and so on. This is what Claude and Jev read, so it is part of the experiment.
+`tests/golden/cases.json` holds the reference output, compared character for character by `tests/golden.test.ts`: `render`, `report`, `describePlan`, Jev's state and questions, and so on. This is what Claude and Jev read, so it is part of the experiment.
 
-- `py.ts` reproduces Python's `repr`, `json.dumps`, and `round`. Use it for anything printed for Claude or sent to Jev, not `JSON.stringify` or template defaults.
-- If you change that text on purpose, treat it as an experimental variable: update the golden files and record why in the commit message.
+- Use `quote`, `show`, and `toJson` from `format.ts` for anything printed for Claude or sent to Jev, not template defaults. `toJson` keeps the order of a `Map`, which a plain object loses for keys like `"2"` and `"1"`.
+- If you change that text on purpose, treat it as an experimental variable: regenerate with `npm run test:golden:update`, review the diff of `cases.json`, and record why in the commit message. `tests/golden/pages.json` is the recorded input and stays as is.
 
 ## Adding things
 
-**A CLI command or option**: add it to `commands()` in `src/cli.ts` (the parser reproduces argparse's messages), cover it in `tests/cli.test.ts`, then update the README command table (both languages) and the skill in `skills/` that uses it.
+**A CLI command or option**: add it to `commands()` in `src/cli.ts` (the parser writes argparse-style messages), cover it in `tests/cli.test.ts`, then update the README command table (both languages) and the skill in `skills/` that uses it.
 
 **A research task**: add `tasks/<name>.ts` exporting `GOAL`, `startUrl(root)`, async `verify(browser)` returning `{ success, evidence }`, and `SCRIPT` (fixed steps for `npm run smoke`). Keep fixtures local under `tasks/fixtures/`. `tasks/` is not shipped in the npm package.
 
