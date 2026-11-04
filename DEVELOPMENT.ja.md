@@ -163,7 +163,7 @@ npm run smoke -- --task hotel_filter   # タスクの SCRIPT をモデルなし�
 
 1. `package.json` と `.claude-plugin/plugin.json` のバージョンを一緒に上げる。
 2. メジャーかマイナーが変わるときは、`skills/*/SKILL.md`、README、`docs/reference*.md` の `webhand@0.2` も更新する。
-3. `npm publish`。`prepublishOnly` が `npm run check`、ビルド、`npm run check:package` を実行する。配布物は `dist/`、`assets/`、ライセンス、README だけ（`package.json` の `files`）。ビルドは先に `dist/` を空にし、`check:package`（CI でも実行）は、ソースが消えた `dist/` のファイルなど、それ以外のものが配布物にあると失敗する。`dist/` はコミットしない。公開版どうしの比較は `npm diff --diff=webhand@X.Y.Z` で行う。
+3. `main` にマージし、`main` 上のタグ `vX.Y.Z` で GitHub の Release を公開する。`.github/workflows/release.yml` が、タグと両方のバージョンの一致とタグが `main` 上にあることを確認し、テストを実行してから npm の Trusted Publishing で `npm publish` する（npm のトークンは使わず、provenance が付く）。手元から公開しない。`prepublishOnly` が `npm run check`、ビルド、`npm run check:package` を実行する。配布物は `dist/`、`assets/`、ライセンス、README だけ（`package.json` の `files`）。ビルドは先に `dist/` を空にし、`check:package`（CI でも実行）は、ソースが消えた `dist/` のファイルなど、それ以外のものが配布物にあると失敗する。`dist/` はコミットしない。公開版どうしの比較は `npm diff --diff=webhand@X.Y.Z` で行う。
 
 ## サードパーティのコード
 
