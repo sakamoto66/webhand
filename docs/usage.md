@@ -23,11 +23,11 @@ webhand is used through Claude Code skills that call its CLI. Normally you use o
    # To change the model: export TYPESAFE_MODEL=...
    ```
 
-3. Check that it works. The CLI needs no installation; the skills use `npx -y webhand@0.2`. If you install it with `npm i -g webhand`, the skills use `webhand` directly and start faster.
+3. Check that it works. The CLI needs no installation; the skills use `npx -y webhand@0.3`. If you install it with `npm i -g webhand`, the skills use `webhand` directly and start faster.
 
    ```bash
-   npx -y webhand@0.2 --version
-   npx -y webhand@0.2 catalog
+   npx -y webhand@0.3 --version
+   npx -y webhand@0.3 catalog
    ```
 
 Requirements: Node.js 22 or later and Google Chrome (on Linux, or the Windows side from WSL).
@@ -114,7 +114,7 @@ Keep secrets and personal data out of runbooks and service information. Put valu
 
 ## Using the CLI
 
-If it is not installed, read `webhand` as `npx -y webhand@0.2`. See `webhand COMMAND --help` for each command's details.
+If it is not installed, read `webhand` as `npx -y webhand@0.3`. See `webhand COMMAND --help` for each command's details.
 
 ### Commands
 
@@ -284,7 +284,7 @@ Then run `wsl --shutdown` in PowerShell to restart WSL.
 | Symptom | Fix |
 | --- | --- |
 | Told that `TYPESAFE_API_KEY` is not set | Set the environment variable in your shell profile and restart Claude Code |
-| `npx -y webhand@0.2` says `webhand: not found` inside this repository | Run `npm run build && npm link`, or use `npx -y webhand@latest` |
+| `npx -y webhand@0.3` says `webhand: not found` inside this repository | Run `npm run build && npm link`, or use `npx -y webhand@latest` |
 | A draft runbook cannot be used | Add `--allow-draft` only for trials. Normal runs need approval |
 | A needed part of the page is cut from the observation | Check `REGIONS` in the output for `0/N` or `(skip)`, and pass `--focus` / `--skip` |
 | The same kind of failure keeps happening | Learn from the run with `/webhand-learn <log>` so the lesson reaches the next plan |

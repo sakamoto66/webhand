@@ -16,7 +16,7 @@ npm run build && npm link      # point the webhand command at this working tree'
 claude --plugin-dir .          # load the skills from this checkout
 ```
 
-Inside this repository, `npx -y webhand@0.2` fails with `webhand: not found`: npm treats the repository itself (`webhand@0.2.0`) as satisfying the spec and looks for the bin in the local `node_modules/.bin`. Use `npm link` (the skills then run `webhand` directly) or `npx -y webhand@latest`.
+Inside this repository, `npx -y webhand@0.3` fails with `webhand: not found`: npm treats the repository itself (`webhand@0.3.0`) as satisfying the spec and looks for the bin in the local `node_modules/.bin`. Use `npm link` (the skills then run `webhand` directly) or `npx -y webhand@latest`.
 
 To keep run logs inside the repository, put this in `.claude/settings.local.json` (not committed):
 
@@ -162,7 +162,7 @@ Tasks are research-only: neither `tasks/` nor `research/` is shipped, and the sh
 ## Releasing
 
 1. Bump the version in `package.json` and `.claude-plugin/plugin.json` together.
-2. If the major or minor version changes, update `webhand@0.2` in `skills/*/SKILL.md`, the READMEs, and `docs/reference*.md`.
+2. If the major or minor version changes, update `webhand@0.3` in `skills/*/SKILL.md`, the READMEs, and `docs/reference*.md`.
 3. Merge to `main`, then publish a GitHub Release with the tag `vX.Y.Z` on `main`. `.github/workflows/release.yml` checks that the tag matches both versions and is on `main`, runs the tests, and runs `npm publish` with npm trusted publishing (no npm token; provenance is attached). Do not publish from a local machine. `prepublishOnly` runs `npm run check`, the build, and `npm run check:package`. The package ships only `dist/`, `assets/`, the licenses, and the READMEs (`files` in `package.json`). The build empties `dist/` first, and `check:package` (also run in CI) fails if the package holds anything else, such as a `dist/` file whose source is gone. `dist/` is not committed; compare published versions with `npm diff --diff=webhand@X.Y.Z`.
 
 ## Third-party code

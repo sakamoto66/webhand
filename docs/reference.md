@@ -80,7 +80,7 @@ Then restart WSL by running `wsl --shutdown` in PowerShell. Local file URLs are 
 
 ## Commands
 
-If the CLI is not installed globally, read `webhand` in the table below as `npx -y webhand@0.2`. `webhand --version` prints the version.
+If the CLI is not installed globally, read `webhand` in the table below as `npx -y webhand@0.3`. `webhand --version` prints the version.
 
 | Command | Used by | Description |
 | --- | --- | --- |

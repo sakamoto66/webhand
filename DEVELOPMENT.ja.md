@@ -16,7 +16,7 @@ npm run build && npm link      # webhand コマンドを作業ツリーのビル
 claude --plugin-dir .          # このチェックアウトのスキルを読み込む
 ```
 
-このリポジトリ内では `npx -y webhand@0.2` が `webhand: not found` で失敗します。npm がリポジトリ自身（`webhand@0.2.0`）を指定に合うものとみなし、ローカルの `node_modules/.bin` から bin を探すためです。`npm link` を使う（スキルは `webhand` を直接実行する）か、`npx -y webhand@latest` を使ってください。
+このリポジトリ内では `npx -y webhand@0.3` が `webhand: not found` で失敗します。npm がリポジトリ自身（`webhand@0.3.0`）を指定に合うものとみなし、ローカルの `node_modules/.bin` から bin を探すためです。`npm link` を使う（スキルは `webhand` を直接実行する）か、`npx -y webhand@latest` を使ってください。
 
 実行ログをリポジトリ内に残すには、`.claude/settings.local.json`（コミットしない）に次を書きます。
 
@@ -162,7 +162,7 @@ npm run smoke -- --task hotel_filter   # タスクの SCRIPT をモデルなし�
 ## リリース
 
 1. `package.json` と `.claude-plugin/plugin.json` のバージョンを一緒に上げる。
-2. メジャーかマイナーが変わるときは、`skills/*/SKILL.md`、README、`docs/reference*.md` の `webhand@0.2` も更新する。
+2. メジャーかマイナーが変わるときは、`skills/*/SKILL.md`、README、`docs/reference*.md` の `webhand@0.3` も更新する。
 3. `main` にマージし、`main` 上のタグ `vX.Y.Z` で GitHub の Release を公開する。`.github/workflows/release.yml` が、タグと両方のバージョンの一致とタグが `main` 上にあることを確認し、テストを実行してから npm の Trusted Publishing で `npm publish` する（npm のトークンは使わず、provenance が付く）。手元から公開しない。`prepublishOnly` が `npm run check`、ビルド、`npm run check:package` を実行する。配布物は `dist/`、`assets/`、ライセンス、README だけ（`package.json` の `files`）。ビルドは先に `dist/` を空にし、`check:package`（CI でも実行）は、ソースが消えた `dist/` のファイルなど、それ以外のものが配布物にあると失敗する。`dist/` はコミットしない。公開版どうしの比較は `npm diff --diff=webhand@X.Y.Z` で行う。
 
 ## サードパーティのコード
