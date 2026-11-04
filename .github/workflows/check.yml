@@ -20,6 +20,19 @@ jobs:
       - run: npm ci
       - run: npm run check
 
+  # What npm publish would ship: only dist/ built from src/, assets/, licenses, and READMEs.
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run check:package
+
   test:
     runs-on: ubuntu-latest
     steps:
