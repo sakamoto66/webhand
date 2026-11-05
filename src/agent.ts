@@ -73,9 +73,14 @@ export async function captureScreenshot(
   }
 }
 
-/** Executed actions only; they count against the budget. */
+/** Executed actions only, in every attempt: not a person's step, a NOT_VISIBLE choice, or a refused stale one. */
+export function executed(history: HistoryEntry[]): HistoryEntry[] {
+  return history.filter((h) => !["human", MISSING, STALE].includes(h.kind));
+}
+
+/** Executed actions of one attempt; they count against the budget. */
 export function actionsIn(history: HistoryEntry[], attempt: number): HistoryEntry[] {
-  return history.filter((h) => (h.attempt ?? 1) === attempt && !["human", MISSING, STALE].includes(h.kind));
+  return executed(history).filter((h) => (h.attempt ?? 1) === attempt);
 }
 
 /** Three entries without progress: unchanged pages, targets Jev could not see, or refused stale choices. */

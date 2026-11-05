@@ -194,6 +194,7 @@ Logs are written as JSONL to `runs/<timestamp>/` in the user folder (`~/.webhand
 | type | Contents |
 | --- | --- |
 | `run_start` | Goal, Chrome (linux / windows), session kind, git commit, runbook, service |
+| `start_failed` | Why `start` could not open the page (the error's first line with URL values masked), the start URL, Chrome, session kind. The run has no `run_start` |
 | `plan` | Steps per attempt, input value labels and their source (`claude` / `runbook`), `restart` |
 | `call` | Tokens and latency of each Jev call |
 | `step` / `step_result` | The action taken, its region, the label of the value typed (never the text) and `text_chars`, attempt number, decider, confidence, page change. URL query values are masked |
@@ -203,7 +204,7 @@ Logs are written as JSONL to `runs/<timestamp>/` in the user folder (`~/.webhand
 | `attempt_end` | Outcome of the attempt and Claude's reason for replanning |
 | `handoff` | Number of characters of CLI output Claude reads |
 | `screenshot` / `screenshot_failed` | Only with `WEBHAND_SCREENSHOTS=1`: the step and attempt an image follows, what it follows (`start` / `action` / `restart`), its file in `<log>-screenshots/`, and the URL with query values masked. A failed capture is logged and the run goes on |
-| `run_end` | Self-reported status and Claude's `reason`, service, runbook, independent verification result, attempt count and per-attempt outcomes, per-role totals |
+| `run_end` | Self-reported status and Claude's `reason`, service, runbook, independent verification result, attempt count and per-attempt outcomes, `actions` (executed actions only), `stale` and `not_visible` (choices that did not run), per-role totals |
 
 Success is judged by `run_end.verified`; `status=done` is only a claim. Claude Code's token usage is not available, so `handoffs` (times control returned to Claude) and `handoff_chars` (characters Claude read) serve as proxies.
 

@@ -10,6 +10,7 @@ const original = { ...deps };
 
 beforeEach(() => {
   vi.stubEnv("WEBHAND_HOME", join(mkdtempSync(join(tmpdir(), "webhand-test-")), "workspace"));
+  vi.stubEnv("WEBHAND_SCREENSHOTS", ""); // A test turns capture on itself; the person's shell may have it on.
   deps.policy = () => {
     throw new Error("Tests never call Jev. Replace deps.policy");
   };

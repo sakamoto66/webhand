@@ -194,6 +194,7 @@ skip = ["header", "footer"]
 | type | 内容 |
 | --- | --- |
 | `run_start` | 目標、Chrome（linux / windows）、セッションの種類、git commit、手順書、サービス |
+| `start_failed` | `start` がページを開けなかった理由（エラーの1行目。URL の値は伏せる）、開始 URL、Chrome、セッションの種類。この実行には `run_start` がない |
 | `plan` | 試行ごとの手順、入力値のラベル、その出所（`claude` / `runbook`）、`restart` |
 | `call` | Jev の呼び出しごとのトークンと遅延 |
 | `step` / `step_result` | 実行した操作、その領域、入力した値のラベル（値そのものは残さない）と `text_chars`、試行番号、判断者、確信度、ページの変化。URL のクエリ値は伏せる |
@@ -203,7 +204,7 @@ skip = ["header", "footer"]
 | `attempt_end` | 試行の結果と、Claude が書いた見直しの理由 |
 | `handoff` | Claude が読む CLI 出力の文字数 |
 | `screenshot` / `screenshot_failed` | `WEBHAND_SCREENSHOTS=1` のときだけ。画像がどの手順と試行のあとか、何のあとか（`start` / `action` / `restart`）、`<ログ名>-screenshots/` 内のファイル、クエリ値を伏せた URL。撮影に失敗しても記録して実行を続ける |
-| `run_end` | 自己申告の状態と Claude の `reason`、サービス、手順書、独立検証の結果、試行回数と試行ごとの結果、役割ごとの集計 |
+| `run_end` | 自己申告の状態と Claude の `reason`、サービス、手順書、独立検証の結果、試行回数と試行ごとの結果、`actions`（実行した操作だけ）、`stale` と `not_visible`（実行しなかった選択）、役割ごとの集計 |
 
 成功判定は `run_end.verified` です。`status=done` は申告にすぎません。Claude Code のトークン数は取得しないため、`handoffs`（Claude に戻した回数）と `handoff_chars`（読ませた文字数）を代理指標にします。
 

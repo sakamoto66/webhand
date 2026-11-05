@@ -12,7 +12,7 @@ import { Budget, execute, runAgent } from "./agent.ts";
 import { Browser } from "./browser.ts";
 import { describeError, quote, show, stamp, toJson } from "./format.ts";
 import * as learn from "./learn.ts";
-import { gitState, logOnce, pageEvent, Recorder, summarize } from "./metrics.ts";
+import { gitState, logOnce, maskUrls, pageEvent, Recorder, safeUrl, summarize } from "./metrics.ts";
 import { actionSpace, offscreen, planText, resolve } from "./policies/base.ts";
 import { JevPolicy } from "./policies/jev.ts";
 import * as runbook from "./runbook.ts";
@@ -395,6 +395,14 @@ async function commandStart(args: Args): Promise<number> {
     recorder.event("page", pageEvent(state.page, 1));
     await agent.captureScreenshot(browser, recorder, 0, 1, "start", state.page.url);
   } catch (error) {
+    // A failed start is a run too: keep why it failed, not only the empty handoff.
+    recorder.event("start_failed", {
+      error: maskUrls(describeError(error).split("\n")[0]),
+      url: safeUrl(state.start_url),
+      chrome_host: chrome,
+      session: profile ? "profile" : "new",
+      started_at: new Date().toISOString(),
+    });
     await session.stopChrome(chromeState);
     throw error;
   } finally {
@@ -655,6 +663,7 @@ function runTotals(log: string): Record<string, unknown> {
   let handoffs = 0;
   let handoffChars = 0;
   let notVisible = 0;
+  let stale = 0;
   for (const line of readFileSync(log, "utf8").split("\n")) {
     if (!line.trim()) continue;
     const { type, ...event } = JSON.parse(line);
@@ -662,6 +671,7 @@ function runTotals(log: string): Record<string, unknown> {
     else if (type === "escalation") escalations[event.reason] = (escalations[event.reason] ?? 0) + 1;
     else if (type === "step") decidedBy[event.decided_by] = (decidedBy[event.decided_by] ?? 0) + 1;
     else if (type === "not_visible") notVisible += 1;
+    else if (type === "stale") stale += 1;
     else if (type === "handoff") {
       handoffs += 1;
       handoffChars += event.chars;
@@ -674,6 +684,7 @@ function runTotals(log: string): Record<string, unknown> {
     handoffs,
     handoff_chars: handoffChars,
     not_visible: notVisible,
+    stale,
   };
 }
 
@@ -710,7 +721,7 @@ async function commandFinish(args: Args): Promise<number> {
     plan: planText(plan),
     attempts: plan.attempt,
     attempt_outcomes: outcomes,
-    actions: state.history.length,
+    actions: agent.executed(state.history).length,
     decisions: state.decisions,
     elapsed_ms: Math.round((Date.now() / 1000 - state.started) * 1000),
     verified: verdict.success,

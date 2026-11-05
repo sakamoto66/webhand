@@ -395,6 +395,10 @@ Claude Code と実際の Jev（`jev-1.14.0`）で `hotel_filter` を1回実行�
 
 公開スキルからは `--task` の段落と、`finish` の報告にある `verified` を削りました。これは Claude が読む文面の変更なので、実験の変数にあたります。以後の実験は研究用スキル `/webhand-research NAME`（`.claude/skills/webhand-research`）で行います。このスキルは公開スキルに従い、コマンドを `node research/webhand.ts` で呼んで `--task` を渡し、`verified` を報告します。これまでの記録にある `/webhand --task NAME` の実行は、変更前のスキルの文面によるものです。
 
+## ログの数え方の変更（2026-11-04）
+
+`run_end.actions` は、これまで履歴の件数（`stale` と `NOT_VISIBLE` で実行しなかった選択を含む）でした。この日から、実行した操作だけを数えます。実行しなかった選択は `run_end.stale` と `run_end.not_visible` に分けて残します。それより前のログの `actions` と比べるときは、`step` イベントの数を数え直してください。`start` がページを開けなかった実行には、`start_failed` イベントで理由を残すようにしました。
+
 ## 次の手順
 
 1. GOAL 単位の設計で `hotel_filter` と `hotel_reserve` を実行し、変更後の基準値を取る。

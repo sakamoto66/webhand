@@ -296,3 +296,10 @@ test("a failed screenshot is logged and the run goes on", async () => {
   const failed = readEvents(recorder.path).filter((e) => e.type === "screenshot_failed");
   expect(failed.map((e) => [e.step, e.error])).toEqual([[1, "capture failed"]]);
 });
+
+test("maskUrls hides query values in any URL inside a message", async () => {
+  const { maskUrls } = await import("../src/metrics.ts");
+  expect(maskUrls('navigating to "https://a.example/p?id=7&k=v", waiting')).toBe(
+    'navigating to "https://a.example/p?id=%3Credacted%3E&k=%3Credacted%3E", waiting',
+  );
+});

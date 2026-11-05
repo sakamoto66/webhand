@@ -102,6 +102,11 @@ export function safeUrl(url: unknown): string | null {
   }
 }
 
+/** Text for a log line with every URL in it passed through safeUrl. */
+export function maskUrls(text: string): string {
+  return text.replace(/https?:\/\/[^\s"'<>]+/g, (url) => safeUrl(url) ?? "<url>");
+}
+
 const OUTLINE_FIELDS = [
   "key",
   "position",

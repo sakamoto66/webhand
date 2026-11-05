@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Browser } from "../src/browser.ts";
 import * as cliModule from "../src/cli.ts";
+import { logOnce } from "../src/metrics.ts";
 import { actionSpace } from "../src/policies/base.ts";
 import * as session from "../src/session.ts";
 import { cli, readEvents, research, researchExit, tmpPath } from "./helpers.ts";
@@ -393,4 +394,32 @@ test("with WEBHAND_SCREENSHOTS=1 the start page and each action are captured; st
   ]);
   expect(new Set(shots.map((e) => e.file)).size).toBe(shots.length);
   for (const shot of shots) expect(existsSync(join(log, "..", shot.file))).toBe(true);
+});
+
+test("run_end counts executed actions only; refused and missing choices are counted apart", async () => {
+  await begin();
+  const state = session.load() as session.State;
+  const entry = { attempt: 1, operation: "CLICK", action: "Find stays", text: null, url: "u", page_changed: true };
+  state.history = [
+    { step: 1, kind: "click", ...entry },
+    { step: 2, kind: "stale", ...entry, operation: "STALE" },
+    { step: 3, kind: "missing", ...entry, operation: "NOT_VISIBLE" },
+  ];
+  session.save(state);
+  logOnce(log, "stale", { attempt: 1, wanted: "CLICK", target: "Find stays", reason: "moved" });
+  await cli("finish", "--status", "blocked", "--reason", "check counts");
+  const end = events().at(-1);
+  expect([end.actions, end.stale]).toEqual([1, 1]);
+});
+
+test("a start that cannot open the page logs why, with URL values masked", async () => {
+  await expect(
+    cli("start", "--goal", "Open it", "--url", "http://127.0.0.1:59999/?q=secret", "--chrome", "linux"),
+  ).rejects.toThrow();
+  const failed = events().filter((e) => e.type === "start_failed");
+  expect(failed).toHaveLength(1);
+  expect(failed[0].error).toMatch(/net::ERR_/);
+  expect(JSON.stringify(failed[0])).not.toContain("secret");
+  expect(failed[0].url).toBe("http://127.0.0.1:59999/?q=%3Credacted%3E");
+  expect(session.load()).toBeNull();
 });
