@@ -29,6 +29,41 @@ function readState(view: ViewChoice | null = null): string {
 }
 
 export const READ_STATE = readState();
+
+/**
+ * Signs of a bot check, for the run log. A marker is a sign, not proof: a normal page can embed a CAPTCHA
+ * widget. Only element presence is read, never text or field values.
+ */
+const CHALLENGES: [string, string][] = [
+  [
+    "cloudflare",
+    'iframe[src*="challenges.cloudflare.com"], script[src*="challenges.cloudflare.com"], #challenge-form, .cf-turnstile',
+  ],
+  ["recaptcha", 'iframe[src*="recaptcha"], .g-recaptcha'],
+  ["hcaptcha", 'iframe[src*="hcaptcha.com"], .h-captcha'],
+  ["datadome", '[src*="captcha-delivery.com"]'],
+  ["perimeterx", "#px-captcha"],
+  ["arkose", 'iframe[src*="arkoselabs.com"], iframe[src*="funcaptcha"]'],
+];
+
+/** What a run log needs to tell a block from a page that did not load. */
+export interface PageCheck {
+  http_status: number | null; // The main document's status; null when the browser records none (about:blank).
+  title: string;
+  challenge: string[];
+  text_chars: number; // Visible text length; near 0 is a blank or still-loading page.
+}
+
+const PAGE_CHECK = `(() => {
+  const nav = performance.getEntriesByType("navigation")[0];
+  const found = ${JSON.stringify(CHALLENGES)}.filter(([, selector]) => document.querySelector(selector)).map(([name]) => name);
+  return {
+    http_status: nav && nav.responseStatus ? nav.responseStatus : null,
+    title: document.title.slice(0, 120),
+    challenge: found,
+    text_chars: document.body ? document.body.innerText.length : 0,
+  };
+})()`;
 const MARKER = `(() => { const state=${READ_STATE}; return state?.marker ?? null; })()`;
 // Read only once the document has loaded and the DOM has stopped changing, so content rendered by
 // DOMContentLoaded handlers or after an XHR is observed. A page that never goes quiet is read at the cap.
@@ -240,6 +275,11 @@ export class Browser {
     await this.call("Input.dispatchKeyEvent", { type: "keyDown", commands: ["selectAll"], ...key });
     await this.call("Input.dispatchKeyEvent", { type: "keyUp", ...key });
     await this.call("Input.insertText", { text });
+  }
+
+  /** Read-only signs of why a page cannot be used: see PageCheck. */
+  async check(): Promise<PageCheck> {
+    return await this.evaluate(PAGE_CHECK);
   }
 
   /** A PNG of the viewport. Read-only; typed values show in it. */

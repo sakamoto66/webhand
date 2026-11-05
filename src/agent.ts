@@ -4,6 +4,7 @@
  * The loop returns to Claude only when it cannot continue on its own. The task's verify() decides success.
  */
 
+import type { PageCheck } from "./browser.ts";
 import { quote } from "./format.ts";
 import { pageEvent, type Recorder, type ScreenshotAfter, safeUrl } from "./metrics.ts";
 import {
@@ -50,6 +51,27 @@ export interface Actor {
   fresh(page: Page, action?: Page | null): Promise<boolean>;
   act(action: Page, page: Page, text?: string | null): Promise<void>;
   screenshot?(): Promise<Buffer>;
+  check?(): Promise<PageCheck>;
+}
+
+/** Outcomes after which the log keeps a page check, to tell a bot check or an error page from a plan problem. */
+export const CHECKED_OUTCOMES = [BLOCKED, STUCK, ATTEMPT_BUDGET, NEEDS_HUMAN];
+
+/** Logs a page_check event. Read-only, never sent to Jev; a failed check is logged and never stops the run. */
+export async function checkPage(
+  browser: Actor,
+  recorder: Recorder,
+  when: "start" | "escalation",
+  attempt: number,
+  url: unknown,
+): Promise<void> {
+  if (!browser.check) return;
+  try {
+    recorder.event("page_check", { when, attempt, url: safeUrl(url), ...(await browser.check()) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    recorder.event("page_check_failed", { when, attempt, error: message });
+  }
 }
 
 /**

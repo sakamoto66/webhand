@@ -393,6 +393,7 @@ async function commandStart(args: Args): Promise<number> {
       source: book && !args.step.length ? "runbook" : "claude",
     });
     recorder.event("page", pageEvent(state.page, 1));
+    await agent.checkPage(browser, recorder, "start", 1, state.page.url);
     await agent.captureScreenshot(browser, recorder, 0, 1, "start", state.page.url);
   } catch (error) {
     // A failed start is a run too: keep why it failed, not only the empty handoff.
@@ -513,6 +514,9 @@ async function commandRun(args: Args): Promise<number> {
     state.page = result.page;
     state.outcome = result.outcome;
     recorder.event("escalation", { reason: result.outcome, attempt: state.plan.attempt, detail: result.detail });
+    if (agent.CHECKED_OUTCOMES.includes(result.outcome)) {
+      await agent.checkPage(browser, recorder, "escalation", state.plan.attempt, result.page.url);
+    }
     if (result.outcome === agent.NEEDS_HUMAN) {
       recorder.event("human_step", { status: "requested", attempt: state.plan.attempt });
     }

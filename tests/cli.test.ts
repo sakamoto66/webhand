@@ -423,3 +423,18 @@ test("a start that cannot open the page logs why, with URL values masked", async
   expect(failed[0].url).toBe("http://127.0.0.1:59999/?q=%3Credacted%3E");
   expect(session.load()).toBeNull();
 });
+
+test("the log keeps a page check after start and when Jev stops short, never on a reported goal", async () => {
+  await begin();
+  ScriptedJev.moves = [["BLOCKED", null, null]];
+  const blocked = (await cli("run")).out;
+  ScriptedJev.moves = [["DONE", null, null]];
+  expect((await cli("replan", "--reason", "Try again")).code).toBe(OK);
+  await cli("run");
+  const checks = events().filter((e) => e.type === "page_check");
+  expect(checks.map((e) => [e.when, e.attempt, e.challenge])).toEqual([
+    ["start", 1, []],
+    ["escalation", 1, []],
+  ]);
+  expect(blocked).not.toContain("page_check");
+});
