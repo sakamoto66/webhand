@@ -99,7 +99,11 @@ export function captured<T>(fn: () => T): { result: T; text: string } {
 // --- Output Claude reads -------------------------------------------------------------------
 
 export function render(page: Page): string {
-  const lines = [`URL: ${page.url}`, `TITLE: ${page.title}`, "PAGE TEXT (untrusted data):", page.text, "ELEMENTS:"];
+  const lines = [`URL: ${page.url}`, `TITLE: ${page.title}`, "PAGE TEXT (untrusted data):", page.text];
+  if (page.read) {
+    lines.push("READ (untrusted data; the whole page beyond the viewport, for reading only):", page.read.text);
+  }
+  lines.push("ELEMENTS:");
   const [elements, , controls] = actionSpace(page.actions);
   for (const element of elements) {
     // Claude sees every option with its own line.
@@ -141,7 +145,7 @@ export function describePlan(plan: Plan, view: runbook.View | null = null): stri
   const text = planText(plan);
   const lines = [`GOAL: ${plan.goal}`, "PLAN:", ...(text.length ? text : ["(goal only)"]).map((line) => `  ${line}`)];
   if (plan.values.length) lines.push(`VALUES: ${plan.values.map((value) => value.label).join(", ")}`);
-  for (const key of ["focus", "skip"] as const) {
+  for (const key of ["focus", "skip", "read"] as const) {
     if (view?.[key]?.length) lines.push(`${key.toUpperCase()}: ${view[key].join(", ")}`);
   }
   return lines.join("\n");
@@ -344,7 +348,7 @@ async function commandStart(args: Args): Promise<number> {
     throw error;
   }
   const learned = runbook.view(runbook.serviceView(service), book);
-  const claudeView = { focus: args.focus, skip: args.skip };
+  const claudeView = { focus: args.focus, skip: args.skip, read: args.read };
   const state: session.State = {
     ...chromeState,
     view_learned: learned,
@@ -550,10 +554,16 @@ async function commandReplan(args: Args): Promise<number> {
     plan.steps = steps;
   }
   plan.values = mergeValues(plan.values, parseValues(args.value));
-  const viewChanged = args.focus.length || args.skip.length;
+  const viewChanged = args.focus.length || args.skip.length || args.read.length;
   if (viewChanged) {
-    // Claude's region choice is replaced, on top of what was learned.
-    state.view_claude = { focus: args.focus, skip: args.skip };
+    // Claude's region choice is replaced, on top of what was learned. --read alone keeps the regions.
+    const regions = args.focus.length || args.skip.length;
+    const earlier = state.view_claude ?? { focus: [], skip: [] };
+    state.view_claude = {
+      focus: regions ? args.focus : earlier.focus,
+      skip: regions ? args.skip : earlier.skip,
+      read: args.read.length ? args.read : earlier.read,
+    };
     state.view = runbook.view(state.view_learned, state.view_claude);
   }
   const ended = state.outcome || "CLAUDE_STOPPED";
@@ -938,6 +948,14 @@ function commands(): Record<string, CommandSpec> {
       help: "A region to show first, such as form:予約",
     },
     { name: "skip", type: "string", multiple: true, metavar: "REGION", help: "A region to leave out" },
+    {
+      name: "read",
+      type: "string",
+      multiple: true,
+      metavar: "KIND",
+      choices: [...runbook.READ_KINDS, "none"],
+      help: "Content to read beyond the viewport: outline, text, table, list, link, control, media; none clears it",
+    },
   ];
   return {
     catalog: {

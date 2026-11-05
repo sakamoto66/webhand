@@ -28,7 +28,11 @@ type Doc = Record<string, any>;
 export interface View {
   focus: string[];
   skip: string[];
+  read?: string[]; // Kinds of content Jev and Claude read beyond the viewport. Absent: viewport only.
 }
+
+/** Kinds the read layer can hold, by page structure. `none` clears an earlier choice. */
+export const READ_KINDS = ["outline", "text", "table", "list", "link", "control", "media"];
 
 /** The runbook folder of a scope, whether or not it exists. */
 export function root(scope: Scope = "project"): string {
@@ -156,7 +160,9 @@ function regions(file: string, page: Doc): Region[] {
 export function view(...layers: (Partial<View> | null | undefined)[]): View {
   let focus: string[] = [];
   let skip: string[] = [];
+  let read: string[] | undefined;
   for (const layer of layers) {
+    if (layer?.read?.length) read = layer.read.includes("none") ? undefined : [...layer.read]; // The later choice wins.
     if (blank(layer)) continue;
     const newFocus = [...(layer?.focus ?? [])];
     const newSkip = [...(layer?.skip ?? [])];
@@ -164,7 +170,7 @@ export function view(...layers: (Partial<View> | null | undefined)[]): View {
     focus = [...newFocus, ...focus.filter(kept)];
     skip = [...skip.filter(kept), ...newSkip];
   }
-  return { focus, skip };
+  return read ? { focus, skip, read } : { focus, skip };
 }
 
 export interface ServiceInfo {

@@ -155,6 +155,7 @@ One run goes from `start` to `finish`. Always run `finish` exactly once, even af
 | `--param KEY=VALUE` (repeatable) | A runbook parameter. Passed to Jev as an input value |
 | `--allow-draft` | Try an unapproved (draft) runbook |
 | `--focus REGION` / `--skip REGION` (repeatable) | Regions to show first / to leave out (e.g. `form:Reservation`) |
+| `--read KIND` (repeatable) | Content to read from beyond the viewport: `outline`, `text`, `table`, `list`, `link`, `control`, `media`. See the reference |
 | `--session new\|profile:NAME` | The session. Default `new` |
 | `--chrome auto\|linux\|windows` | Which Chrome. Default `auto` (also `WEBHAND_CHROME`) |
 | `--headed` | Show the Chrome window |
@@ -198,6 +199,7 @@ webhand replan --reason "The search button was never pressed" --step "..." --res
 | `--step S` (repeatable) | Replace the steps |
 | `--value LABEL=VALUE` (repeatable) | Add or replace values |
 | `--focus` / `--skip` | Replace the region choice |
+| `--read KIND` | Replace what is read beyond the viewport; `--read none` turns it off |
 | `--restart` | Open the start URL again before the next attempt. Do not use after something was submitted on a real service |
 
 It is refused once the attempt limit is reached; then finish with `finish --status blocked`.
@@ -288,4 +290,5 @@ Then run `wsl --shutdown` in PowerShell to restart WSL.
 | `npx -y webhand@0.3` says `webhand: not found` inside this repository | Run `npm run build && npm link`, or use `npx -y webhand@latest` |
 | A draft runbook cannot be used | Add `--allow-draft` only for trials. Normal runs need approval |
 | A needed part of the page is cut from the observation | Check `REGIONS` in the output for `0/N` or `(skip)`, and pass `--focus` / `--skip` |
+| Jev scrolls up and down on a long page, looking for something | Pass `--read` with the kinds the goal needs, such as `--read table` |
 | The same kind of failure keeps happening | Learn from the run with `/webhand-learn <log>` so the lesson reaches the next plan |

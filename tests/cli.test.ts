@@ -438,3 +438,23 @@ test("the log keeps a page check after start and when Jev stops short, never on 
   ]);
   expect(blocked).not.toContain("page_check");
 });
+
+test("--read gives Jev and Claude a read layer; replan --read none takes it away; the log keeps its size", async () => {
+  await begin("--read", "text", "--read", "link");
+  ScriptedJev.moves = [["BLOCKED", null, null]];
+  const { out } = await cli("run");
+  expect(out).toContain("READ (untrusted data; the whole page beyond the viewport, for reading only):");
+  const state = ScriptedJev.states[0] as { page: { read?: { chars: Record<string, number[]> } } };
+  expect(Object.keys(state.page.read?.chars ?? {})).toEqual(["outline", "text", "link"]);
+  expect(events().find((e) => e.type === "plan").view.read).toEqual(["text", "link"]);
+  expect(events().find((e) => e.type === "page").read.text).toHaveLength(2);
+  const replanned = await cli("replan", "--reason", "Viewport only", "--read", "none");
+  expect(replanned.out).not.toContain("READ:");
+  ScriptedJev.moves = [["BLOCKED", null, null]];
+  expect((await cli("run")).out).not.toContain("READ (untrusted");
+  expect((ScriptedJev.states.at(-1) as { page: object }).page).not.toHaveProperty("read");
+});
+
+test("--read accepts only the listed kinds", () => {
+  expect(() => cliModule.parse(["start", "--read", "everything"])).toThrow(/invalid choice/);
+});

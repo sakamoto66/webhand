@@ -21,6 +21,7 @@ const SNAPSHOT = asset("snapshot.js").trim();
 export interface ViewChoice {
   focus?: string[];
   skip?: string[];
+  read?: string[];
 }
 
 /** The snapshot expression for a view ({focus, skip} region patterns). The view never changes freshness. */

@@ -315,3 +315,83 @@ test("a page check reports the document's HTTP status and bot-check markers, not
 test("a page check on a normal page finds no bot-check markers", async () => {
   expect((await browser.check()).challenge).toEqual([]);
 });
+
+/** A page whose content is mostly below the viewport. */
+function longPage(extra = ""): string {
+  const file = join(tmpPath(), "long.html");
+  writeFileSync(
+    file,
+    `<title>Long</title><nav><a href="#a">Nav home</a></nav><main><h1>Top</h1><p>Intro paragraph.</p>
+    <div style="height:3000px"></div>
+    <h2>Prices</h2><p>Prices change monthly.</p>
+    <table><caption>Plans</caption><tr><th>Plan</th><th>Price</th></tr><tr><td>Basic</td><td>10</td></tr>
+    <tr><td>Pro</td><td>25</td></tr></table>
+    <ul><li>First item</li><li>Second item</li></ul>
+    <a href="#b">Contact us</a><button>Buy now</button><input type="password" value="hunter2" aria-label="Pass">
+    <img alt="A chart of prices" src="data:,"><figure><figcaption>Figure caption</figcaption></figure>${extra}</main>`,
+  );
+  return pathToFileURL(file).href;
+}
+
+test("without --read the page has no read layer", async () => {
+  await browser.close();
+  await open(longPage());
+  expect((await browser.observe()).read).toBeUndefined();
+});
+
+test("the read layer gives chosen kinds from below the viewport, with where they are", async () => {
+  await browser.close();
+  await open(longPage(), { read: ["table"] });
+  const page = await browser.observe();
+  expect(page.read.kinds).toEqual(["outline", "table"]);
+  expect(page.read.text).toContain("@ below 2");
+  expect(page.read.text).toContain("h2 Prices");
+  expect(page.read.text).toMatch(/## table 1 @ below \d+px: Plans \(3 rows\)\nPlan \| Price\nBasic \| 10\nPro \| 25/);
+  expect(page.read.text).not.toContain("First item");
+  expect(page.text).not.toContain("Basic"); // The viewport text is unchanged.
+  expect(page.read.text).not.toContain("Intro paragraph"); // In view already; not repeated.
+  expect(await browser.fresh(page)).toBe(true);
+});
+
+test("every kind is classified once, field values are never read, and skipped regions are left out", async () => {
+  await browser.close();
+  await open(longPage(), { skip: ["nav"], read: ["text", "table", "list", "link", "control", "media"] });
+  const { read } = await browser.observe();
+  expect(read.text).toContain("Prices change monthly.");
+  expect(read.text).toContain("- First item");
+  expect(read.text).toContain("- Contact us");
+  expect(read.text).toMatch(/- button "Buy now"/);
+  expect(read.text).toContain("- A chart of prices");
+  expect(read.text).toContain("- Figure caption");
+  expect(read.text).not.toContain("hunter2");
+  expect(read.text).not.toContain("Nav home");
+  expect(read.text.match(/Basic/g)).toHaveLength(1); // Table text is not repeated as text.
+});
+
+test("the read layer stays within its limit and says how much of each kind is left", async () => {
+  await browser.close();
+  const filler = Array.from({ length: 400 }, (_, i) => `<p>Paragraph ${i} ${"word ".repeat(20)}</p>`).join("");
+  await open(longPage(filler), { read: ["text", "table"] });
+  const { read } = await browser.observe();
+  expect(read.text.length).toBeLessThanOrEqual(read.limit + 200);
+  expect(read.chars.table[0]).toBe(read.chars.table[1]); // A small kind is shown whole.
+  expect(read.chars.text[0]).toBeLessThan(read.chars.text[1]);
+  expect(read.text).toMatch(/\.\.\. \d+ more characters/);
+});
+
+test("the plan_lowest task passes verification only for the cheapest plan, and its table is below the viewport", async () => {
+  const plans = await loadTask("plan_lowest");
+  await browser.close();
+  await open(plans.startUrl(ROOT), { read: ["table"] });
+  const page = await browser.observe();
+  expect(page.text).not.toContain("€12");
+  expect(page.read.text).toMatch(/## table 1 @ below \d+px: Every plan and its monthly price \(41 rows\)/);
+  expect(page.read.text).toMatch(/\nFlax \| [^|\n]+ \| €12 \| Choose Flax\n/);
+  expect((await plans.verify(browser)).success).toBe(false);
+  const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
+  const plan = { goal: plans.GOAL, steps: [], values: [] };
+  const result = await runAgent(browser, new ScriptedPolicy(plans.SCRIPT), plan, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect((await plans.verify(browser)).success).toBe(true);
+});

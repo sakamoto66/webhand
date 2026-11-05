@@ -1,4 +1,5 @@
-// view = {focus: [...], skip: [...]}: region patterns Claude chose from what was learned. Empty: DOM order.
+// view = {focus: [...], skip: [...], read: [...]}: region patterns Claude chose from what was learned, and the
+// kinds of content to read beyond the viewport. Empty: DOM order, viewport only.
 (view => {
   if (!document.body) return null;
 
@@ -9,6 +10,7 @@
   const SCROLL_STEP = 560;
   const MAX_REGIONS = 40;
   const REGION_NAME_LIMIT = 40;
+  const READ_LIMIT = 12000;
 
   const INTERACTIVE_ROLES = ['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'menuitemradio',
     'option', 'gridcell', 'combobox', 'textbox', 'searchbox', 'spinbutton'];
@@ -460,7 +462,8 @@
       range.selectNodeContents(node);
       const region = regionOf(parent);
       region.text_chars += value.length;
-      lines.push({value, region, inView: intersectsViewport(range.getBoundingClientRect())});
+      const rect = range.getBoundingClientRect();
+      lines.push({value, region, parent, rect, inView: intersectsViewport(rect)});
     }
     return lines;
   };
@@ -494,6 +497,138 @@
     }
     const ordered = [...groups].sort(([a], [b]) => decide(a).order - decide(b).order);
     return fitText(ordered.flatMap(([region, regionLines]) => [{value: '## ' + region.key}, ...regionLines]));
+  };
+
+  // ---- Read layer ----
+  // Chosen kinds of content from the whole page, beyond the viewport, for reading only: nothing in it can be
+  // acted on, and the freshness marker never includes it. Each kind is classified by page structure, never by
+  // site. The outline always comes first. Field values are never read; controls give a role and a name only.
+  // Text, list items, links, and controls in view are left out: the viewport text and elements already hold them.
+  // The outline and tables are kept whole, since their structure is the point.
+
+  const READ_KINDS = ['outline', 'text', 'table', 'list', 'link', 'control', 'media'];
+  const TABLE_SELECTOR = 'table,[role="table"],[role="grid"]';
+  const LIST_ITEM_SELECTOR = 'li,[role="listitem"]';
+  const LINK_SELECTOR = 'a[href],[role="link"]';
+  const CONTROL_SELECTOR = 'button,input,select,textarea,summary,label,[contenteditable="true"],' +
+    INTERACTIVE_ROLES.filter(role => role !== 'link').map(role => '[role="' + role + '"]').join(',');
+  const MEDIA_SELECTOR = 'img[alt],[role="img"][aria-label],figcaption';
+  // Text inside these belongs to another kind, so the text kind never repeats it.
+  const NOT_TEXT_SELECTOR = [TABLE_SELECTOR, LIST_ITEM_SELECTOR, HEADING_SELECTOR, LINK_SELECTOR, CONTROL_SELECTOR,
+    'figcaption', 'option'].join(',');
+  const requested = Array.isArray(view?.read) ? view.read : [];
+  const readKinds = requested.some(kind => READ_KINDS.includes(kind))
+    ? READ_KINDS.filter(kind => kind === 'outline' || requested.includes(kind)) : [];
+
+  const squash = (text, limit) => String(text || '').replace(/\s+/g, ' ').trim().slice(0, limit);
+  // Where content is, rounded to 100px: the direction to scroll and how far.
+  const where = rect => {
+    if (rect.bottom <= 0) return 'above ' + Math.max(100, Math.round(-rect.bottom / 100) * 100) + 'px';
+    if (rect.top >= innerHeight) return 'below ' + Math.max(100, Math.round((rect.top - innerHeight) / 100) * 100) + 'px';
+    return 'in view';
+  };
+  // With focus patterns, only focused regions (and open dialogs) are read; skipped regions never are.
+  const readable = element => {
+    const decision = decide(regionOf(element));
+    if (decision.view === 'skip') return false;
+    return focusPatterns.length === 0 || decision.view === 'focus' || decision.order === 0;
+  };
+  const readElements = selector => queryAllDeep(selector)
+    .filter(element => !element.closest(NON_CONTENT_SELECTOR) && isVisible(element) && readable(element));
+  // Lines with a position; a position line is written only when it changes.
+  const placed = items => {
+    const out = [];
+    let last = null;
+    for (const {at, line} of items) {
+      if (at !== last) out.push('@ ' + at);
+      out.push(line);
+      last = at;
+    }
+    return out;
+  };
+
+  const readers = {
+    outline: () => placed(readElements(HEADING_SELECTOR).map(heading => {
+      const level = /^H[1-6]$/.test(heading.tagName) ? heading.tagName.toLowerCase()
+        : 'h' + (heading.getAttribute('aria-level') || 2);
+      return {at: where(heading.getBoundingClientRect()), line: level + ' ' + squash(heading.textContent, 120)};
+    }).filter(item => item.line.length > 3)),
+    text: () => placed(lines
+      .filter(line => !closestDeep(line.parent, NOT_TEXT_SELECTOR) && readable(line.parent))
+      .map(line => ({at: where(line.rect), line: squash(line.value, 1000)}))
+      .filter(item => item.at !== 'in view')),
+    table: () => readElements(TABLE_SELECTOR)
+      .filter(table => !table.parentElement?.closest(TABLE_SELECTOR))
+      .flatMap((table, index) => {
+        const rows = [...table.querySelectorAll('tr,[role="row"]')]
+          .filter(row => row.closest(TABLE_SELECTOR) === table && isVisible(row))
+          .map(row => [...row.querySelectorAll('th,td,[role="cell"],[role="gridcell"],[role="columnheader"],' +
+            '[role="rowheader"]')].filter(cell => cell.closest('tr,[role="row"]') === row)
+            .map(cell => squash(cell.innerText, 80)).join(' | '))
+          .filter(row => row.replace(/[\s|]/g, ''));
+        const caption = squash(table.querySelector('caption')?.textContent || table.getAttribute('aria-label'), 80);
+        return ['## table ' + (index + 1) + ' @ ' + where(table.getBoundingClientRect()) +
+          (caption ? ': ' + caption : '') + ' (' + rows.length + ' rows)', ...rows];
+      }),
+    list: () => {
+      const items = readElements(LIST_ITEM_SELECTOR)
+        .filter(item => !item.parentElement?.closest(LIST_ITEM_SELECTOR) && !item.closest(TABLE_SELECTOR));
+      return placed(items.map(item => ({at: where(item.getBoundingClientRect()), line: '- ' + squash(item.innerText, 300)}))
+        .filter(item => item.line.length > 2 && item.at !== 'in view'));
+    },
+    link: () => {
+      const seen = new Set();
+      return placed(readElements(LINK_SELECTOR).map(link => ({at: where(link.getBoundingClientRect()),
+        line: '- ' + squash(accessibleName(link), 80)}))
+        .filter(item => item.at !== 'in view' && item.line.length > 2 && !seen.has(item.line) && seen.add(item.line)));
+    },
+    control: () => placed(readElements(CONTROL_SELECTOR)
+      .filter(element => !element.matches(LINK_SELECTOR) && !(element.type === 'hidden'))
+      .map(element => {
+        const rect = element.getBoundingClientRect();
+        return {at: where(rect), line: '- ' + (roleOf(element) || element.tagName.toLowerCase()) + ' ' +
+          JSON.stringify(squash(accessibleName(element), 60))};
+      })
+      .filter(item => item.at !== 'in view')),
+    media: () => placed(readElements(MEDIA_SELECTOR).map(element => ({at: where(element.getBoundingClientRect()),
+      line: '- ' + squash(element.matches('figcaption') ? element.textContent
+        : element.getAttribute('alt') || element.getAttribute('aria-label'), 160)}))
+      .filter(item => item.line.length > 2)),
+  };
+
+  // Each kind gets an equal share of the limit; what a small kind leaves goes to the others. Lines are kept
+  // whole; only a single line longer than its share is cut. Reports shown and total characters per kind.
+  const readLayer = () => {
+    if (!readKinds.length) return null;
+    const full = readKinds.map(kind => {
+      const kindLines = readers[kind]();
+      return {kind, lines: kindLines, total: kindLines.reduce((sum, line) => sum + line.length + 1, 0)};
+    });
+    let remaining = READ_LIMIT;
+    const share = new Map();
+    [...full].sort((a, b) => a.total - b.total).forEach((entry, index, sorted) => {
+      const given = Math.min(entry.total, Math.floor(remaining / (sorted.length - index)));
+      share.set(entry.kind, given);
+      remaining -= given;
+    });
+    const chars = {};
+    const sections = full.map(({kind, lines: kindLines, total}) => {
+      const taken = [];
+      let used = 0;
+      for (const line of kindLines) {
+        if (used + line.length + 1 > share.get(kind)) {
+          if (!taken.length && share.get(kind) > 1) taken.push(line.slice(0, share.get(kind) - 1));
+          break;
+        }
+        taken.push(line);
+        used += line.length + 1;
+      }
+      const shown = taken.reduce((sum, line) => sum + line.length + 1, 0);
+      chars[kind] = [shown, total];
+      const more = total > shown ? ['... ' + (total - shown) + ' more characters'] : [];
+      return ['# ' + kind + (kindLines.length ? '' : ' (none)'), ...taken, ...more].join('\n');
+    });
+    return {kinds: readKinds, text: sections.join('\n'), chars, limit: READ_LIMIT};
   };
 
   // ---- Snapshot ----
@@ -554,8 +689,9 @@
   });
 
   state.region = element => regionOf(element).key;
+  const read = readLayer();
 
   return {url: location.href, title: document.title, w: innerWidth, h: innerHeight, text: shown.text,
     scroll: {y: scrollY, height}, actions: chosen, marker, page_key, guards, omitted_actions,
-    regions: regionSummary, omitted_regions: outline.length - regionSummary.length};
+    regions: regionSummary, omitted_regions: outline.length - regionSummary.length, ...(read ? {read} : {})};
 })

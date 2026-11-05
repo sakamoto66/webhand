@@ -87,14 +87,14 @@ networkingMode=mirrored
 | `webhand catalog` | Claude | 学習済みのサービス、手順書、保存プロファイルを一覧する |
 | `webhand start --goal G --url U --step S ... --value L=V ... --session ...` | Claude | 計画を記録し、Chrome で開始 URL を開く |
 | `webhand run` | Jev | GOAL まで操作する |
-| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--restart]` | Claude | 計画を見直して、次の試行を始める |
+| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart]` | Claude | 計画を見直して、次の試行を始める |
 | `webhand act OP [TARGET]` | Claude | Jev の代わりに操作を1つ実行する |
 | `webhand observe` | Claude | 現在のページを表示する |
 | `webhand finish --status STATUS` | Claude | 独立検証、ログ記録、Chrome の終了 |
 | `webhand learn --name NAME --url URL [--scope project\|user]` | 人 | 操作を記録する |
 | `webhand profile login/list/delete` | 人 | 保存プロファイルを管理する |
 
-手順の先頭に `[person]` を付けると、人が行う手順になります（`--headed` が必須です）。`start` と `replan` の `--focus REGION` / `--skip REGION` で、観測する領域を選べます（下の「ページの領域」）。`--runbook NAME --param k=v` を指定すると、手順書の GOAL、開始 URL、手順が既定値になり、params は入力値として Jev に渡されます。
+手順の先頭に `[person]` を付けると、人が行う手順になります（`--headed` が必須です）。`start` と `replan` の `--focus REGION` / `--skip REGION` で、観測する領域を選べます（下の「ページの領域」）。`--read KIND` で、画面の外の内容を足せます（下の「画面の外を読む」）。`--runbook NAME --param k=v` を指定すると、手順書の GOAL、開始 URL、手順が既定値になり、params は入力値として Jev に渡されます。
 
 ## 学習モード
 
@@ -187,6 +187,28 @@ skip = ["header", "footer"]
 
 `verify()` のないサービスでは `verified` は `null` です。手順書の `done_when` は Claude の確認材料で、成功の証拠にはなりません。
 
+## 画面の外を読む
+
+Jev と Claude は、ふだんページの見えている部分しか受け取りません。よくあるページでは文章が500字ほどで、ページ全体には数万字あることもあります。`start` か `replan` に `--read KIND`（複数可）を付けると、観測のたびに、ページ全体から選んだ種類の内容を読み取り層として足します。Claude は `run` と `observe` の出力の `READ` で、Jev は `page.read` で受け取ります。
+
+| 種類 | 中身 |
+| --- | --- |
+| `outline` | 見出しとその階層。`--read` を付けると必ず入る |
+| `text` | 表、リスト、見出し、リンク、操作要素の外にある本文 |
+| `table` | 表ごとに、題名と、1行ずつの行（セルは ` \| ` で区切る） |
+| `list` | 一番外側のリストの項目 |
+| `link` | リンクの名前（同じ名前は1回だけ） |
+| `control` | 画面外のボタン、入力欄などの操作要素。役割と名前だけ |
+| `media` | 画像の代替テキストと図の説明 |
+
+- 読むためだけのものです。この中のものは操作できません。操作の対象と鮮度の確認は、これまでどおり見えている部分だけで決まります。`@ below 1200px` のような行は、その後の行がどこにあるかを示します。Jev はこれを見て、正しい方向へスクロールできます。
+- 見えている部分にある本文、リストの項目、リンク、操作要素は入れません。画面内の文章と要素に、すでに入っているためです。見出しと表は、全体を入れます。
+- 読み取り層は最大12,000字です。種類ごとに同じ量を割り当て、少なくて済む種類の残りをほかの種類に回します。行は途中で切りません。切った種類の最後には `... N more characters` が付きます。
+- `--skip` の領域は読みません。`--focus` があるときは、その領域（と開いているダイアログ）だけを読みます。
+- 入力欄の値は読みません。ページの内容は信頼しないデータとして扱います。
+- `replan --read KIND` は種類の指定を置き換え、領域の指定は残します。`--read none` で読み取り層をなくします。`plan` イベントの `view.read` に指定が、`page` イベントの `read` に種類ごとの表示した字数と全体の字数が残ります。
+- `--read` を付けなければ、観測、出力、Jev に渡すものは今までと同じです。
+
 ## ログ
 
 ユーザー単位の `runs/<時刻>/`（既定は `~/.webhand/runs/`）に JSONL で出力されます。
@@ -198,7 +220,7 @@ skip = ["header", "footer"]
 | `plan` | 試行ごとの手順、入力値のラベル、その出所（`claude` / `runbook`）、`restart` |
 | `call` | Jev の呼び出しごとのトークンと遅延 |
 | `step` / `step_result` | 実行した操作、その領域、入力した値のラベル（値そのものは残さない）と `text_chars`、試行番号、判断者、確信度、ページの変化。URL のクエリ値は伏せる |
-| `page` | 開始時とページが変わるたびの領域の要約（キーと件数だけ。本文は入れない） |
+| `page` | 開始時とページが変わるたびの領域の要約（キーと件数だけ。本文は入れない）。`--read` があるときは、`read` に種類ごとの表示した字数と全体の字数が入る |
 | `escalation` | `run` が Claude に返した結果 |
 | `human_step` / `values` | 人の手順の依頼と完了、追加された入力値のラベル |
 | `attempt_end` | 試行の結果と、Claude が書いた見直しの理由 |

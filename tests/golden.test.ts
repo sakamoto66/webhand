@@ -99,7 +99,7 @@ const history = [
 test.each(Object.keys(pages))("page %s renders, states, and asks as recorded", (name) => {
   const page = pages[name];
   const [, targets, controls] = actionSpace(page.actions);
-  const [questions, operations] = buildQuestions(plan, targets, controls, valueChoices(plan));
+  const [questions, operations] = buildQuestions(plan, targets, controls, valueChoices(plan), Boolean(page.read));
   golden(render(page), name, "render");
   golden(toJson(modelState(page, history, plan)), name, "model_state");
   golden(toJson(modelState(page, [])), name, "model_state_noplan");
@@ -125,6 +125,7 @@ test("plans and recent actions print as recorded", () => {
   const state = { plan, history, max_attempts: 3, page: pages.tricky };
   golden(describePlan(plan, { focus: ["form", "x"], skip: [] }), "describe_plan");
   golden(describePlan({ goal: "g", steps: [], values: [] }, null), "describe_plan_goal_only");
+  golden(describePlan(plan, { focus: [], skip: ["nav"], read: ["table", "list"] }), "describe_plan_read");
   golden(recentActions(state), "recent_actions");
   golden(recentActions({ ...state, history: [] }), "recent_actions_empty");
 });

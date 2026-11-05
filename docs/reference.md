@@ -87,14 +87,14 @@ If the CLI is not installed globally, read `webhand` in the table below as `npx 
 | `webhand catalog` | Claude | Lists learned services, runbooks, and saved profiles |
 | `webhand start --goal G --url U --step S ... --value L=V ... --session ...` | Claude | Records the plan and opens the start URL in Chrome |
 | `webhand run` | Jev | Operates the page toward the GOAL |
-| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--restart]` | Claude | Revises the plan and starts the next attempt |
+| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart]` | Claude | Revises the plan and starts the next attempt |
 | `webhand act OP [TARGET]` | Claude | Performs a single action in Jev's place |
 | `webhand observe` | Claude | Shows the current page |
 | `webhand finish --status STATUS` | Claude | Runs independent verification, writes the log, and closes Chrome |
 | `webhand learn --name NAME --url URL [--scope project\|user]` | Person | Records a demonstration |
 | `webhand profile login/list/delete` | Person | Manages saved profiles |
 
-Prefix a step with `[person]` to make it a step a human performs (requires `--headed`). `--focus REGION` / `--skip REGION` on `start` and `replan` choose which regions are observed (see [Page regions](#page-regions)). With `--runbook NAME --param k=v`, the runbook's GOAL, start URL, and steps become the defaults, and the params are passed to Jev as input values.
+Prefix a step with `[person]` to make it a step a human performs (requires `--headed`). `--focus REGION` / `--skip REGION` on `start` and `replan` choose which regions are observed (see [Page regions](#page-regions)), and `--read KIND` adds content from beyond the viewport (see [Reading beyond the viewport](#reading-beyond-the-viewport)). With `--runbook NAME --param k=v`, the runbook's GOAL, start URL, and steps become the defaults, and the params are passed to Jev as input values.
 
 ## Learning mode
 
@@ -187,6 +187,28 @@ In learning logs, `page` events carry a region summary (keys and counts only) an
 
 For services without `verify()`, `verified` is `null`. A runbook's `done_when` is material for Claude's check, not evidence of success.
 
+## Reading beyond the viewport
+
+Jev and Claude normally see only the visible part of the page: about 500 characters of text on a typical page, while the whole page may hold tens of thousands. With `--read KIND` (repeatable) on `start` or `replan`, each observation adds a read layer with the chosen kinds of content from the whole page. Claude sees it as `READ` in the `run` and `observe` output, and Jev as `page.read`.
+
+| Kind | What it holds |
+| --- | --- |
+| `outline` | Headings and their levels. Always included when `--read` is given |
+| `text` | Body text outside tables, lists, headings, links, and controls |
+| `table` | Each table with its caption, row by row, cells separated by ` \| ` |
+| `list` | Top-level list items |
+| `link` | Link names, once each |
+| `control` | Buttons, fields, and other controls outside the viewport: role and name only |
+| `media` | Image alternative text and figure captions |
+
+- It is for reading only. Nothing in it can be acted on; action targets and freshness checks stay limited to the visible part. A line such as `@ below 1200px` says where the lines after it are, so Jev can scroll in the right direction.
+- Text, list items, links, and controls in view are left out, since the viewport text and the elements already hold them. The outline and tables are kept whole.
+- The layer holds at most 12,000 characters. Each kind gets an equal share, and a kind that needs less leaves the rest to the others. Lines are kept whole. A cut kind ends with `... N more characters`.
+- `--skip` regions are never read. With `--focus`, only the focused regions (and an open dialog) are read.
+- Field values are never read. Page content is untrusted data.
+- `replan --read KIND` replaces the choice and keeps the regions; `--read none` turns the layer off. The `plan` event records it in `view.read`, and each `page` event records the shown and total characters per kind in `read`.
+- Without `--read`, the observation, the output, and what Jev receives are unchanged.
+
 ## Logs
 
 Logs are written as JSONL to `runs/<timestamp>/` in the user folder (`~/.webhand/runs/` by default).
@@ -198,7 +220,7 @@ Logs are written as JSONL to `runs/<timestamp>/` in the user folder (`~/.webhand
 | `plan` | Steps per attempt, input value labels and their source (`claude` / `runbook`), `restart` |
 | `call` | Tokens and latency of each Jev call |
 | `step` / `step_result` | The action taken, its region, the label of the value typed (never the text) and `text_chars`, attempt number, decider, confidence, page change. URL query values are masked |
-| `page` | The region outline at start and after each page change (keys and counts only, no page text) |
+| `page` | The region outline at start and after each page change (keys and counts only, no page text). With `--read`, `read` holds the shown and total characters per kind |
 | `escalation` | The result `run` returned to Claude |
 | `human_step` / `values` | Requests and completions of human steps, labels of added input values |
 | `attempt_end` | Outcome of the attempt and Claude's reason for replanning |

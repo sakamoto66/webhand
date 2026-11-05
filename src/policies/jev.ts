@@ -27,6 +27,7 @@ import {
   NOT_VISIBLE_HELP,
   OPERATION_HELP,
   planText,
+  READ_RULES,
   resolve,
   TARGET,
   type Targets,
@@ -126,14 +127,16 @@ export function buildQuestions(
   targets: Targets,
   controls: Controls,
   values: Map<string, Value>,
+  reading = false,
 ): [Record<string, unknown>, Record<string, string>] {
   const brief = taskBrief(plan);
+  const rules = reading ? `${NEXT_ACTION}\n${READ_RULES}` : NEXT_ACTION;
   const operations: Record<string, string> = {};
   for (const key of targets.keys()) operations[key] = OPERATION_HELP[key];
   for (const [key, value] of controls) operations[key] = value.label;
   Object.assign(operations, TERMINAL_HELP);
   const questions: Record<string, unknown> = {
-    operation: { type: "choice", criteria: operations, instructions: { ...brief, rules: NEXT_ACTION } },
+    operation: { type: "choice", criteria: operations, instructions: { ...brief, rules } },
   };
   for (const [operation, candidates] of targets) {
     const criteria = new Map<string, unknown>();
@@ -142,7 +145,7 @@ export function buildQuestions(
     questions[`${operation.toLowerCase()}_target`] = {
       type: "choice",
       criteria,
-      instructions: { ...brief, operation, rules: [NEXT_ACTION, TARGET] },
+      instructions: { ...brief, operation, rules: [rules, TARGET] },
     };
   }
   if (targets.has("TYPE_TEXT")) {
@@ -194,7 +197,7 @@ export class JevPolicy implements Policy {
   async choose(page: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {
     const [, targets, controls] = actionSpace(page.actions);
     const values = valueChoices(plan);
-    const [questions, operations] = buildQuestions(plan, targets, controls, values);
+    const [questions, operations] = buildQuestions(plan, targets, controls, values, Boolean(page.read));
     const body = { model: this.model, state: modelState(page, history, plan), questions };
     const started = performance.now();
     const result = await postJson(this.fetchJson, this.key, body);

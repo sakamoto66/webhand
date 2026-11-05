@@ -29,6 +29,12 @@ DONE requires visible evidence that ALL requirements of the goal are satisfied. 
 a matching link is not enough. NEEDS_HUMAN when the next step is one the plan marks [person], or a sign-in,
 password, verification code, or CAPTCHA is required. BLOCKED means no supported operation can make progress.`;
 
+/** Added to NEXT_ACTION when the page has a read layer. */
+export const READ_RULES = `page.read holds chosen kinds of content from the whole page, beyond the viewport, for
+reading only: none of it can be acted on, and "@ below 900px" says where the lines after it are. Use it as
+evidence for DONE when it shows that every requirement is satisfied. When the element the next step needs is
+above or below, SCROLL in that direction; do not scroll back and forth looking for it.`;
+
 export const TARGET = `Choose the best observed target if the next operation is the one specified in this question.
 Use the user's entire goal, the plan, field values, nearby text, and recent actions. This question chooses
 only a target for that operation; another question decides which operation to execute. Do not choose
@@ -161,6 +167,7 @@ export function modelState(page: Page, history: HistoryEntry[], plan: Plan | nul
   const shown: Record<string, unknown> = { url: page.url, title: page.title, text: page.text };
   shown.offscreen = offscreen(page);
   if (page.regions?.length) shown.regions = page.regions;
+  if (page.read) shown.read = { text: page.read.text, chars: page.read.chars };
   state.page = shown;
   state.elements = actionSpace(page.actions)[0].map(compactOptions);
   state.action_history = history.slice(-HISTORY_LIMIT).map((h) => {
