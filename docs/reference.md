@@ -204,6 +204,7 @@ Logs are written as JSONL to `runs/<timestamp>/` in the user folder (`~/.webhand
 | `attempt_end` | Outcome of the attempt and Claude's reason for replanning |
 | `handoff` | Number of characters of CLI output Claude reads |
 | `screenshot` / `screenshot_failed` | Only with `WEBHAND_SCREENSHOTS=1`: the step and attempt an image follows, what it follows (`start` / `action` / `restart`), its file in `<log>-screenshots/`, and the URL with query values masked. A failed capture is logged and the run goes on |
+| `page_check` / `page_check_failed` | After `start` (`when: start`) and when `run` stops at `BLOCKED`, `STUCK`, `ATTEMPT_BUDGET`, or `NEEDS_HUMAN` (`when: escalation`): the attempt, the URL with query values masked, the document's HTTP status, the page title (up to 120 characters), bot-check markers found (`cloudflare`, `recaptcha`, `hcaptcha`, `datadome`, `perimeterx`, `arkose`; a sign, not proof), and the visible text length. Read-only and never sent to Jev. A failed check is logged and the run goes on |
 | `run_end` | Self-reported status and Claude's `reason`, service, runbook, independent verification result, attempt count and per-attempt outcomes, `actions` (executed actions only), `stale` and `not_visible` (choices that did not run), per-role totals |
 
 Success is judged by `run_end.verified`; `status=done` is only a claim. Claude Code's token usage is not available, so `handoffs` (times control returned to Claude) and `handoff_chars` (characters Claude read) serve as proxies.

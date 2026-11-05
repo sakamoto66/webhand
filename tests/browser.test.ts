@@ -1,6 +1,8 @@
 /** Real headless Chrome on the local fixtures. No model calls. */
 
 import { writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, expect, test } from "vitest";
@@ -290,4 +292,26 @@ test.each([null, { focus: ["form:Booking"], skip: ["header"] }])(
 test("a screenshot is a PNG of the page", async () => {
   const png = await browser.screenshot();
   expect(png.subarray(1, 4).toString("latin1")).toBe("PNG");
+});
+
+test("a page check reports the document's HTTP status and bot-check markers, not page text", async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(403, { "content-type": "text/html" });
+    response.end('<title>Check</title><p>Verify you are human</p><iframe src="/recaptcha/frame"></iframe>');
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    await browser.close();
+    await open(`http://127.0.0.1:${(server.address() as AddressInfo).port}/`);
+    const check = await browser.check();
+    expect(check).toMatchObject({ http_status: 403, title: "Check", challenge: ["recaptcha"] });
+    expect(check.text_chars).toBeGreaterThan(0);
+    expect(JSON.stringify(check)).not.toContain("Verify");
+  } finally {
+    server.close();
+  }
+});
+
+test("a page check on a normal page finds no bot-check markers", async () => {
+  expect((await browser.check()).challenge).toEqual([]);
 });
