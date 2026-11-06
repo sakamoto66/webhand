@@ -71,7 +71,7 @@ async function candidates(browser: Reader, page: Page): Promise<Candidate[]> {
   return clicks.map((action, i) => ({ key: String(i + 1), action, context: texts[String(action.node)] ?? "" }));
 }
 
-function scroll(delta: number): Action {
+export function scroll(delta: number): Action {
   return { id: "scroll", kind: "scroll", label: "Scroll", delta };
 }
 
@@ -95,8 +95,9 @@ export async function scanList(
   browser: Actor,
   maxScrolls: number,
   onScreen: (page: Page, round: number) => Promise<void>,
-): Promise<{ rounds: number; stopped: Compared["stopped"]; page: Page }> {
+): Promise<{ rounds: number; stopped: Compared["stopped"]; page: Page; startY: number }> {
   let page = await browser.observe();
+  const startY = page.scroll.y;
   if (page.scroll.y > 0) {
     await browser.act(scroll(-page.scroll.y), page);
     page = await browser.observe();
@@ -104,10 +105,10 @@ export async function scanList(
   let rounds = 0;
   while (true) {
     await onScreen(page, rounds);
-    if (rounds >= maxScrolls) return { rounds, stopped: "limit", page };
+    if (rounds >= maxScrolls) return { rounds, stopped: "limit", page, startY };
     if (bottom(page)) {
       const next = await grown(browser, page);
-      if (!next) return { rounds, stopped: "bottom", page };
+      if (!next) return { rounds, stopped: "bottom", page, startY };
       page = next;
     }
     await browser.act(scroll(Math.max(100, page.h - OVERLAP_PX)), page);

@@ -5,7 +5,7 @@ import { Browser } from "../src/browser.ts";
 import { type Collector, collectScan, MATCH, NO, type Row } from "../src/collect.ts";
 import { Recorder } from "../src/metrics.ts";
 import { buildCollect, JevPolicy } from "../src/policies/jev.ts";
-import { type ModelCall, type Plan, PolicyError } from "../src/types.ts";
+import { type Action, type ModelCall, type Plan, PolicyError } from "../src/types.ts";
 import { ROOT, tmpPath } from "./helpers.ts";
 
 let browser: Browser | null = null;
@@ -56,12 +56,24 @@ test.each(Object.keys(LIMITS))(
     expect(result.collected.items.map((item) => item.split(" ")[0]).sort()).toEqual((expected as string[]).sort());
     expect(collector.asked.reduce((a, b) => a + b, 0)).toBe(all);
     expect((await task.verify(browser as Browser)).success).toBe(false);
+    expect(result.page.scroll.y).toBe(0);
+    expect(result.page.actions.some((a: Action) => a.kind === "type" || a.label === "Submit")).toBe(true);
   },
 );
 
 test("collect_virtual: no screen holds the whole list, so items are kept as text", async () => {
   const { collector } = await scan("collect_virtual");
   expect(Math.max(...collector.asked)).toBeLessThan(200);
+});
+
+test("the page is scrolled back to where it was before the scan", async () => {
+  const task = await loadTask("collect_more");
+  browser = await Browser.open(task.startUrl(ROOT));
+  await browser.evaluate("window.scrollTo(0, 400)");
+  const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
+  const result = await collectScan(browser, new Matching(40), plan(task.GOAL), "c", recorder);
+  recorder.close();
+  expect(result.page.scroll.y).toBe(400);
 });
 
 test("rows() reads table rows in view and leaves out header rows", async () => {

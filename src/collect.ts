@@ -4,11 +4,12 @@
  * webhand scrolls, from the top, one screen at a time (the same scan as compare.ts); Jev only judges. After
  * each scroll, the list and table items in view that were not seen before are asked about, one question each:
  * does it meet the condition? The items that do are kept as text, since they may leave the page. Nothing is
- * clicked or typed. Claude gets the items and writes the answer from them.
+ * clicked or typed. Afterwards the page is scrolled back to where it was, so what comes before the list (a
+ * search box, a form) is in view again. Claude gets the items and writes the answer from them.
  */
 
 import type { Actor } from "./agent.ts";
-import { MAX_SCROLLS, scanList } from "./compare.ts";
+import { MAX_SCROLLS, scanList, scroll } from "./compare.ts";
 import type { Recorder } from "./metrics.ts";
 import type { ModelCall, Page, Plan } from "./types.ts";
 
@@ -84,6 +85,11 @@ export async function collectScan(
       matched: found,
     });
   });
+  let page = scan.page;
+  if (page.scroll.y !== scan.startY) {
+    await browser.act(scroll(scan.startY - page.scroll.y), page);
+    page = await browser.observe();
+  }
   const collected: Collected = {
     criterion,
     items,
@@ -94,5 +100,5 @@ export async function collectScan(
   };
   const { items: _items, ...counts } = collected;
   recorder.event("collect_end", { attempt, ...counts });
-  return { collected, page: scan.page };
+  return { collected, page };
 }
