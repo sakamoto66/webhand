@@ -11,7 +11,7 @@ import { runAgent } from "../src/agent.ts";
 import { Browser, SETTLE_CAP_MS } from "../src/browser.ts";
 import { Recorder } from "../src/metrics.ts";
 import { ScriptedPolicy } from "../src/policies/scripted.ts";
-import { type Page, StalePage } from "../src/types.ts";
+import { type Action, type Page, StalePage } from "../src/types.ts";
 import { ROOT, tmpPath } from "./helpers.ts";
 
 const task = await loadTask("hotel_filter");
@@ -394,4 +394,60 @@ test("the plan_lowest task passes verification only for the cheapest plan, and i
   recorder.close();
   expect(result.outcome).toBe("GOAL_REPORTED");
   expect((await plans.verify(browser)).success).toBe(true);
+});
+
+const reveal = (page: Page, label: string) =>
+  page.actions.find((a: Action) => a.kind === "reveal" && a.label === label);
+const rows = () => browser.evaluate("document.querySelectorAll('#plans tr').length - 1");
+
+test("without a read layer, nothing beyond the viewport is offered", async () => {
+  const plans = await loadTask("plan_lowest");
+  await browser.close();
+  await open(plans.startUrl(ROOT));
+  const page = await browser.observe();
+  expect(page.actions.some((a: Action) => a.kind === "reveal")).toBe(false);
+});
+
+test("SCROLL_TO brings an element beyond the viewport into view without clicking it", async () => {
+  const plans = await loadTask("plan_lowest");
+  await browser.close();
+  await open(plans.startUrl(ROOT), { read: ["table"] });
+  let page = await browser.observe();
+  const target = reveal(page, "Choose Flax");
+  expect(target?.at).toMatch(/^below \d+px$/);
+  expect(page.actions.some((a: Action) => a.kind === "click" && a.label === "Choose Flax")).toBe(false);
+  await browser.act(target as never, page);
+  expect(await browser.evaluate("document.body.dataset.chosen ?? null")).toBe(null);
+  page = await browser.observe();
+  const click = page.actions.find((a: Action) => a.kind === "click" && a.label === "Choose Flax");
+  expect(click).toBeDefined();
+  await browser.act(click as never, page);
+  expect((await plans.verify(browser)).success).toBe(true);
+});
+
+test("SCROLL_TO on a removed element changes nothing", async () => {
+  const plans = await loadTask("plan_lowest");
+  await browser.close();
+  await open(plans.startUrl(ROOT), { read: ["table"] });
+  const page = await browser.observe();
+  await browser.evaluate("document.querySelector('[data-plan=Flax]').closest('tr').remove()");
+  await expect(browser.act(reveal(page, "Choose Flax") as never, page)).rejects.toThrow(StalePage);
+  expect(await browser.evaluate("scrollY")).toBe(0);
+});
+
+test("in a list that loads as it is scrolled, SCROLL_TO its last element loads more", async () => {
+  const plans = await loadTask("plan_more");
+  await browser.close();
+  await open(plans.startUrl(ROOT), { read: ["table"] });
+  let page = await browser.observe();
+  expect(await rows()).toBe(10);
+  for (const loaded of [20, 30, 40]) {
+    const last = page.actions.filter((a: Action) => a.kind === "reveal").at(-1);
+    await browser.act(last as never, page);
+    page = await browser.observe();
+    for (let i = 0; i < 5 && (await rows()) < loaded; i++) page = await browser.observe();
+    expect(await rows()).toBe(loaded);
+  }
+  expect(page.read.text).toMatch(/\nTuff \| [^|\n]+ \| €11 \| Choose Tuff\n/);
+  expect((await plans.verify(browser)).success).toBe(false);
 });

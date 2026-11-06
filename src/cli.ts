@@ -111,6 +111,7 @@ export function render(page: Page): string {
     for (const key of ["checked", "selected", "expanded"]) {
       if (key in element) details.push(`${key}=${show(element[key])}`);
     }
+    if (element.at) details.push(`at=${quote(element.at)}`);
     const operations = element.operations.join(",");
     lines.push(`[${element.index}] ${show(element.role)} ${quote(element.label)} ${details.join(" ")} (${operations})`);
     for (const option of element.options ?? []) {

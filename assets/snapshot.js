@@ -7,6 +7,7 @@
 
   const TEXT_LIMIT = 6000;
   const MAX_ACTIONS = 250;
+  const MAX_REVEALS = 60;
   const SCROLL_STEP = 560;
   const MAX_REGIONS = 40;
   const REGION_NAME_LIMIT = 40;
@@ -286,6 +287,10 @@
     return actions;
   };
 
+  // Elements beyond the viewport, in DOM order, offered only to be scrolled into view (read layer only).
+  const reveals = [];
+  const revealed = new Set();
+
   // In DOM order. Each action's region is kept aside so the freshness marker does not depend on it.
   const collectActions = () => {
     const actions = [];
@@ -297,6 +302,12 @@
       const region = regionOf(element);
       if (!centerInViewport(rect)) {
         region.offscreen_actions++;
+        // With a read layer, an element beyond the viewport can be scrolled into view, never acted on as it is.
+        if (readKinds.length && readable(element) && !revealed.has(element)) {
+          revealed.add(element);
+          reveals.push({node: nodeId(element), role, label: accessibleName(element) || role, kind: 'reveal',
+            at: where(rect)});
+        }
         continue;
       }
       const base = baseAction(element, role, rect);
@@ -669,6 +680,13 @@
     region.shown_actions++;
     action.region = region.key;
   }
+  // The nearest and the farthest are kept: the end of a list is what loads more of it.
+  const kept = reveals.length > MAX_REVEALS
+    ? [...reveals.slice(0, MAX_REVEALS / 2), ...reveals.slice(-MAX_REVEALS / 2)] : reveals;
+  for (const reveal of kept) {
+    if (!(reveal.node in guards)) guards[reveal.node] = state.guard(state.nodes.get(reveal.node));
+  }
+  chosen = [...chosen, ...kept];
   chosen.forEach((action, index) => action.id = 'e' + (index + 1));
   if (scrollY + innerHeight < height - 2) {
     chosen.push({id: 'scroll_down', kind: 'scroll', label: 'Scroll down', delta: SCROLL_STEP});
@@ -693,5 +711,6 @@
 
   return {url: location.href, title: document.title, w: innerWidth, h: innerHeight, text: shown.text,
     scroll: {y: scrollY, height}, actions: chosen, marker, page_key, guards, omitted_actions,
-    regions: regionSummary, omitted_regions: outline.length - regionSummary.length, ...(read ? {read} : {})};
+    regions: regionSummary, omitted_regions: outline.length - regionSummary.length, ...(read ? {read} : {}),
+    ...(reveals.length > kept.length ? {omitted_reveals: reveals.length - kept.length} : {})};
 })

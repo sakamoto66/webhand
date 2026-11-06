@@ -118,7 +118,7 @@ function targetCriterion(operation: string, index: string, action: Action): unkn
     element: `[${index}] ${action.label}`,
     current_value: "current_value" in action ? action.current_value : "value" in action ? action.value : "",
   };
-  for (const key of ["role", "checked", "selected", "expanded"]) if (key in action) criterion[key] = action[key];
+  for (const key of ["role", "checked", "selected", "expanded", "at"]) if (key in action) criterion[key] = action[key];
   return criterion;
 }
 

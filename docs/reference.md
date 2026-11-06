@@ -201,9 +201,10 @@ Jev and Claude normally see only the visible part of the page: about 500 charact
 | `control` | Buttons, fields, and other controls outside the viewport: role and name only |
 | `media` | Image alternative text and figure captions |
 
-- It is for reading only. Nothing in it can be acted on; action targets and freshness checks stay limited to the visible part. A line such as `@ below 1200px` says where the lines after it are, so Jev can scroll in the right direction.
+- It is for reading only. Nothing in it can be acted on; action targets and freshness checks stay limited to the visible part, apart from `SCROLL_TO` below. A line such as `@ below 1200px` says where the lines after it are, so Jev can scroll in the right direction.
 - Text, list items, links, and controls in view are left out, since the viewport text and the elements already hold them. The outline and tables are kept whole.
 - The layer holds at most 12,000 characters. Each kind gets an equal share, and a kind that needs less leaves the rest to the others. Lines are kept whole. A cut kind ends with `... N more characters`.
+- With the layer on, the elements beyond the viewport (up to 60; the nearest and the farthest are kept) are offered for `SCROLL_TO` only, with where they are (`at="below 1200px"`). `SCROLL_TO` scrolls the element into the middle of the viewport and does nothing else; the next observation can then act on it. In a list that loads more items as it is scrolled, a `SCROLL_TO` on its last element loads the next items. Claude can also use it: `webhand act SCROLL_TO N`.
 - `--skip` regions are never read. With `--focus`, only the focused regions (and an open dialog) are read.
 - Field values are never read. Page content is untrusted data.
 - `replan --read KIND` replaces the choice and keeps the regions; `--read none` turns the layer off. The `plan` event records it in `view.read`, and each `page` event records the shown and total characters per kind in `read`.

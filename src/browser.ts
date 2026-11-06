@@ -100,6 +100,14 @@ const RESOLVE_TARGET = `(action => {
   }
   return null;
 })`;
+// Scrolls an observed element into the middle of the viewport. It never clicks or types.
+const REVEAL = `(node => {
+  const e=window.__browserLab?.nodes.get(node);
+  if (!e?.isConnected) return false;
+  e.scrollIntoView({block: "center", inline: "nearest", behavior: "instant"});
+  return true;
+})`;
+
 const SELECT_OPTION = `(action => {
   const e=window.__browserLab.nodes.get(action.node);
   if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
@@ -208,7 +216,7 @@ export class Browser {
   }
 
   async fresh(page: Page, action: Action | null = null): Promise<boolean> {
-    if (action !== null && (action.kind === "click" || action.kind === "select")) {
+    if (action !== null && ["click", "select", "reveal"].includes(action.kind)) {
       const node = action.node;
       if (!Number.isInteger(node)) return false;
       const current = await this.evaluate(
@@ -226,6 +234,11 @@ export class Browser {
     const kind = action.kind;
     if (kind === "wait") {
       await sleep(100);
+      return;
+    }
+    if (kind === "reveal") {
+      const found = await this.evaluate(`${REVEAL}(${JSON.stringify(action.node)})`);
+      if (!found) throw new StalePage("Target changed");
       return;
     }
     let target: { x: number; y: number } | null = null;

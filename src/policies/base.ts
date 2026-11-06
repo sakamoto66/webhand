@@ -32,8 +32,10 @@ password, verification code, or CAPTCHA is required. BLOCKED means no supported 
 /** Added to NEXT_ACTION when the page has a read layer. */
 export const READ_RULES = `page.read holds chosen kinds of content from the whole page, beyond the viewport, for
 reading only: none of it can be acted on, and "@ below 900px" says where the lines after it are. Use it as
-evidence for DONE when it shows that every requirement is satisfied. When the element the next step needs is
-above or below, SCROLL in that direction; do not scroll back and forth looking for it.`;
+evidence for DONE when it shows that every requirement is satisfied. Elements beyond the viewport are offered
+for SCROLL_TO only, with where they are. When the element the next step needs is one of them, SCROLL_TO it;
+it comes into view, and the next operation can act on it. When a list loads more items as it is scrolled,
+SCROLL_TO its last offered element to load more. Do not scroll back and forth looking for an element.`;
 
 export const TARGET = `Choose the best observed target if the next operation is the one specified in this question.
 Use the user's entire goal, the plan, field values, nearby text, and recent actions. This question chooses
@@ -48,11 +50,17 @@ export const NOT_VISIBLE_HELP = "The element the next step needs is not in this 
 export const VALUE = `Choose the value to type if the next operation is TYPE_TEXT. Claude wrote these values for this goal.
 Pick the one that belongs in the field you would type into. Choose NONE if no listed value belongs there.`;
 
-export const OPERATIONS: Record<string, string> = { click: "CLICK", fill: "TYPE_TEXT", select: "SELECT" };
+export const OPERATIONS: Record<string, string> = {
+  click: "CLICK",
+  fill: "TYPE_TEXT",
+  select: "SELECT",
+  reveal: "SCROLL_TO",
+};
 export const OPERATION_HELP: Record<string, string> = {
   CLICK: "Click an element, button, menu option, autocomplete suggestion, or calendar day.",
   TYPE_TEXT: "Enter or replace text in an editable field. Claude supplies the value.",
   SELECT: "Select an observed dropdown value.",
+  SCROLL_TO: "Scroll an element beyond the viewport into view. Nothing is clicked.",
 };
 export const TERMINAL_HELP: Record<string, string> = {
   DONE: "Every requirement of the goal is visibly satisfied.",
@@ -84,7 +92,7 @@ export function actionSpace(actions: Action[]): [Element[], Targets, Controls] {
       const index = String(elements.length + 1);
       indices.set(node, index);
       const element: Element = {};
-      for (const key of ["role", "value", "checked", "selected", "expanded"]) {
+      for (const key of ["role", "value", "checked", "selected", "expanded", "at"]) {
         if (key in action) element[key] = action[key];
       }
       element.index = index;

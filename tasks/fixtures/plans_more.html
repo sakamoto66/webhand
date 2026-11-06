@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fieldnote · More plans</title>
+<style>
+  body { font: 16px/1.6 system-ui, sans-serif; margin: 0 auto; max-width: 860px; padding: 0 24px; }
+  #result { position: fixed; top: 0; right: 24px; background: #ffe; padding: 4px 12px; }
+  .featured { border: 1px solid #ccc; padding: 12px; margin: 16px 0; }
+  p { margin: 0 0 22px; }
+  td, th { padding: 6px 12px; text-align: left; }
+</style></head>
+<body>
+  <div id="result" role="status"></div>
+  <h1>Plans</h1>
+  <p>Pick the plan that suits you. The full list of plans and their monthly prices is below.</p>
+  <div class="featured"><h2>Featured: Basalt</h2><p>Our most popular plan.</p>
+    <button type="button" data-plan="Basalt">Choose Basalt (featured)</button></div>
+  <h2>About our plans</h2>
+    <p>Every plan includes the same support hours and the same data centre.</p>
+    <p>Plans differ in storage and in price. Prices are per month and include tax.</p>
+    <p>You can change plans at any time. A change starts on the next billing day.</p>
+    <p>Storage is shared across every device you sign in to.</p>
+    <p>Older plans that are no longer sold are not listed here.</p>
+    <p>Every plan includes the same support hours and the same data centre.</p>
+    <p>Plans differ in storage and in price. Prices are per month and include tax.</p>
+    <p>You can change plans at any time. A change starts on the next billing day.</p>
+    <p>Storage is shared across every device you sign in to.</p>
+    <p>Older plans that are no longer sold are not listed here.</p>
+    <p>Every plan includes the same support hours and the same data centre.</p>
+    <p>Plans differ in storage and in price. Prices are per month and include tax.</p>
+    <p>You can change plans at any time. A change starts on the next billing day.</p>
+    <p>Storage is shared across every device you sign in to.</p>
+    <p>Older plans that are no longer sold are not listed here.</p>
+    <p>Every plan includes the same support hours and the same data centre.</p>
+    <p>Plans differ in storage and in price. Prices are per month and include tax.</p>
+    <p>You can change plans at any time. A change starts on the next billing day.</p>
+    <p>Storage is shared across every device you sign in to.</p>
+    <p>Older plans that are no longer sold are not listed here.</p>
+    <p>Every plan includes the same support hours and the same data centre.</p>
+    <p>Plans differ in storage and in price. Prices are per month and include tax.</p>
+    <p>You can change plans at any time. A change starts on the next billing day.</p>
+    <p>Storage is shared across every device you sign in to.</p>
+    <p>Older plans that are no longer sold are not listed here.</p>
+    <p>Every plan includes the same support hours and the same data centre.</p>
+    <p>Plans differ in storage and in price. Prices are per month and include tax.</p>
+    <p>You can change plans at any time. A change starts on the next billing day.</p>
+    <p>Storage is shared across every device you sign in to.</p>
+    <p>Older plans that are no longer sold are not listed here.</p>
+  <h2>All plans</h2>
+  <table id="plans">
+    <caption>Every plan and its monthly price</caption>
+    <tr><th>Plan</th><th>Storage</th><th>Monthly price</th><th></th></tr>
+  </table>
+  <p id="more" role="status"></p>
+  <footer><p>Local demo: no accounts or payments.</p></footer>
+<script>
+  // Ten plans at first; ten more each time the end of the table comes into view, until all are shown.
+  const PLANS = [
+    ["Basalt", "50 GB", 27],
+    ["Chalk", "20 GB", 32],
+    ["Dolomite", "200 GB", 38],
+    ["Flint", "200 GB", 51],
+    ["Garnet", "20 GB", 21],
+    ["Gneiss", "200 GB", 62],
+    ["Granite", "20 GB", 72],
+    ["Jasper", "50 GB", 56],
+    ["Jet", "5 GB", 22],
+    ["Marble", "20 GB", 24],
+    ["Mica", "5 GB", 35],
+    ["Obsidian", "200 GB", 48],
+    ["Onyx", "5 GB", 55],
+    ["Opal", "20 GB", 38],
+    ["Pumice", "20 GB", 42],
+    ["Quartz", "50 GB", 60],
+    ["Shale", "200 GB", 95],
+    ["Slate", "5 GB", 38],
+    ["Talc", "200 GB", 64],
+    ["Topaz", "50 GB", 21],
+    ["Agate", "20 GB", 51],
+    ["Beryl", "5 GB", 85],
+    ["Calcite", "200 GB", 21],
+    ["Coral", "5 GB", 30],
+    ["Feldspar", "5 GB", 94],
+    ["Gypsum", "50 GB", 85],
+    ["Halite", "200 GB", 82],
+    ["Jade", "5 GB", 87],
+    ["Lapis", "20 GB", 50],
+    ["Malachite", "5 GB", 46],
+    ["Pyrite", "200 GB", 30],
+    ["Ruby", "20 GB", 67],
+    ["Schist", "50 GB", 74],
+    ["Spinel", "5 GB", 90],
+    ["Tuff", "200 GB", 11],
+    ["Zircon", "50 GB", 30],
+    ["Amber", "50 GB", 41],
+    ["Azurite", "50 GB", 74],
+    ["Cobalt", "50 GB", 32],
+    ["Mercury", "50 GB", 93]
+  ];
+  const table = document.getElementById("plans"), more = document.getElementById("more");
+  let shown = 0, loading = false;
+  const choose = button => {
+    document.body.dataset.chosen = button.dataset.plan;
+    document.getElementById("result").textContent = "Plan chosen: " + button.dataset.plan;
+  };
+  const add = () => {
+    for (const [name, storage, price] of PLANS.slice(shown, shown + 10)) {
+      const row = table.insertRow();
+      row.innerHTML = `<td>${name}</td><td>${storage}</td><td>€${price}</td>` +
+        `<td><button type="button" data-plan="${name}">Choose ${name}</button></td>`;
+      row.querySelector("button").addEventListener("click", event => choose(event.currentTarget));
+    }
+    shown = Math.min(PLANS.length, shown + 10);
+    more.textContent = shown < PLANS.length ? "Scroll down for more plans." : "All plans are shown.";
+  };
+  document.querySelector("button[data-plan]").addEventListener("click", event => choose(event.currentTarget));
+  add();
+  const observer = new IntersectionObserver(entries => {
+    if (!entries.some(entry => entry.isIntersecting) || loading || shown >= PLANS.length) return;
+    loading = true;
+    more.textContent = "Loading more plans…";
+    setTimeout(() => {
+      add();
+      loading = false;
+      observer.unobserve(more); // Observing again reports the end at once if it is still in view.
+      observer.observe(more);
+    }, 400);
+  });
+  observer.observe(more);
+</script>
+</body>
+</html>
