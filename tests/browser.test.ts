@@ -397,7 +397,7 @@ test("the plan_lowest task passes verification only for the cheapest plan, and i
 });
 
 const reveal = (page: Page, label: string) =>
-  page.actions.find((a: Action) => a.kind === "reveal" && a.label === label);
+  page.actions.find((a: Action) => a.kind === "reveal" && a.label === `Scroll to ${label}`);
 const rows = () => browser.evaluate("document.querySelectorAll('#plans tr').length - 1");
 
 test("without a read layer, nothing beyond the viewport is offered", async () => {

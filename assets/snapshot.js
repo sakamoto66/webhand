@@ -305,8 +305,9 @@
         // With a read layer, an element beyond the viewport can be scrolled into view, never acted on as it is.
         if (readKinds.length && readable(element) && !revealed.has(element)) {
           revealed.add(element);
-          reveals.push({node: nodeId(element), role, label: accessibleName(element) || role, kind: 'reveal',
-            at: where(rect)});
+          // Named as a scroll, so the action history never reads as if the element had been acted on.
+          reveals.push({node: nodeId(element), role, label: 'Scroll to ' + (accessibleName(element) || role),
+            kind: 'reveal', at: where(rect)});
         }
         continue;
       }
