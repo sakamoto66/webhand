@@ -210,6 +210,17 @@ Jev and Claude normally see only the visible part of the page: about 500 charact
 - `replan --read KIND` replaces the choice and keeps the regions; `--read none` turns the layer off. The `plan` event records it in `view.read`, and each `page` event records the shown and total characters per kind in `read`.
 - Without `--read`, the observation, the output, and what Jev receives are unchanged.
 
+## Comparing items in a long list
+
+When the goal is to pick one item of a list by a criterion, `--compare CRITERION` on `start` or `replan` (such as `--compare "lowest monthly price"`) makes each attempt's first `run` compare the whole list before anything is acted on:
+
+1. webhand scrolls to the top, then down one screen at a time (each screen overlaps the last by 120px).
+2. After each scroll, Jev chooses which item best meets the criterion: one of the elements in view, given with the text of its row, card, or list item, or `KEEP` for the best so far. The best so far is kept as text, so a list that removes rows scrolled out of view works too. Before any best, `NONE` means no item fits yet.
+3. The scan stops after 20 scrolls, or at the bottom of the page once two seconds of waiting add nothing more (a list that loads as it is scrolled grows there).
+4. The page is scrolled back to where the best item was (and, with a read layer, to the item itself), and the normal loop goes on. Jev sees the result as `plan.compared`, and its rules say to act on that item.
+
+Nothing is clicked or typed during the scan, and its scrolls are not counted as actions. The output shows `COMPARED (N scrolls, ...): item`. The log keeps a `compare_round` event per scroll and a `compare_end` event; a failed comparison logs `compare_failed` and changes nothing. Each new attempt compares again; `replan --compare none` turns it off. Only the page itself is scrolled, not a scrolling box inside it.
+
 ## Logs
 
 Logs are written as JSONL to `runs/<timestamp>/` in the user folder (`~/.webhand/runs/` by default).

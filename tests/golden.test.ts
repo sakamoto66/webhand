@@ -9,10 +9,10 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, expect, test, vi } from "vitest";
 import type { AgentResult } from "../src/agent.ts";
-import { captured, describePlan, recentActions, render, report } from "../src/cli.ts";
+import { captured, comparedLine, describePlan, recentActions, render, report } from "../src/cli.ts";
 import { toJson } from "../src/format.ts";
 import { actionSpace, modelState, valueChoices } from "../src/policies/base.ts";
-import { buildQuestions, JevPolicy } from "../src/policies/jev.ts";
+import { buildCompare, buildQuestions, JevPolicy } from "../src/policies/jev.ts";
 import * as runbook from "../src/runbook.ts";
 import { type Page, type Plan, PolicyError } from "../src/types.ts";
 import { ROOT } from "./helpers.ts";
@@ -119,6 +119,29 @@ test.each(Object.keys(pages))("the request to Jev for page %s is byte for byte a
   });
   await expect(policy.choose(pages[name], plan, history)).rejects.toThrow(PolicyError);
   golden(body, name, "body");
+});
+
+test("the comparison and what Jev is told after it are as recorded", () => {
+  const page = pages.plans_reveal;
+  const [, targets, controls] = actionSpace(page.actions);
+  const items = page.actions
+    .filter((a: Page) => a.kind === "click")
+    .map((action: Page, i: number) => ({ key: String(i + 1), action, context: `${action.label} row` }));
+  golden(toJson(buildCompare(plan, "lowest monthly price", null, items)), "compare", "first");
+  const best = { label: "Choose Flax", context: "Flax 20 GB €12 Choose Flax", y: 1200, round: 3 };
+  golden(toJson(buildCompare(plan, "lowest monthly price", best, items)), "compare", "later");
+  const compared = {
+    criterion: "lowest monthly price",
+    best: "Choose Flax — Flax 20 GB €12 Choose Flax",
+    rounds: 5,
+    stopped: "bottom" as const,
+  };
+  const after = { ...plan, compare: "lowest monthly price", compared };
+  golden(toJson(buildQuestions(after, targets, controls, valueChoices(after), true)[0]), "compare", "questions_after");
+  golden(toJson(modelState(page, history, after)), "compare", "model_state_after");
+  golden(comparedLine(compared), "compare", "line");
+  golden(comparedLine({ ...compared, best: null, stopped: "limit" }), "compare", "line_limit");
+  golden(describePlan(after, null), "compare", "describe_plan");
 });
 
 test("plans and recent actions print as recorded", () => {

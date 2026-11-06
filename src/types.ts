@@ -77,6 +77,10 @@ export interface Plan {
   notes?: string[];
   attempt?: number;
   service?: { description: string; facts: string[] } | null;
+  /** Claude's criterion for choosing one item of a long list; the run compares before it acts. */
+  compare?: string | null;
+  /** What the comparison found in this attempt. */
+  compared?: { criterion: string; best: string | null; rounds: number; stopped: string } | null;
 }
 
 export interface Step {

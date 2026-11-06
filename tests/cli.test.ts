@@ -458,3 +458,47 @@ test("--read gives Jev and Claude a read layer; replan --read none takes it away
 test("--read accepts only the listed kinds", () => {
   expect(() => cliModule.parse(["start", "--read", "everything"])).toThrow(/invalid choice/);
 });
+
+test("--compare scans the whole list before Jev acts; Jev is told the best; replan compares again or stops", async () => {
+  const started = await research(
+    "start",
+    "--task",
+    "plan_lowest",
+    "--chrome",
+    "linux",
+    "--compare",
+    "lowest monthly price",
+  );
+  expect(started.out).toContain("COMPARE: lowest monthly price");
+  ScriptedJev.moves = [
+    ["CLICK", "Choose Flax", null],
+    ["DONE", null, null],
+  ];
+  const { out } = await cli("run");
+  expect(out).toMatch(/COMPARED \(\d+ scrolls, reached the bottom\): Choose Flax — Flax 20 GB €12 Choose Flax/);
+  const plan = ScriptedJev.plans[0] as { compared: { best: string } };
+  expect(plan.compared.best).toMatch(/^Choose Flax/);
+  expect((ScriptedJev.states[0] as { plan: { compared: object } }).plan.compared).toMatchObject({ stopped: "bottom" });
+  expect(events().filter((e) => e.type === "compare_round").length).toBeGreaterThan(1);
+  expect(events().find((e) => e.type === "compare_end")).toMatchObject({
+    best_label: "Choose Flax",
+    stopped: "bottom",
+  });
+  expect(events().find((e) => e.type === "plan").compare).toBe("lowest monthly price");
+  const finished = await research("finish", "--status", "done", "--reason", "Flax chosen");
+  expect(finished.out).toContain("verified=true");
+});
+
+test("replan --compare none stops comparing; without it, the next attempt compares again", async () => {
+  await research("start", "--task", "plan_lowest", "--chrome", "linux", "--compare", "lowest monthly price");
+  ScriptedJev.moves = [["BLOCKED", null, null]];
+  await cli("run");
+  await cli("replan", "--reason", "Again");
+  ScriptedJev.moves = [["BLOCKED", null, null]];
+  expect((await cli("run")).out).toContain("COMPARED");
+  const replanned = await cli("replan", "--reason", "No comparison", "--compare", "none");
+  expect(replanned.out).not.toContain("COMPARE:");
+  ScriptedJev.moves = [["BLOCKED", null, null]];
+  expect((await cli("run")).out).not.toContain("COMPARED");
+  expect(events().filter((e) => e.type === "compare_end")).toHaveLength(2);
+});

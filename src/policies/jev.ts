@@ -5,6 +5,7 @@
  */
 
 import { Agent, fetch as undiciFetch } from "undici";
+import { type Best, type Candidate, describeBest, KEEP, NONE } from "../compare.ts";
 import { sleep, toJson } from "../format.ts";
 import {
   type Action,
@@ -20,6 +21,8 @@ import {
 } from "../types.ts";
 import {
   actionSpace,
+  COMPARE_RULES,
+  COMPARED_RULES,
   type Controls,
   modelState,
   NEXT_ACTION,
@@ -130,7 +133,8 @@ export function buildQuestions(
   reading = false,
 ): [Record<string, unknown>, Record<string, string>] {
   const brief = taskBrief(plan);
-  const rules = reading ? `${NEXT_ACTION}\n${READ_RULES}` : NEXT_ACTION;
+  let rules = reading ? `${NEXT_ACTION}\n${READ_RULES}` : NEXT_ACTION;
+  if (plan.compared) rules = `${rules}\n${COMPARED_RULES}`;
   const operations: Record<string, string> = {};
   for (const key of targets.keys()) operations[key] = OPERATION_HELP[key];
   for (const [key, value] of controls) operations[key] = value.label;
@@ -159,6 +163,29 @@ export function buildQuestions(
     };
   }
   return [questions, operations];
+}
+
+/** The comparison question: items in view, and the best one so far or NONE. */
+export function buildCompare(
+  plan: Plan,
+  criterion: string,
+  best: Best | null,
+  candidates: Candidate[],
+): Record<string, unknown> {
+  const criteria = new Map<string, string>();
+  for (const item of candidates) {
+    const context = item.context && item.context !== item.action.label ? ` — ${item.context}` : "";
+    criteria.set(item.key, `[${item.key}] ${item.action.label}${context}`);
+  }
+  if (best) criteria.set(KEEP, `Keep the current best: ${describeBest(best)}`);
+  else criteria.set(NONE, "No listed item fits the criterion");
+  return {
+    compare: {
+      type: "choice",
+      criteria,
+      instructions: { ...taskBrief(plan), criterion, current_best: describeBest(best), rules: COMPARE_RULES },
+    },
+  };
 }
 
 export class JevPolicy implements Policy {
@@ -194,11 +221,21 @@ export class JevPolicy implements Policy {
     await this.agent?.close();
   }
 
-  async choose(page: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {
-    const [, targets, controls] = actionSpace(page.actions);
-    const values = valueChoices(plan);
-    const [questions, operations] = buildQuestions(plan, targets, controls, values, Boolean(page.read));
-    const body = { model: this.model, state: modelState(page, history, plan), questions };
+  async compare(
+    page: Page,
+    plan: Plan,
+    criterion: string,
+    best: Best | null,
+    candidates: Candidate[],
+  ): Promise<string> {
+    const questions = buildCompare(plan, criterion, best, candidates);
+    const body = { model: this.model, state: modelState(page, [], plan), questions };
+    const result = await this.post(body, "compare");
+    const keys = [...candidates.map((item) => item.key), best ? KEEP : NONE];
+    return validateChoice(result?.answers?.compare ?? {}, keys).choice;
+  }
+
+  private async post(body: unknown, purpose: string): Promise<Json> {
     const started = performance.now();
     const result = await postJson(this.fetchJson, this.key, body);
     const isObject = result && typeof result === "object" && !Array.isArray(result);
@@ -209,13 +246,22 @@ export class JevPolicy implements Policy {
       modelCall(
         "typesafe",
         this.servedModel as string,
-        "choose",
+        purpose,
         Math.round(performance.now() - started),
         "input_tokens" in usage ? usage.input_tokens : (usage.prompt_tokens ?? null),
         "output_tokens" in usage ? usage.output_tokens : (usage.completion_tokens ?? null),
       ),
     );
-    const answers = (isObject && result.answers) || {};
+    return isObject ? result : {};
+  }
+
+  async choose(page: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {
+    const [, targets, controls] = actionSpace(page.actions);
+    const values = valueChoices(plan);
+    const [questions, operations] = buildQuestions(plan, targets, controls, values, Boolean(page.read));
+    const body = { model: this.model, state: modelState(page, history, plan), questions };
+    const result = await this.post(body, "choose");
+    const answers = result.answers || {};
     const operationAnswer = validateChoice(answers.operation ?? {}, Object.keys(operations));
     const operation: string = operationAnswer.choice;
     const confidences: number[] = [operationAnswer.confidence];

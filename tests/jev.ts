@@ -3,6 +3,7 @@
 import { join } from "node:path";
 import { vi } from "vitest";
 import { deps } from "../src/cli.ts";
+import { type Best, type Candidate, KEEP, NONE } from "../src/compare.ts";
 import { actionSpace, modelState, resolve, valueChoices } from "../src/policies/base.ts";
 import * as session from "../src/session.ts";
 import { Decision, type HistoryEntry, type ModelCall, modelCall, type Page, type Plan } from "../src/types.ts";
@@ -21,6 +22,18 @@ export class ScriptedJev {
 
   config() {
     return { chooser: "scripted-jev" };
+  }
+
+  /** Compares by the price in each item's text, the lowest winning. */
+  async compare(_page: Page, _plan: Plan, _criterion: string, best: Best | null, items: Candidate[]): Promise<string> {
+    this.calls.push(modelCall("typesafe", "jev", "compare", 1, 10, 1));
+    const price = (text: string) => Number(/€(\d+)/.exec(text)?.[1] ?? Number.POSITIVE_INFINITY);
+    let choice = best ? KEEP : NONE;
+    let lowest = best ? price(best.context) : Number.POSITIVE_INFINITY;
+    for (const item of items) {
+      if (price(item.context) < lowest) [choice, lowest] = [item.key, price(item.context)];
+    }
+    return choice;
   }
 
   async choose(page: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {

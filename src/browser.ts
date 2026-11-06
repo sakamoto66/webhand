@@ -108,6 +108,19 @@ const REVEAL = `(node => {
   return true;
 })`;
 
+// The text of the row, card, or list item each observed element is in, for comparing items. Page text only;
+// field values are not part of innerText.
+const CONTEXTS = `(nodes => {
+  const c=window.__browserLab, out={};
+  for (const node of nodes) {
+    const e=c?.nodes.get(node);
+    if (!e?.isConnected) continue;
+    const item=e.closest('tr,li,[role="row"],[role="listitem"],article,[role="article"]') || e.parentElement;
+    out[node]=String(item?.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 300);
+  }
+  return out;
+})`;
+
 const SELECT_OPTION = `(action => {
   const e=window.__browserLab.nodes.get(action.node);
   if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
@@ -226,6 +239,11 @@ export class Browser {
       return isDeepStrictEqual(current, [page.page_key, page.guards?.[String(node)] ?? null]);
     }
     return isDeepStrictEqual(await this.evaluate(MARKER), page.marker);
+  }
+
+  /** The text around observed elements, by node. Read-only. */
+  async contexts(nodes: number[]): Promise<Record<string, string>> {
+    return (await this.evaluate(`${CONTEXTS}(${JSON.stringify(nodes)})`)) ?? {};
   }
 
   /** Execute once. StalePage means nothing happened; MutationUncertain means do not retry. */

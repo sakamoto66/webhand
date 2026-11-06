@@ -10,6 +10,7 @@ import { join } from "node:path";
 import * as agent from "./agent.ts";
 import { Budget, execute, runAgent } from "./agent.ts";
 import { Browser } from "./browser.ts";
+import { type Compared, type Comparer, compareScan, MAX_SCROLLS } from "./compare.ts";
 import { describeError, quote, show, stamp, toJson } from "./format.ts";
 import * as learn from "./learn.ts";
 import { gitState, logOnce, maskUrls, pageEvent, Recorder, safeUrl, summarize } from "./metrics.ts";
@@ -142,6 +143,11 @@ function headline(page: Page): string {
   return `URL: ${page.url}\nTITLE: ${page.title}`;
 }
 
+export function comparedLine(compared: Compared): string {
+  const stopped = compared.stopped === "bottom" ? "reached the bottom" : `stopped at ${MAX_SCROLLS} scrolls`;
+  return `COMPARED (${compared.rounds} scrolls, ${stopped}): ${compared.best ?? "nothing fit the criterion"}`;
+}
+
 export function describePlan(plan: Plan, view: runbook.View | null = null): string {
   const text = planText(plan);
   const lines = [`GOAL: ${plan.goal}`, "PLAN:", ...(text.length ? text : ["(goal only)"]).map((line) => `  ${line}`)];
@@ -149,6 +155,7 @@ export function describePlan(plan: Plan, view: runbook.View | null = null): stri
   for (const key of ["focus", "skip", "read"] as const) {
     if (view?.[key]?.length) lines.push(`${key.toUpperCase()}: ${view[key].join(", ")}`);
   }
+  if (plan.compare) lines.push(`COMPARE: ${plan.compare}`);
   return lines.join("\n");
 }
 
@@ -340,6 +347,7 @@ async function commandStart(args: Args): Promise<number> {
     notes: [],
     attempt: 1,
     service: service ? { description: service.description, facts: service.facts } : null,
+    ...(args.compare ? { compare: args.compare } : {}),
   };
   let chromeState: session.State;
   try {
@@ -395,6 +403,7 @@ async function commandStart(args: Args): Promise<number> {
       steps: planText(plan),
       values: values.map((v) => v.label),
       view: state.view,
+      ...(plan.compare ? { compare: plan.compare } : {}),
       source: book && !args.step.length ? "runbook" : "claude",
     });
     recorder.event("page", pageEvent(state.page, 1));
@@ -503,6 +512,24 @@ async function commandRun(args: Args): Promise<number> {
   const recorder = new Recorder(state.log);
   let result: agent.AgentResult;
   try {
+    // With a criterion, compare the whole list once per attempt before anything is acted on.
+    if (state.plan.compare && !state.plan.compared) {
+      if (!("compare" in policy)) throw new CliExit("This chooser cannot compare items");
+      let scan: Awaited<ReturnType<typeof compareScan>>;
+      try {
+        scan = await compareScan(browser, policy as unknown as Comparer, state.plan, state.plan.compare, recorder);
+      } catch (error) {
+        if (!(error instanceof PolicyError || error instanceof StalePage)) throw error;
+        // Only scrolls happened. The attempt goes on; run again, or replan.
+        recorder.event("compare_failed", { attempt: state.plan.attempt, error: error.message });
+        print(`COMPARE FAILED: ${error.message} Nothing was clicked or typed. Run again, or replan`);
+        return FAILED;
+      }
+      state.plan.compared = scan.compared;
+      state.page = scan.page;
+      session.save(state);
+      print(comparedLine(scan.compared));
+    }
     result = await runAgent(browser, policy, state.plan, recorder, new Budget(state.max_actions, state.max_decisions), {
       history: state.history,
       page: state.page,
@@ -555,6 +582,8 @@ async function commandReplan(args: Args): Promise<number> {
     plan.steps = steps;
   }
   plan.values = mergeValues(plan.values, parseValues(args.value));
+  if (args.compare) plan.compare = args.compare === "none" ? null : args.compare;
+  plan.compared = null; // Each attempt compares again from the top.
   const viewChanged = args.focus.length || args.skip.length || args.read.length;
   if (viewChanged) {
     // Claude's region choice is replaced, on top of what was learned. --read alone keeps the regions.
@@ -580,6 +609,7 @@ async function commandReplan(args: Args): Promise<number> {
     steps: planText(plan),
     values: plan.values.map((v: Value) => v.label),
     view: state.view ?? null,
+    ...(plan.compare ? { compare: plan.compare } : {}),
     restart: args.restart,
     source: "claude",
   });
@@ -958,6 +988,12 @@ function commands(): Record<string, CommandSpec> {
       help: "Content to read beyond the viewport: outline, text, table, list, link, control, media; none clears it",
     },
   ];
+  const compareOption: OptionSpec = {
+    name: "compare",
+    type: "string",
+    metavar: "CRITERION",
+    help: "Before acting, scroll through the whole list and find the item that best meets this; none clears it",
+  };
   return {
     catalog: {
       help: "List learned services, procedures, and saved profiles",
@@ -976,6 +1012,7 @@ function commands(): Record<string, CommandSpec> {
         { name: "param", type: "string", multiple: true, metavar: "KEY=VALUE", help: "A runbook parameter" },
         { name: "allow-draft", type: "boolean", help: "Trial a runbook no person has approved yet" },
         ...viewOptions,
+        compareOption,
         { name: "session", type: "string", default: "new", help: "new (temporary) or profile:NAME (saved sign-in)" },
         chromeOption,
         { name: "headed", type: "boolean" },
@@ -1001,6 +1038,7 @@ function commands(): Record<string, CommandSpec> {
         { name: "value", type: "string", multiple: true, metavar: "LABEL=VALUE" },
         { name: "restart", type: "boolean", help: "Open the start URL again before the next attempt" },
         ...viewOptions,
+        compareOption,
       ],
       run: commandReplan,
     },
