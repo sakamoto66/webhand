@@ -12,7 +12,7 @@ import type { AgentResult } from "../src/agent.ts";
 import { captured, comparedLine, describePlan, recentActions, render, report } from "../src/cli.ts";
 import { toJson } from "../src/format.ts";
 import { actionSpace, modelState, valueChoices } from "../src/policies/base.ts";
-import { buildCompare, buildQuestions, JevPolicy } from "../src/policies/jev.ts";
+import { buildCompare, buildQuestions, compareState, JevPolicy } from "../src/policies/jev.ts";
 import * as runbook from "../src/runbook.ts";
 import { type Page, type Plan, PolicyError } from "../src/types.ts";
 import { ROOT } from "./helpers.ts";
@@ -130,6 +130,7 @@ test("the comparison and what Jev is told after it are as recorded", () => {
   golden(toJson(buildCompare(plan, "lowest monthly price", null, items)), "compare", "first");
   const best = { label: "Choose Flax", context: "Flax 20 GB €12 Choose Flax", y: 1200, round: 3 };
   golden(toJson(buildCompare(plan, "lowest monthly price", best, items)), "compare", "later");
+  golden(toJson(compareState(page, plan)), "compare", "state");
   const compared = {
     criterion: "lowest monthly price",
     best: "Choose Flax — Flax 20 GB €12 Choose Flax",

@@ -188,6 +188,15 @@ export function buildCompare(
   };
 }
 
+/**
+ * The comparison's state: the plan only, not the page. With the page in the state, Jev favoured an item on
+ * screen over a better best that had scrolled away. Each item's own text is in the question.
+ */
+export function compareState(page: Page, plan: Plan): Record<string, unknown> {
+  const { page: _page, elements: _elements, action_history: _history, ...state } = modelState(page, [], plan);
+  return state;
+}
+
 export class JevPolicy implements Policy {
   name = "jev";
   calls: ModelCall[] = [];
@@ -229,7 +238,7 @@ export class JevPolicy implements Policy {
     candidates: Candidate[],
   ): Promise<string> {
     const questions = buildCompare(plan, criterion, best, candidates);
-    const body = { model: this.model, state: modelState(page, [], plan), questions };
+    const body = { model: this.model, state: compareState(page, plan), questions };
     const result = await this.post(body, "compare");
     const keys = [...candidates.map((item) => item.key), best ? KEEP : NONE];
     return validateChoice(result?.answers?.compare ?? {}, keys).choice;
