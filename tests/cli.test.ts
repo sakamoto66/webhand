@@ -502,3 +502,37 @@ test("replan --compare none stops comparing; without it, the next attempt compar
   expect((await cli("run")).out).not.toContain("COMPARED");
   expect(events().filter((e) => e.type === "compare_end")).toHaveLength(2);
 });
+
+test("--collect gathers every matching item, acts on nothing, and stops; the next run lets Jev act", async () => {
+  const condition = "200 GB of storage and less than €40 a month";
+  const started = await research("start", "--task", "collect_more", "--chrome", "linux", "--collect", condition);
+  expect(started.out).toContain(`COLLECT: ${condition}`);
+  const { out, code } = await cli("run");
+  expect(code).toBe(0);
+  expect(out).toMatch(/COLLECTED \(\d+ scrolls, reached the bottom\): 4 of 40 items meet: 200 GB/);
+  expect(out.match(/^- \S+ 200 GB €\d+$/gm)).toHaveLength(4);
+  expect(out).toContain("Nothing was clicked or typed.");
+  expect(ScriptedJev.plans).toHaveLength(0);
+  expect(events().find((e) => e.type === "collect_end")).toMatchObject({ matched: 4, seen: 40, stopped: "bottom" });
+  expect(events().find((e) => e.type === "collect_end")).not.toHaveProperty("items");
+  ScriptedJev.moves = [["BLOCKED", null, null]];
+  const again = await cli("run");
+  expect(again.out).not.toContain("COLLECTED");
+  expect(ScriptedJev.plans).toHaveLength(1);
+});
+
+test("--compare and --collect are not used together; replan --collect none stops collecting", async () => {
+  expect(
+    await researchExit("start", "--task", "collect_more", "--chrome", "linux", "--compare", "a", "--collect", "b"),
+  ).toBe("Use --compare or --collect, not both");
+  await research("start", "--task", "collect_more", "--chrome", "linux", "--collect", "less than €40");
+  await cli("run");
+  const both = await cli("replan", "--reason", "Both", "--compare", "cheapest");
+  expect(both.out).toContain("REJECTED: use --compare or --collect, not both");
+  await cli("replan", "--reason", "Again");
+  expect((await cli("run")).out).toContain("COLLECTED");
+  const off = await cli("replan", "--reason", "Enough", "--collect", "none");
+  expect(off.out).not.toContain("COLLECT:");
+  ScriptedJev.moves = [["BLOCKED", null, null]];
+  expect((await cli("run")).out).not.toContain("COLLECTED");
+});

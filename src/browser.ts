@@ -121,6 +121,20 @@ const CONTEXTS = `(nodes => {
   return out;
 })`;
 
+// The items of lists and tables in view: the innermost row, list item, or article, header rows left out.
+const ROWS = `(() => {
+  const sel='tr,li,[role="row"],[role="listitem"],article,[role="article"]', out=[];
+  for (const e of document.querySelectorAll(sel)) {
+    if (e.querySelector(sel)) continue;
+    const r=e.getBoundingClientRect();
+    if (r.height<=0 || r.width<=0 || r.bottom<=0 || r.top>=innerHeight) continue;
+    if (e.querySelector('th,[role="columnheader"]') && !e.querySelector('td,[role="cell"],[role="gridcell"]')) continue;
+    const text=String(e.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 300);
+    if (text) out.push(text);
+  }
+  return out;
+})()`;
+
 const SELECT_OPTION = `(action => {
   const e=window.__browserLab.nodes.get(action.node);
   if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
@@ -244,6 +258,11 @@ export class Browser {
   /** The text around observed elements, by node. Read-only. */
   async contexts(nodes: number[]): Promise<Record<string, string>> {
     return (await this.evaluate(`${CONTEXTS}(${JSON.stringify(nodes)})`)) ?? {};
+  }
+
+  /** The text of each list or table item in view, top to bottom of the document. */
+  async rows(): Promise<string[]> {
+    return (await this.evaluate(ROWS)) ?? [];
   }
 
   /** Execute once. StalePage means nothing happened; MutationUncertain means do not retry. */

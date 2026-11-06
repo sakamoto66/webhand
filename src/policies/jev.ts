@@ -5,6 +5,7 @@
  */
 
 import { Agent, fetch as undiciFetch } from "undici";
+import { MATCH, NO, type Row } from "../collect.ts";
 import { type Best, type Candidate, describeBest, KEEP, NONE } from "../compare.ts";
 import { sleep, toJson } from "../format.ts";
 import {
@@ -21,6 +22,7 @@ import {
 } from "../types.ts";
 import {
   actionSpace,
+  COLLECT_RULES,
   COMPARE_RULES,
   COMPARED_RULES,
   type Controls,
@@ -188,6 +190,22 @@ export function buildCompare(
   };
 }
 
+/** The collection questions: one per item, MATCH or NO. The plan is in the state. */
+export function buildCollect(criterion: string, rows: Row[]): Record<string, unknown> {
+  const questions: Record<string, unknown> = {};
+  for (const row of rows) {
+    questions[`item_${row.key}`] = {
+      type: "choice",
+      criteria: new Map([
+        [MATCH, `It meets the criterion: ${criterion}`],
+        [NO, "It does not, its text does not show it, or it is not an item of the list"],
+      ]),
+      instructions: { criterion, item: row.text, rules: COLLECT_RULES },
+    };
+  }
+  return questions;
+}
+
 /**
  * The comparison's state: the plan only, not the page. With the page in the state, Jev favoured an item on
  * screen over a better best that had scrolled away. Each item's own text is in the question.
@@ -242,6 +260,16 @@ export class JevPolicy implements Policy {
     const result = await this.post(body, "compare");
     const keys = [...candidates.map((item) => item.key), best ? KEEP : NONE];
     return validateChoice(result?.answers?.compare ?? {}, keys).choice;
+  }
+
+  async collect(page: Page, plan: Plan, criterion: string, rows: Row[]): Promise<Set<string>> {
+    const body = { model: this.model, state: compareState(page, plan), questions: buildCollect(criterion, rows) };
+    const answers = (await this.post(body, "collect")).answers ?? {};
+    const keys = new Set<string>();
+    for (const row of rows) {
+      if (validateChoice(answers[`item_${row.key}`] ?? {}, [MATCH, NO]).choice === MATCH) keys.add(row.key);
+    }
+    return keys;
   }
 
   private async post(body: unknown, purpose: string): Promise<Json> {

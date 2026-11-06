@@ -10,6 +10,7 @@ import { join } from "node:path";
 import * as agent from "./agent.ts";
 import { Budget, execute, runAgent } from "./agent.ts";
 import { Browser } from "./browser.ts";
+import { type Collected, type Collector, collectScan, MAX_COLLECTED } from "./collect.ts";
 import { type Compared, type Comparer, compareScan, MAX_SCROLLS } from "./compare.ts";
 import { describeError, quote, show, stamp, toJson } from "./format.ts";
 import * as learn from "./learn.ts";
@@ -148,6 +149,16 @@ export function comparedLine(compared: Compared): string {
   return `COMPARED (${compared.rounds} scrolls, ${stopped}): ${compared.best ?? "nothing fit the criterion"}`;
 }
 
+export function collectedLine(collected: Collected): string {
+  const stopped = collected.stopped === "bottom" ? "reached the bottom" : `stopped at ${MAX_SCROLLS} scrolls`;
+  const lines = [
+    `COLLECTED (${collected.rounds} scrolls, ${stopped}): ${collected.matched} of ${collected.seen} items meet: ${collected.criterion}`,
+    ...collected.items.map((item) => `- ${item}`),
+  ];
+  if (collected.matched > collected.items.length) lines.push(`(the first ${MAX_COLLECTED} are shown)`);
+  return lines.join("\n");
+}
+
 export function describePlan(plan: Plan, view: runbook.View | null = null): string {
   const text = planText(plan);
   const lines = [`GOAL: ${plan.goal}`, "PLAN:", ...(text.length ? text : ["(goal only)"]).map((line) => `  ${line}`)];
@@ -156,6 +167,7 @@ export function describePlan(plan: Plan, view: runbook.View | null = null): stri
     if (view?.[key]?.length) lines.push(`${key.toUpperCase()}: ${view[key].join(", ")}`);
   }
   if (plan.compare) lines.push(`COMPARE: ${plan.compare}`);
+  if (plan.collect) lines.push(`COLLECT: ${plan.collect}`);
   return lines.join("\n");
 }
 
@@ -348,7 +360,9 @@ async function commandStart(args: Args): Promise<number> {
     attempt: 1,
     service: service ? { description: service.description, facts: service.facts } : null,
     ...(args.compare ? { compare: args.compare } : {}),
+    ...(args.collect ? { collect: args.collect } : {}),
   };
+  if (plan.compare && plan.collect) throw new CliExit("Use --compare or --collect, not both");
   let chromeState: session.State;
   try {
     chromeState = await deps.startChrome({ headed: args.headed, profile, chrome });
@@ -404,6 +418,7 @@ async function commandStart(args: Args): Promise<number> {
       values: values.map((v) => v.label),
       view: state.view,
       ...(plan.compare ? { compare: plan.compare } : {}),
+      ...(plan.collect ? { collect: plan.collect } : {}),
       source: book && !args.step.length ? "runbook" : "claude",
     });
     recorder.event("page", pageEvent(state.page, 1));
@@ -530,6 +545,28 @@ async function commandRun(args: Args): Promise<number> {
       session.save(state);
       print(comparedLine(scan.compared));
     }
+    // With a condition, collect the matching items once per attempt and give them to Claude; nothing is acted on.
+    if (state.plan.collect && !state.plan.collected) {
+      if (!("collect" in policy)) throw new CliExit("This chooser cannot collect items");
+      let scan: Awaited<ReturnType<typeof collectScan>>;
+      try {
+        scan = await collectScan(browser, policy as unknown as Collector, state.plan, state.plan.collect, recorder);
+      } catch (error) {
+        if (!(error instanceof PolicyError || error instanceof StalePage)) throw error;
+        recorder.event("collect_failed", { attempt: state.plan.attempt, error: error.message });
+        print(`COLLECT FAILED: ${error.message} Nothing was clicked or typed. Run again, or replan`);
+        return FAILED;
+      }
+      state.plan.collected = scan.collected;
+      state.page = scan.page;
+      session.save(state);
+      print(collectedLine(scan.collected));
+      print(
+        "Nothing was clicked or typed. Check these items against the goal and write the answer from them. " +
+          "If the goal still needs something done on the page: run again (Jev acts), or replan. Otherwise: finish",
+      );
+      return OK;
+    }
     result = await runAgent(browser, policy, state.plan, recorder, new Budget(state.max_actions, state.max_decisions), {
       history: state.history,
       page: state.page,
@@ -584,6 +621,12 @@ async function commandReplan(args: Args): Promise<number> {
   plan.values = mergeValues(plan.values, parseValues(args.value));
   if (args.compare) plan.compare = args.compare === "none" ? null : args.compare;
   plan.compared = null; // Each attempt compares again from the top.
+  if (args.collect) plan.collect = args.collect === "none" ? null : args.collect;
+  plan.collected = null; // and collects again.
+  if (plan.compare && plan.collect) {
+    print("REJECTED: use --compare or --collect, not both (turn one off with none)");
+    return FAILED;
+  }
   const viewChanged = args.focus.length || args.skip.length || args.read.length;
   if (viewChanged) {
     // Claude's region choice is replaced, on top of what was learned. --read alone keeps the regions.
@@ -610,6 +653,7 @@ async function commandReplan(args: Args): Promise<number> {
     values: plan.values.map((v: Value) => v.label),
     view: state.view ?? null,
     ...(plan.compare ? { compare: plan.compare } : {}),
+    ...(plan.collect ? { collect: plan.collect } : {}),
     restart: args.restart,
     source: "claude",
   });
@@ -994,6 +1038,12 @@ function commands(): Record<string, CommandSpec> {
     metavar: "CRITERION",
     help: "Before acting, scroll through the whole list and find the item that best meets this; none clears it",
   };
+  const collectOption: OptionSpec = {
+    name: "collect",
+    type: "string",
+    metavar: "CONDITION",
+    help: "First scroll through the whole list and collect every item that meets this, then stop; none clears it",
+  };
   return {
     catalog: {
       help: "List learned services, procedures, and saved profiles",
@@ -1013,6 +1063,7 @@ function commands(): Record<string, CommandSpec> {
         { name: "allow-draft", type: "boolean", help: "Trial a runbook no person has approved yet" },
         ...viewOptions,
         compareOption,
+        collectOption,
         { name: "session", type: "string", default: "new", help: "new (temporary) or profile:NAME (saved sign-in)" },
         chromeOption,
         { name: "headed", type: "boolean" },
@@ -1039,6 +1090,7 @@ function commands(): Record<string, CommandSpec> {
         { name: "restart", type: "boolean", help: "Open the start URL again before the next attempt" },
         ...viewOptions,
         compareOption,
+        collectOption,
       ],
       run: commandReplan,
     },

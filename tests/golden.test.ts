@@ -9,10 +9,10 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, expect, test, vi } from "vitest";
 import type { AgentResult } from "../src/agent.ts";
-import { captured, comparedLine, describePlan, recentActions, render, report } from "../src/cli.ts";
+import { captured, collectedLine, comparedLine, describePlan, recentActions, render, report } from "../src/cli.ts";
 import { toJson } from "../src/format.ts";
 import { actionSpace, modelState, valueChoices } from "../src/policies/base.ts";
-import { buildCompare, buildQuestions, compareState, JevPolicy } from "../src/policies/jev.ts";
+import { buildCollect, buildCompare, buildQuestions, compareState, JevPolicy } from "../src/policies/jev.ts";
 import * as runbook from "../src/runbook.ts";
 import { type Page, type Plan, PolicyError } from "../src/types.ts";
 import { ROOT } from "./helpers.ts";
@@ -143,6 +143,25 @@ test("the comparison and what Jev is told after it are as recorded", () => {
   golden(comparedLine(compared), "compare", "line");
   golden(comparedLine({ ...compared, best: null, stopped: "limit" }), "compare", "line_limit");
   golden(describePlan(after, null), "compare", "describe_plan");
+});
+
+test("the collection and what Claude is told after it are as recorded", () => {
+  const rows = [
+    { key: "1", text: "Tuff 200 GB €11" },
+    { key: "2", text: "Shale 200 GB €95" },
+  ];
+  golden(toJson(buildCollect("200 GB and less than €40 a month", rows)), "collect", "questions");
+  const collected = {
+    criterion: "200 GB and less than €40 a month",
+    items: ["Dolomite 200 GB €38", "Tuff 200 GB €11"],
+    matched: 2,
+    seen: 40,
+    rounds: 6,
+    stopped: "bottom" as const,
+  };
+  golden(collectedLine(collected), "collect", "line");
+  golden(collectedLine({ ...collected, matched: 150, stopped: "limit" }), "collect", "line_limit");
+  golden(describePlan({ ...plan, collect: collected.criterion }, null), "collect", "describe_plan");
 });
 
 test("plans and recent actions print as recorded", () => {

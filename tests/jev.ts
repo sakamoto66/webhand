@@ -3,6 +3,7 @@
 import { join } from "node:path";
 import { vi } from "vitest";
 import { deps } from "../src/cli.ts";
+import type { Row } from "../src/collect.ts";
 import { type Best, type Candidate, KEEP, NONE } from "../src/compare.ts";
 import { actionSpace, modelState, resolve, valueChoices } from "../src/policies/base.ts";
 import * as session from "../src/session.ts";
@@ -34,6 +35,14 @@ export class ScriptedJev {
       if (price(item.context) < lowest) [choice, lowest] = [item.key, price(item.context)];
     }
     return choice;
+  }
+
+  /** Collects the 200 GB rows under the price in the criterion, such as "less than €40". */
+  async collect(_page: Page, _plan: Plan, criterion: string, rows: Row[]): Promise<Set<string>> {
+    this.calls.push(modelCall("typesafe", "jev", "collect", 1, 10, 1));
+    const limit = Number(/€(\d+)/.exec(criterion)?.[1] ?? 0);
+    const price = (text: string) => Number(/€(\d+)/.exec(text)?.[1] ?? Number.POSITIVE_INFINITY);
+    return new Set(rows.filter((r) => r.text.includes("200 GB") && price(r.text) < limit).map((r) => r.key));
   }
 
   async choose(page: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {

@@ -78,13 +78,42 @@ function scroll(delta: number): Action {
 const bottom = (page: Page) => page.scroll.y + page.h >= page.scroll.height - 2;
 
 /** Waits at the bottom for the page to grow. Returns the grown page, or null when nothing more loaded. */
-async function grown(browser: Reader, page: Page): Promise<Page | null> {
+async function grown(browser: Actor, page: Page): Promise<Page | null> {
   for (let waited = 0; waited < GROW_WAIT_MS; waited += GROW_POLL_MS) {
     await new Promise((resolve) => setTimeout(resolve, GROW_POLL_MS));
     const next = await browser.observe();
     if (next.scroll.height > page.scroll.height) return next;
   }
   return null;
+}
+
+/**
+ * Scrolls through the page from the top one screen at a time, calling onScreen on each, until the scroll
+ * limit, or the bottom once waiting there adds nothing more. Only scrolls; nothing is clicked or typed.
+ */
+export async function scanList(
+  browser: Actor,
+  maxScrolls: number,
+  onScreen: (page: Page, round: number) => Promise<void>,
+): Promise<{ rounds: number; stopped: Compared["stopped"]; page: Page }> {
+  let page = await browser.observe();
+  if (page.scroll.y > 0) {
+    await browser.act(scroll(-page.scroll.y), page);
+    page = await browser.observe();
+  }
+  let rounds = 0;
+  while (true) {
+    await onScreen(page, rounds);
+    if (rounds >= maxScrolls) return { rounds, stopped: "limit", page };
+    if (bottom(page)) {
+      const next = await grown(browser, page);
+      if (!next) return { rounds, stopped: "bottom", page };
+      page = next;
+    }
+    await browser.act(scroll(Math.max(100, page.h - OVERLAP_PX)), page);
+    rounds += 1;
+    page = await browser.observe();
+  }
 }
 
 export async function compareScan(
@@ -96,60 +125,40 @@ export async function compareScan(
   options: { attempt?: number; maxScrolls?: number } = {},
 ): Promise<{ compared: Compared; page: Page }> {
   const attempt = options.attempt ?? plan.attempt ?? 1;
-  const maxScrolls = options.maxScrolls ?? MAX_SCROLLS;
   const flush = () => {
     for (const call of comparer.calls) recorder.call(call);
     comparer.calls.length = 0;
   };
-  let page = await browser.observe();
-  if (page.scroll.y > 0) {
-    await browser.act(scroll(-page.scroll.y), page);
-    page = await browser.observe();
-  }
   let best: Best | null = null;
-  let rounds = 0;
-  let stopped: Compared["stopped"];
-  while (true) {
+  const scan = await scanList(browser, options.maxScrolls ?? MAX_SCROLLS, async (page, round) => {
     const items = await candidates(browser, page);
     const choice = await comparer.compare(page, plan, criterion, best, items);
     flush();
     const chosen = items.find((item) => item.key === choice);
     if (chosen) {
-      best = { label: chosen.action.label, context: chosen.context, y: page.scroll.y, round: rounds };
+      best = { label: chosen.action.label, context: chosen.context, y: page.scroll.y, round };
     } else if (choice !== KEEP && choice !== NONE) {
       throw new PolicyError(`Comparison choice ${choice} is not offered; nothing was chosen.`);
     }
     recorder.event("compare_round", {
       attempt,
-      round: rounds,
+      round,
       y: page.scroll.y,
       height: page.scroll.height,
       candidates: items.length,
       choice: chosen ? "item" : choice,
-      best: best?.label ?? null,
+      best: (best as Best | null)?.label ?? null,
     });
-    if (rounds >= maxScrolls) {
-      stopped = "limit";
-      break;
-    }
-    if (bottom(page)) {
-      const next = await grown(browser, page);
-      if (!next) {
-        stopped = "bottom";
-        break;
-      }
-      page = next;
-    }
-    await browser.act(scroll(Math.max(100, page.h - OVERLAP_PX)), page);
-    rounds += 1;
-    page = await browser.observe();
-  }
-  if (best) {
-    if (best.y !== page.scroll.y) {
-      await browser.act(scroll(best.y - page.scroll.y), page);
+  });
+  const { rounds, stopped } = scan;
+  let page = scan.page;
+  const found = best as Best | null;
+  if (found) {
+    if (found.y !== page.scroll.y) {
+      await browser.act(scroll(found.y - page.scroll.y), page);
       page = await browser.observe();
     }
-    const label = best.label;
+    const label = found.label;
     const inView = (page.actions as Action[]).some((a) => a.kind === "click" && a.label === label);
     const reveal = (page.actions as Action[]).find((a) => a.kind === "reveal" && a.label === `Scroll to ${label}`);
     if (!inView && reveal) {
@@ -157,7 +166,7 @@ export async function compareScan(
       page = await browser.observe();
     }
   }
-  const compared: Compared = { criterion, best: describeBest(best), rounds, stopped };
-  recorder.event("compare_end", { attempt, ...compared, best_label: best?.label ?? null });
+  const compared: Compared = { criterion, best: describeBest(found), rounds, stopped };
+  recorder.event("compare_end", { attempt, ...compared, best_label: found?.label ?? null });
   return { compared, page };
 }
