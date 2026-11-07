@@ -15,7 +15,9 @@ afterEach(async () => {
   browser = null;
 });
 
-const LIMITS: Record<string, number> = { collect_more: 40, collect_virtual: 25 };
+const LIMITS: Record<string, number> = { collect_more: 40, collect_virtual: 25, collect_cards: 40 };
+/** Items read beyond the plans: the link lists under the cards (two columns whole, the third link by link). */
+const EXTRA: Record<string, number> = { collect_cards: 6 };
 
 /** Collects the 200 GB rows under the task's price, as a stand-in for Jev. Records what it was asked. */
 class Matching implements Collector {
@@ -52,9 +54,10 @@ test.each(Object.keys(LIMITS))(
       `PLANS.filter((p) => p[1] === "200 GB" && p[2] < ${LIMITS[name]}).map((p) => p[0])`,
     );
     const all = (await (browser as Browser).evaluate("PLANS.length")) as number;
-    expect(result.collected).toMatchObject({ stopped: "bottom", seen: all, matched: (expected as string[]).length });
+    const seen = all + (EXTRA[name] ?? 0);
+    expect(result.collected).toMatchObject({ stopped: "bottom", seen, matched: (expected as string[]).length });
     expect(result.collected.items.map((item) => item.split(" ")[0]).sort()).toEqual((expected as string[]).sort());
-    expect(collector.asked.reduce((a, b) => a + b, 0)).toBe(all);
+    expect(collector.asked.reduce((a, b) => a + b, 0)).toBe(seen);
     expect((await task.verify(browser as Browser)).success).toBe(false);
     expect(result.page.scroll.y).toBe(0);
     expect(result.page.actions.some((a: Action) => a.kind === "type" || a.label === "Submit")).toBe(true);
@@ -84,6 +87,27 @@ test("rows() reads table rows in view and leaves out header rows", async () => {
   expect(rows.length).toBeGreaterThan(0);
   expect(rows).not.toContain("Plan Storage Monthly price");
   expect(rows.every((row) => /^\S+ \d+ GB €\d+$/.test(row))).toBe(true);
+});
+
+test("rows() reads cards built from divs whole, not the bullet points inside them or the menu", async () => {
+  const task = await loadTask("collect_cards");
+  browser = await Browser.open(task.startUrl(ROOT));
+  await browser.evaluate("document.getElementById('plans').scrollIntoView()");
+  const rows = await browser.rows();
+  expect(rows.length).toBeGreaterThan(4);
+  expect(rows.every((row) => /^\S+ €\d+ a month \d+ GB storage \w+ support Up to \d devices$/.test(row))).toBe(true);
+  await browser.evaluate("scrollTo(0, 0)");
+  expect(await browser.rows()).toEqual([]);
+});
+
+test("rows() reads the cards of a grid, not its rows, and not a section holding the whole list", async () => {
+  const card = (i: number) => `<div class="c"><b>Plan ${i}</b> <span>€${i}</span></div>`;
+  const row = (i: number) => `<div class="r">${card(i)}${card(i + 1)}${card(i + 2)}</div>`;
+  const section = (body: string) => `<div class="s"><h2>Plans</h2>${body}</div>`;
+  const filler = "<p>About our plans.</p>".repeat(3);
+  const html = section(filler + row(1) + row(4) + row(7)) + section(filler) + section(filler);
+  browser = await Browser.open(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  expect(await browser.rows()).toEqual(Array.from({ length: 9 }, (_, i) => `Plan ${i + 1} €${i + 1}`));
 });
 
 test("the collection asks one MATCH-or-NO question per item", () => {

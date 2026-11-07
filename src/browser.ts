@@ -121,14 +121,51 @@ const CONTEXTS = `(nodes => {
   return out;
 })`;
 
-// The items of lists and tables in view: the innermost row, list item, or article, header rows left out.
+// The items of lists and tables in view, header rows left out. An item is a table row, or one of three or more
+// sibling blocks of the same tag and class (cards built from divs, list items, articles), outside navigation,
+// headers and footers. Of nested items the outer one is kept (a card, not the bullet points inside it), unless
+// it only wraps the inner ones: they hold nearly all of its text (a row of cards in a grid), or it is too long
+// for one item (a section holding a whole list).
 const ROWS = `(() => {
-  const sel='tr,li,[role="row"],[role="listitem"],article,[role="article"]', out=[];
-  for (const e of document.querySelectorAll(sel)) {
-    if (e.querySelector(sel)) continue;
+  const ROW='tr,[role="row"]', BLOCK=new Set(['DIV','LI','ARTICLE','SECTION','A','DD']);
+  const SKIP='nav,header,footer,aside,[role="navigation"],[role="banner"],[role="contentinfo"],[role="dialog"]';
+  const items=new Set(document.querySelectorAll(ROW));
+  for (const parent of document.querySelectorAll('body *')) {
+    if (parent.childElementCount<3) continue;
+    const groups=new Map();
+    for (const child of parent.children) {
+      if (!BLOCK.has(child.tagName) && !child.matches('[role="listitem"],[role="article"]')) continue;
+      const key=child.tagName+'|'+child.getAttribute('class')+'|'+child.getAttribute('role');
+      groups.set(key, [...(groups.get(key) || []), child]);
+    }
+    for (const group of groups.values()) {
+      if (group.length<3) continue;
+      for (const e of group) if ((e.textContent || '').trim()) items.add(e);
+    }
+  }
+  const length=e=>(e.textContent || '').replace(/\\s+/g, '').length;
+  const up=new Map(), kids=new Map();
+  for (const e of items) {
+    let a=e.parentElement;
+    while (a && !items.has(a)) a=a.parentElement;
+    up.set(e, a);
+    if (a) kids.set(a, [...(kids.get(a) || []), e]);
+  }
+  const wrapper=e=>{
+    const inner=kids.get(e) || [];
+    return inner.length>=2 && (length(e)>1500 || inner.reduce((n,d)=>n+length(d),0)>=0.85*length(e));
+  };
+  const kept=e=>{
+    if (e.closest(SKIP) || wrapper(e)) return false;
+    for (let a=up.get(e); a; a=up.get(a)) if (!a.closest(SKIP) && !wrapper(a)) return false;
+    return true;
+  };
+  const out=[];
+  for (const e of [...items].sort((a,b)=>a.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING?-1:1)) {
     const r=e.getBoundingClientRect();
     if (r.height<=0 || r.width<=0 || r.bottom<=0 || r.top>=innerHeight) continue;
     if (e.querySelector('th,[role="columnheader"]') && !e.querySelector('td,[role="cell"],[role="gridcell"]')) continue;
+    if (!kept(e)) continue;
     const text=String(e.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 300);
     if (text) out.push(text);
   }

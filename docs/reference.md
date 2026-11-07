@@ -226,7 +226,7 @@ Nothing is clicked or typed during the scan, and its scrolls are not counted as 
 When the goal needs every item of a list that meets a condition, `--collect CONDITION` on `start` or `replan` (such as `--collect "200 GB of storage and less than €40 a month"`) makes each attempt's first `run` collect them and stop:
 
 1. webhand scrolls through the page exactly as for `--compare`: from the top, one screen at a time, up to 20 scrolls or the bottom once waiting adds nothing more.
-2. After each scroll, webhand reads the list and table items in view (the innermost table row, list item, or article; header rows left out). Each item not seen before is asked about once: Jev answers `MATCH` or `NO` for it, judging by the item's own text. Jev is given the plan and the condition, not the page.
+2. After each scroll, webhand reads the list and table items in view (table rows, and blocks of the same tag and class repeated three or more times side by side, such as cards built from divs, list items, or articles; navigation, headers, footers, and header rows left out; of nested items, the outer one, such as a card rather than the bullet points inside it). Each item not seen before is asked about once: Jev answers `MATCH` or `NO` for it, judging by the item's own text. Jev is given the plan and the condition, not the page.
 3. The matching items are kept as text, so a list that removes rows scrolled out of view works too.
 4. For the rest of the attempt, Jev works toward Claude's steps, with Claude's values named, instead of the GOAL: the part of the goal about reading the list is done. Without steps, it keeps the GOAL.
 
