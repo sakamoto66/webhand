@@ -478,6 +478,9 @@ test("--compare scans the whole list before Jev acts; Jev is told the best; repl
   expect(out).toMatch(/COMPARED \(\d+ scrolls, reached the bottom\): Choose Flax — Flax 20 GB €12 Choose Flax/);
   const plan = ScriptedJev.plans[0] as { compared: { best: string } };
   expect(plan.compared.best).toMatch(/^Choose Flax/);
+  expect((ScriptedJev.states[0] as { plan: { goal: string } }).plan.goal).toMatch(
+    /^Act on the item found by comparing the whole list for "lowest monthly price": Choose Flax — /,
+  );
   expect((ScriptedJev.states[0] as { plan: { compared: object } }).plan.compared).toMatchObject({ stopped: "bottom" });
   expect(events().filter((e) => e.type === "compare_round").length).toBeGreaterThan(1);
   expect(events().find((e) => e.type === "compare_end")).toMatchObject({

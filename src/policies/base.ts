@@ -183,11 +183,16 @@ function compactOptions(element: Element): Element {
 
 /** The observation sent to a choosing model: service, plan, page, and this run's actions. */
 /**
- * The goal Jev works toward. After a collection, the part of the goal about reading the list is done. Seeing
+ * The goal Jev works toward. After a comparison, the item it found; after a collection, the part of the goal about reading the list is done. Seeing
  * a goal about the list, Jev scrolled back to it, and did not choose values that neither the goal nor the plan
  * mentioned. It works toward Claude's steps for what follows instead, with Claude's values named.
  */
 export function jevGoal(plan: Plan): string {
+  // After a comparison, the item is found. With the GOAL about going through the list (next page, all pages),
+  // Jev pressed Next page next to the item in 4 of 5 runs; it works toward the item instead.
+  if (plan.compared?.best) {
+    return `Act on the item found by comparing the whole list for "${plan.compared.criterion}": ${plan.compared.best}.`;
+  }
   if (!plan.collected || !plan.steps.length) return plan.goal;
   const values = plan.values.map((value) => `${value.label}: ${value.value}`).join("; ");
   return `${planText(plan).join(" ")}${values ? ` Values Claude wrote: ${values}.` : ""}`;
