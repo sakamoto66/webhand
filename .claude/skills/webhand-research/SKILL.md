@@ -11,4 +11,5 @@ Read `skills/webhand/SKILL.md` and follow it exactly, with these differences onl
 
 - Run every command from the repository root as `node research/webhand.ts` in place of `webhand` (same arguments). Do not use `npx`.
 - Pass `--task NAME` to `start`. The task supplies the GOAL and start URL, so do not pass `--goal` or `--url`. Write the steps and values as the skill says.
+- Do not open or list `tasks/`: reading a task's source is refused by design, since `verify()` must stay independent. `start --task NAME` shows the GOAL and opens the start page; plan from that output.
 - `finish` checks the final page with the task's `verify()`. Report `status`, `verified`, `attempts`, and the log path in one line. `verified` is the result; `status` is only your claim.
