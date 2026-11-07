@@ -126,3 +126,31 @@ test("the control question offers the elements in view and NONE, and gives Jev t
   expect(sent.body?.state.page).toBeDefined();
   expect(policy.calls[0].purpose).toBe("more");
 });
+
+test("collect_pages: Next page is looked for where the cards end, above a long small print", async () => {
+  const { task, recorder } = await open("collect_pages");
+  const b = browser as Browser;
+  const more = loadMore(b, new Control(), plan(task.GOAL), "Next page", recorder, 1);
+  const { collected, page } = await collectScan(b, new ScriptedJev(), plan(task.GOAL), "less than €40", recorder, {
+    loadMore: more,
+  });
+  recorder.close();
+  // Forty cards and the six link-list items under them, which are the same on every page.
+  expect(collected).toMatchObject({ matched: 4, seen: 46, pages: 3, stopped: "bottom" });
+  expect(page.url).toMatch(/\?page=4$/);
+  expect(page.scroll.y).toBe(0);
+});
+
+test("asked only at the bottom of the page, the control above the small print is not in view", async () => {
+  const { task, recorder } = await open("collect_pages");
+  const b = browser as Browser;
+  const bottomOnly = Object.assign(Object.create(b), { listEnd: undefined }) as Browser;
+  const chooser = new Control();
+  const more = loadMore(bottomOnly, chooser, plan(task.GOAL), "Next page", recorder, 1);
+  const { collected } = await collectScan(bottomOnly, new ScriptedJev(), plan(task.GOAL), "less than €40", recorder, {
+    loadMore: more,
+  });
+  recorder.close();
+  expect(chooser.asked).toBe(1);
+  expect(collected).toMatchObject({ matched: 1, pages: 0, stopped: "bottom" });
+});

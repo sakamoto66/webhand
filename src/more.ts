@@ -1,10 +1,10 @@
 /**
  * More items: a list that shows more only when a control is pressed (a load-more button, a next-page link).
  *
- * Claude names the control (--more "Next page"). When a compare or collect scan reaches the bottom and waiting
- * adds nothing, Jev chooses which element in view is that control, or NONE; webhand presses it once and waits
- * for the page to show more. Pressing is an action: it is never repeated, and an uncertain result stops the
- * scan with MutationUncertain.
+ * Claude names the control (--more "Next page"). Where a compare or collect scan reaches the end of the list,
+ * and at the bottom once waiting adds nothing, Jev chooses which element in view is that control, or NONE;
+ * webhand presses it once and waits for the page to show more. Pressing is an action: it is never repeated, and
+ * an uncertain result stops the scan with MutationUncertain.
  */
 
 import { type Candidate, candidates, type LoadMore, NONE, type Reader } from "./compare.ts";

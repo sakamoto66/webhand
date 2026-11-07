@@ -121,12 +121,12 @@ const CONTEXTS = `(nodes => {
   return out;
 })`;
 
-// The items of lists and tables in view, header rows left out. An item is a table row, or one of three or more
+// The items of lists and tables, header rows left out, in document order. An item is a table row, or one of three or more
 // sibling blocks of the same tag and class (cards built from divs, list items, articles), outside navigation,
 // headers and footers. Of nested items the outer one is kept (a card, not the bullet points inside it), unless
 // it only wraps the inner ones: they hold nearly all of its text (a row of cards in a grid), or it is too long
 // for one item (a section holding a whole list).
-const ROWS = `(() => {
+const ITEMS = `(() => {
   const ROW='tr,[role="row"]', BLOCK=new Set(['DIV','LI','ARTICLE','SECTION','A','DD']);
   const SKIP='nav,header,footer,aside,[role="navigation"],[role="banner"],[role="contentinfo"],[role="dialog"]';
   const items=new Set(document.querySelectorAll(ROW));
@@ -160,16 +160,36 @@ const ROWS = `(() => {
     for (let a=up.get(e); a; a=up.get(a)) if (!a.closest(SKIP) && !wrapper(a)) return false;
     return true;
   };
+  const header=e=>e.querySelector('th,[role="columnheader"]') && !e.querySelector('td,[role="cell"],[role="gridcell"]');
+  return [...items].filter(e=>!header(e) && kept(e))
+    .sort((a,b)=>a.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING?-1:1);
+})`;
+
+const ROWS = `(() => {
   const out=[];
-  for (const e of [...items].sort((a,b)=>a.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING?-1:1)) {
+  for (const e of ${ITEMS}()) {
     const r=e.getBoundingClientRect();
     if (r.height<=0 || r.width<=0 || r.bottom<=0 || r.top>=innerHeight) continue;
-    if (e.querySelector('th,[role="columnheader"]') && !e.querySelector('td,[role="cell"],[role="gridcell"]')) continue;
-    if (!kept(e)) continue;
     const text=String(e.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 300);
     if (text) out.push(text);
   }
   return out;
+})()`;
+
+// Where the main list ends: the bottom, in the viewport, of the last item of the longest list (items of the same
+// tag and class under parents of the same tag and class, so a grid's rows count as one list). Null without a list
+// of three or more items.
+const LIST_END = `(() => {
+  const sig=e=>e.tagName+'|'+e.getAttribute('class');
+  const lists=new Map();
+  for (const e of ${ITEMS}()) {
+    if (!(e.getBoundingClientRect().height>0)) continue;
+    const key=sig(e)+'<'+(e.parentElement ? sig(e.parentElement) : '');
+    lists.set(key, [...(lists.get(key) || []), e]);
+  }
+  let longest=[];
+  for (const list of lists.values()) if (list.length>longest.length) longest=list;
+  return longest.length>=3 ? Math.round(longest.at(-1).getBoundingClientRect().bottom) : null;
 })()`;
 
 const SELECT_OPTION = `(action => {
@@ -305,6 +325,11 @@ export class Browser {
   /** The text of each list or table item in view, top to bottom of the document. */
   async rows(): Promise<string[]> {
     return (await this.evaluate(ROWS)) ?? [];
+  }
+
+  /** The bottom of the main list's last item, in pixels from the top of the viewport; null without a list. */
+  async listEnd(): Promise<number | null> {
+    return (await this.evaluate(LIST_END)) ?? null;
   }
 
   /** Execute once. StalePage means nothing happened; MutationUncertain means do not retry. */

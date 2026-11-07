@@ -99,10 +99,11 @@ async function grown(browser: Actor, page: Page): Promise<Page | null> {
 
 /**
  * Scrolls through the page from the top one screen at a time, calling onScreen on each, until the scroll
- * limit, or the bottom once waiting there adds nothing more. Only scrolls; nothing is clicked or typed.
+ * limit, or the bottom once waiting there adds nothing more. Only scrolls; nothing is clicked or typed, except
+ * by loadMore: it is asked where the main list ends (when the browser can tell) and at the bottom.
  */
 export async function scanList(
-  browser: Actor,
+  browser: Actor & { listEnd?(): Promise<number | null> },
   maxScrolls: number,
   onScreen: (page: Page, round: number) => Promise<void>,
   loadMore: LoadMore | null = null,
@@ -123,24 +124,39 @@ export async function scanList(
     page = await browser.observe();
   }
   let rounds = 0;
+  let asked = "";
   while (true) {
     await onScreen(page, rounds);
     const end = (stopped: Compared["stopped"]) => ({ rounds, stopped, page, startY, startUrl, pages });
     if (rounds >= maxScrolls) return end("limit");
-    if (bottom(page)) {
+    // The control for more items is usually right below the list, which may be far above the bottom of the
+    // page. Where the list ends, it is looked for once, before scrolling past it; then again at the bottom.
+    const here = `${page.url}|${page.scroll.height}`;
+    let listEnd = loadMore && !bottom(page) && asked !== here ? await browser.listEnd?.() : null;
+    if (listEnd != null && listEnd > page.h) listEnd = null;
+    if (bottom(page) || listEnd != null) {
       const next = await grown(browser, page);
       if (!next) {
         if (!loadMore) return end("bottom");
         if (pages >= MAX_PAGES) return end("pages");
+        if (listEnd != null && listEnd > page.h / 2) {
+          // Bring what is below the list into view.
+          await browser.act(scroll(Math.round(listEnd - page.h / 3)), page);
+          page = await browser.observe();
+        }
+        asked = `${page.url}|${page.scroll.height}`;
         const loaded = await loadMore(page);
-        if (!loaded) return end("bottom");
-        // More items, on this page or the next one: look at the screen as it is now before scrolling on.
-        pages += 1;
-        rounds += 1;
-        page = loaded;
-        continue;
+        if (loaded) {
+          // More items, on this page or the next one: look at the screen as it is now before scrolling on.
+          pages += 1;
+          rounds += 1;
+          page = loaded;
+          continue;
+        }
+        if (bottom(page)) return end("bottom");
+      } else {
+        page = next;
       }
-      page = next;
     }
     await browser.act(scroll(Math.max(100, page.h - OVERLAP_PX)), page);
     rounds += 1;
