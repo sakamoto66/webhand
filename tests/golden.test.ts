@@ -12,7 +12,7 @@ import type { AgentResult } from "../src/agent.ts";
 import { captured, collectedLine, comparedLine, describePlan, recentActions, render, report } from "../src/cli.ts";
 import { toJson } from "../src/format.ts";
 import { actionSpace, modelState, valueChoices } from "../src/policies/base.ts";
-import { buildCollect, buildCompare, buildQuestions, compareState, JevPolicy } from "../src/policies/jev.ts";
+import { buildCollect, buildCompare, buildMore, buildQuestions, compareState, JevPolicy } from "../src/policies/jev.ts";
 import * as runbook from "../src/runbook.ts";
 import { type Page, type Plan, PolicyError } from "../src/types.ts";
 import { ROOT } from "./helpers.ts";
@@ -173,6 +173,31 @@ test("the collection and what Claude is told after it are as recorded", () => {
   };
   golden(toJson(modelState(page, history, after)), "collect", "model_state_after");
   golden(toJson(buildQuestions(after, targets, controls, valueChoices(after), true)[0]), "collect", "questions_after");
+});
+
+test("the control for more items and the scans that pressed it are as recorded", () => {
+  const items = [
+    { key: "1", action: { kind: "click", label: "Next page", node: 4 }, context: "Page 1 of 4 · Next page" },
+  ];
+  golden(toJson(buildMore("Next page", items)), "more", "question");
+  const compared = {
+    criterion: "lowest",
+    best: "Choose Tuff — Tuff 200 GB €11",
+    rounds: 15,
+    stopped: "bottom" as const,
+  };
+  golden(comparedLine({ ...compared, pages: 3 }), "more", "compared");
+  golden(comparedLine({ ...compared, pages: 10, stopped: "pages" }), "more", "compared_pages");
+  const collected = {
+    criterion: "c",
+    items: ["Tuff 200 GB €11"],
+    matched: 1,
+    seen: 40,
+    rounds: 9,
+    stopped: "bottom" as const,
+  };
+  golden(collectedLine({ ...collected, pages: 3 }), "more", "collected");
+  golden(describePlan({ ...plan, collect: "c", more: "Show more plans" }, null), "more", "describe_plan");
 });
 
 test("plans and recent actions print as recorded", () => {

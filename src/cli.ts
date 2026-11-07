@@ -11,10 +11,11 @@ import * as agent from "./agent.ts";
 import { Budget, execute, runAgent } from "./agent.ts";
 import { Browser } from "./browser.ts";
 import { type Collected, type Collector, collectScan, MAX_COLLECTED } from "./collect.ts";
-import { type Compared, type Comparer, compareScan, MAX_SCROLLS } from "./compare.ts";
+import { type Compared, type Comparer, compareScan, MAX_PAGES, MAX_SCROLLS, type Reader } from "./compare.ts";
 import { describeError, quote, show, stamp, toJson } from "./format.ts";
 import * as learn from "./learn.ts";
 import { gitState, logOnce, maskUrls, pageEvent, Recorder, safeUrl, summarize } from "./metrics.ts";
+import { loadMore, type MoreChooser } from "./more.ts";
 import { actionSpace, offscreen, planText, resolve } from "./policies/base.ts";
 import { JevPolicy } from "./policies/jev.ts";
 import * as runbook from "./runbook.ts";
@@ -144,15 +145,25 @@ function headline(page: Page): string {
   return `URL: ${page.url}\nTITLE: ${page.title}`;
 }
 
+/** How a scan went: its scrolls, how often more items were loaded (with --more), and why it stopped. */
+function scanned(scan: { rounds: number; stopped: string; pages?: number }): string {
+  const stopped =
+    scan.stopped === "bottom"
+      ? "reached the bottom"
+      : scan.stopped === "pages"
+        ? `stopped after loading more ${MAX_PAGES} times`
+        : `stopped at ${MAX_SCROLLS} scrolls`;
+  const more = scan.pages === undefined ? "" : `, loaded more ${scan.pages} times`;
+  return `${scan.rounds} scrolls${more}, ${stopped}`;
+}
+
 export function comparedLine(compared: Compared): string {
-  const stopped = compared.stopped === "bottom" ? "reached the bottom" : `stopped at ${MAX_SCROLLS} scrolls`;
-  return `COMPARED (${compared.rounds} scrolls, ${stopped}): ${compared.best ?? "nothing fit the criterion"}`;
+  return `COMPARED (${scanned(compared)}): ${compared.best ?? "nothing fit the criterion"}`;
 }
 
 export function collectedLine(collected: Collected): string {
-  const stopped = collected.stopped === "bottom" ? "reached the bottom" : `stopped at ${MAX_SCROLLS} scrolls`;
   const lines = [
-    `COLLECTED (${collected.rounds} scrolls, ${stopped}): ${collected.matched} of ${collected.seen} items meet: ${collected.criterion}`,
+    `COLLECTED (${scanned(collected)}): ${collected.matched} of ${collected.seen} items meet: ${collected.criterion}`,
     ...collected.items.map((item) => `- ${item}`),
   ];
   if (collected.matched > collected.items.length) lines.push(`(the first ${MAX_COLLECTED} are shown)`);
@@ -168,6 +179,7 @@ export function describePlan(plan: Plan, view: runbook.View | null = null): stri
   }
   if (plan.compare) lines.push(`COMPARE: ${plan.compare}`);
   if (plan.collect) lines.push(`COLLECT: ${plan.collect}`);
+  if (plan.more) lines.push(`MORE: ${plan.more}`);
   return lines.join("\n");
 }
 
@@ -361,8 +373,10 @@ async function commandStart(args: Args): Promise<number> {
     service: service ? { description: service.description, facts: service.facts } : null,
     ...(args.compare ? { compare: args.compare } : {}),
     ...(args.collect ? { collect: args.collect } : {}),
+    ...(args.more ? { more: args.more } : {}),
   };
   if (plan.compare && plan.collect) throw new CliExit("Use --compare or --collect, not both");
+  if (plan.more && !plan.compare && !plan.collect) throw new CliExit("--more needs --compare or --collect");
   let chromeState: session.State;
   try {
     chromeState = await deps.startChrome({ headed: args.headed, profile, chrome });
@@ -419,6 +433,7 @@ async function commandStart(args: Args): Promise<number> {
       view: state.view,
       ...(plan.compare ? { compare: plan.compare } : {}),
       ...(plan.collect ? { collect: plan.collect } : {}),
+      ...(plan.more ? { more: plan.more } : {}),
       source: book && !args.step.length ? "runbook" : "claude",
     });
     recorder.event("page", pageEvent(state.page, 1));
@@ -526,14 +541,35 @@ async function commandRun(args: Args): Promise<number> {
   const browser = await Browser.open(null, { port: state.port, view: state.view ?? null });
   const recorder = new Recorder(state.log);
   let result: agent.AgentResult;
+  // With --more, a scan presses Claude's control for more items when the list ends.
+  const more = () => {
+    const control = state.plan.more;
+    if (!control) return null;
+    if (!("more" in policy)) throw new CliExit("This chooser cannot find a control for more items");
+    const chooser = policy as unknown as MoreChooser;
+    return loadMore(browser as Reader, chooser, state.plan, control, recorder, state.plan.attempt);
+  };
+  // Pressing the control is an action: when its result is uncertain, the run stops as UNCERTAIN.
+  const uncertain = (error: MutationUncertain, scan: string) => {
+    recorder.event(`${scan}_failed`, { attempt: state.plan.attempt, error: error.message, uncertain: true });
+    state.outcome = agent.UNCERTAIN;
+    session.save(state);
+    print(
+      `OUTCOME ${agent.UNCERTAIN}: ${error.message} while loading more items. Do not repeat or replan. Run: webhand finish --status error`,
+    );
+    return UNCERTAIN;
+  };
   try {
     // With a criterion, compare the whole list once per attempt before anything is acted on.
     if (state.plan.compare && !state.plan.compared) {
       if (!("compare" in policy)) throw new CliExit("This chooser cannot compare items");
       let scan: Awaited<ReturnType<typeof compareScan>>;
       try {
-        scan = await compareScan(browser, policy as unknown as Comparer, state.plan, state.plan.compare, recorder);
+        scan = await compareScan(browser, policy as unknown as Comparer, state.plan, state.plan.compare, recorder, {
+          loadMore: more(),
+        });
       } catch (error) {
+        if (error instanceof MutationUncertain) return uncertain(error, "compare");
         if (!(error instanceof PolicyError || error instanceof StalePage)) throw error;
         // Only scrolls happened. The attempt goes on; run again, or replan.
         recorder.event("compare_failed", { attempt: state.plan.attempt, error: error.message });
@@ -550,8 +586,11 @@ async function commandRun(args: Args): Promise<number> {
       if (!("collect" in policy)) throw new CliExit("This chooser cannot collect items");
       let scan: Awaited<ReturnType<typeof collectScan>>;
       try {
-        scan = await collectScan(browser, policy as unknown as Collector, state.plan, state.plan.collect, recorder);
+        scan = await collectScan(browser, policy as unknown as Collector, state.plan, state.plan.collect, recorder, {
+          loadMore: more(),
+        });
       } catch (error) {
+        if (error instanceof MutationUncertain) return uncertain(error, "collect");
         if (!(error instanceof PolicyError || error instanceof StalePage)) throw error;
         recorder.event("collect_failed", { attempt: state.plan.attempt, error: error.message });
         print(`COLLECT FAILED: ${error.message} Nothing was clicked or typed. Run again, or replan`);
@@ -624,8 +663,13 @@ async function commandReplan(args: Args): Promise<number> {
   plan.compared = null; // Each attempt compares again from the top.
   if (args.collect) plan.collect = args.collect === "none" ? null : args.collect;
   plan.collected = null; // and collects again.
+  if (args.more) plan.more = args.more === "none" ? null : args.more;
   if (plan.compare && plan.collect) {
     print("REJECTED: use --compare or --collect, not both (turn one off with none)");
+    return FAILED;
+  }
+  if (plan.more && !plan.compare && !plan.collect) {
+    print("REJECTED: --more needs --compare or --collect (turn it off with --more none)");
     return FAILED;
   }
   const viewChanged = args.focus.length || args.skip.length || args.read.length;
@@ -655,6 +699,7 @@ async function commandReplan(args: Args): Promise<number> {
     view: state.view ?? null,
     ...(plan.compare ? { compare: plan.compare } : {}),
     ...(plan.collect ? { collect: plan.collect } : {}),
+    ...(plan.more ? { more: plan.more } : {}),
     restart: args.restart,
     source: "claude",
   });
@@ -1045,6 +1090,12 @@ function commands(): Record<string, CommandSpec> {
     metavar: "CONDITION",
     help: "First scroll through the whole list and collect every item that meets this, then stop; none clears it",
   };
+  const moreOption: OptionSpec = {
+    name: "more",
+    type: "string",
+    metavar: "CONTROL",
+    help: "With --compare or --collect, press this control when the list ends, such as Next page; none clears it",
+  };
   return {
     catalog: {
       help: "List learned services, procedures, and saved profiles",
@@ -1065,6 +1116,7 @@ function commands(): Record<string, CommandSpec> {
         ...viewOptions,
         compareOption,
         collectOption,
+        moreOption,
         { name: "session", type: "string", default: "new", help: "new (temporary) or profile:NAME (saved sign-in)" },
         chromeOption,
         { name: "headed", type: "boolean" },
@@ -1092,6 +1144,7 @@ function commands(): Record<string, CommandSpec> {
         ...viewOptions,
         compareOption,
         collectOption,
+        moreOption,
       ],
       run: commandReplan,
     },

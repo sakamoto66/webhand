@@ -80,7 +80,9 @@ export interface Plan {
   /** Claude's criterion for choosing one item of a long list; the run compares before it acts. */
   compare?: string | null;
   /** What the comparison found in this attempt. */
-  compared?: { criterion: string; best: string | null; rounds: number; stopped: string } | null;
+  compared?: { criterion: string; best: string | null; rounds: number; stopped: string; pages?: number } | null;
+  /** Claude's name for the control that shows more items (--more), pressed during a compare or collect scan. */
+  more?: string | null;
   /** Claude's condition for collecting every matching item of a long list; the run collects, then stops. */
   collect?: string | null;
   /** What the collection found in this attempt. */
@@ -91,6 +93,7 @@ export interface Plan {
     seen: number;
     rounds: number;
     stopped: string;
+    pages?: number;
   } | null;
 }
 

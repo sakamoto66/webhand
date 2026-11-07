@@ -232,6 +232,16 @@ When the goal needs every item of a list that meets a condition, `--collect COND
 
 Nothing is clicked or typed, and the run stops after the scan. The output shows `COLLECTED (N scrolls, ...): M of S items meet: CONDITION` and one line per matching item (the first 100). Claude checks them against the goal and writes the answer from them; to put the answer into the page, Claude gives it as a value (`run --value 'LABEL=VALUE'`), and the next `run` goes on with the normal loop from where the page was before the scan. The log keeps a `collect_round` event per scroll and a `collect_end` event with the counts; a failed collection logs `collect_failed` and changes nothing. Each new attempt collects again; `replan --collect none` turns it off. `--compare` and `--collect` are not used together. Items that are not in a table row, list item, or article are not read, and only the page itself is scrolled.
 
+## More items behind a button or a next page
+
+With `--compare` or `--collect`, `--more CONTROL` on `start` or `replan` (such as `--more "Next page"` or `--more "Show more plans"`) names the control that shows more items of the list:
+
+1. When the scan reaches the bottom and waiting adds nothing more, Jev chooses which element in view is that control, given each element with the text around it, or `NONE`. Jev is given the page for this question.
+2. webhand presses it once and waits up to three seconds for the page to change (a new address, more content, or other text), then the scan goes on from the screen as it is. Without a change, the scan stops at the bottom.
+3. The control is pressed at most 10 times per scan.
+
+Pressing is an action: it is never repeated, and an interrupted press stops the run as `UNCERTAIN`. With `--compare`, when the best item was on an earlier page, that page is opened again (it was already visited) before scrolling to the item; a list that was grown by a button is not grown again there. With `--collect`, the page ends at its top when the scan ended on a later page. The output adds `loaded more N times`, and the log keeps a `more` event per press with what changed. `replan --more none` turns it off; `--more` without `--compare` or `--collect` is refused.
+
 ## Logs
 
 Logs are written as JSONL to `runs/<timestamp>/` in the user folder (`~/.webhand/runs/` by default).

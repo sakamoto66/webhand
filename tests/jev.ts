@@ -37,6 +37,13 @@ export class ScriptedJev {
     return choice;
   }
 
+  /** Finds Claude's control by its label. */
+  async more(_page: Page, _plan: Plan, control: string, items: Candidate[]): Promise<string> {
+    this.calls.push(modelCall("typesafe", "jev", "more", 1, 10, 1));
+    const found = items.find((item) => item.action.label.toLowerCase() === control.toLowerCase());
+    return found ? found.key : NONE;
+  }
+
   /** Collects the 200 GB rows under the price in the criterion, such as "less than €40". */
   async collect(_page: Page, _plan: Plan, criterion: string, rows: Row[]): Promise<Set<string>> {
     this.calls.push(modelCall("typesafe", "jev", "collect", 1, 10, 1));

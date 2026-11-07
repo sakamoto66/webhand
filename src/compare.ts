@@ -13,6 +13,8 @@ import type { Recorder } from "./metrics.ts";
 import { type Action, type ModelCall, type Page, type Plan, PolicyError } from "./types.ts";
 
 export const MAX_SCROLLS = 20;
+/** How many times a scan may press Claude's control for more items (--more). */
+export const MAX_PAGES = 10;
 /** How long the bottom of the page is watched for more items to load. */
 const GROW_WAIT_MS = 2000;
 const GROW_POLL_MS = 250;
@@ -32,8 +34,9 @@ export interface Candidate {
 export interface Best {
   label: string;
   context: string;
-  /** Scroll position when it was chosen, to come back to it. */
+  /** Scroll position and page when it was chosen, to come back to it. */
   y: number;
+  url?: string;
   round: number;
 }
 
@@ -41,7 +44,9 @@ export interface Compared {
   criterion: string;
   best: string | null;
   rounds: number;
-  stopped: "limit" | "bottom";
+  stopped: "limit" | "bottom" | "pages";
+  /** How many times Claude's control for more items was pressed; absent without --more. */
+  pages?: number;
 }
 
 export interface Comparer {
@@ -53,14 +58,19 @@ export interface Comparer {
 /** What compareScan needs from the browser beyond the Actor: the text around observed elements. */
 export interface Reader extends Actor {
   contexts(nodes: number[]): Promise<Record<string, string>>;
+  /** Opens a page the scan has already visited, to come back to the best item. */
+  goto?(url: string): Promise<void>;
 }
+
+/** Presses Claude's control for more items; returns the page with more, or null when there is none. */
+export type LoadMore = (page: Page) => Promise<Page | null>;
 
 export function describeBest(best: Best | null): string | null {
   if (!best) return null;
   return best.context && best.context !== best.label ? `${best.label} — ${best.context}` : best.label;
 }
 
-async function candidates(browser: Reader, page: Page): Promise<Candidate[]> {
+export async function candidates(browser: Reader, page: Page): Promise<Candidate[]> {
   const seen = new Set<number>();
   const clicks = (page.actions as Action[]).filter((a) => {
     if (a.kind !== "click" || seen.has(a.node)) return false;
@@ -95,9 +105,19 @@ export async function scanList(
   browser: Actor,
   maxScrolls: number,
   onScreen: (page: Page, round: number) => Promise<void>,
-): Promise<{ rounds: number; stopped: Compared["stopped"]; page: Page; startY: number }> {
+  loadMore: LoadMore | null = null,
+): Promise<{
+  rounds: number;
+  stopped: Compared["stopped"];
+  page: Page;
+  startY: number;
+  startUrl: string;
+  pages: number;
+}> {
   let page = await browser.observe();
   const startY = page.scroll.y;
+  const startUrl = page.url;
+  let pages = 0;
   if (page.scroll.y > 0) {
     await browser.act(scroll(-page.scroll.y), page);
     page = await browser.observe();
@@ -105,10 +125,21 @@ export async function scanList(
   let rounds = 0;
   while (true) {
     await onScreen(page, rounds);
-    if (rounds >= maxScrolls) return { rounds, stopped: "limit", page, startY };
+    const end = (stopped: Compared["stopped"]) => ({ rounds, stopped, page, startY, startUrl, pages });
+    if (rounds >= maxScrolls) return end("limit");
     if (bottom(page)) {
       const next = await grown(browser, page);
-      if (!next) return { rounds, stopped: "bottom", page, startY };
+      if (!next) {
+        if (!loadMore) return end("bottom");
+        if (pages >= MAX_PAGES) return end("pages");
+        const loaded = await loadMore(page);
+        if (!loaded) return end("bottom");
+        // More items, on this page or the next one: look at the screen as it is now before scrolling on.
+        pages += 1;
+        rounds += 1;
+        page = loaded;
+        continue;
+      }
       page = next;
     }
     await browser.act(scroll(Math.max(100, page.h - OVERLAP_PX)), page);
@@ -123,7 +154,7 @@ export async function compareScan(
   plan: Plan,
   criterion: string,
   recorder: Recorder,
-  options: { attempt?: number; maxScrolls?: number } = {},
+  options: { attempt?: number; maxScrolls?: number; loadMore?: LoadMore | null } = {},
 ): Promise<{ compared: Compared; page: Page }> {
   const attempt = options.attempt ?? plan.attempt ?? 1;
   const flush = () => {
@@ -131,30 +162,40 @@ export async function compareScan(
     comparer.calls.length = 0;
   };
   let best: Best | null = null;
-  const scan = await scanList(browser, options.maxScrolls ?? MAX_SCROLLS, async (page, round) => {
-    const items = await candidates(browser, page);
-    const choice = await comparer.compare(page, plan, criterion, best, items);
-    flush();
-    const chosen = items.find((item) => item.key === choice);
-    if (chosen) {
-      best = { label: chosen.action.label, context: chosen.context, y: page.scroll.y, round };
-    } else if (choice !== KEEP && choice !== NONE) {
-      throw new PolicyError(`Comparison choice ${choice} is not offered; nothing was chosen.`);
-    }
-    recorder.event("compare_round", {
-      attempt,
-      round,
-      y: page.scroll.y,
-      height: page.scroll.height,
-      candidates: items.length,
-      choice: chosen ? "item" : choice,
-      best: (best as Best | null)?.label ?? null,
-    });
-  });
+  const scan = await scanList(
+    browser,
+    options.maxScrolls ?? MAX_SCROLLS,
+    async (page, round) => {
+      const items = await candidates(browser, page);
+      const choice = await comparer.compare(page, plan, criterion, best, items);
+      flush();
+      const chosen = items.find((item) => item.key === choice);
+      if (chosen) {
+        best = { label: chosen.action.label, context: chosen.context, y: page.scroll.y, url: page.url, round };
+      } else if (choice !== KEEP && choice !== NONE) {
+        throw new PolicyError(`Comparison choice ${choice} is not offered; nothing was chosen.`);
+      }
+      recorder.event("compare_round", {
+        attempt,
+        round,
+        y: page.scroll.y,
+        height: page.scroll.height,
+        candidates: items.length,
+        choice: chosen ? "item" : choice,
+        best: (best as Best | null)?.label ?? null,
+      });
+    },
+    options.loadMore ?? null,
+  );
   const { rounds, stopped } = scan;
   let page = scan.page;
   const found = best as Best | null;
   if (found) {
+    if (found.url && found.url !== page.url && browser.goto) {
+      // The best item was on an earlier page: open that page again (it was already visited).
+      await browser.goto(found.url);
+      page = await browser.observe();
+    }
     if (found.y !== page.scroll.y) {
       await browser.act(scroll(found.y - page.scroll.y), page);
       page = await browser.observe();
@@ -167,7 +208,13 @@ export async function compareScan(
       page = await browser.observe();
     }
   }
-  const compared: Compared = { criterion, best: describeBest(found), rounds, stopped };
+  const compared: Compared = {
+    criterion,
+    best: describeBest(found),
+    rounds,
+    stopped,
+    ...(options.loadMore ? { pages: scan.pages } : {}),
+  };
   recorder.event("compare_end", { attempt, ...compared, best_label: found?.label ?? null });
   return { compared, page };
 }

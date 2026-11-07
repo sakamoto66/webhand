@@ -559,3 +559,43 @@ test("--compare and --collect are not used together; replan --collect none stops
   ScriptedJev.moves = [["BLOCKED", null, null]];
   expect((await cli("run")).out).not.toContain("COLLECTED");
 });
+
+test("--more lets a comparison go through every page; it needs --compare or --collect", async () => {
+  expect(await researchExit("start", "--task", "plan_pages", "--chrome", "linux", "--more", "Next page")).toBe(
+    "--more needs --compare or --collect",
+  );
+  const started = await research(
+    "start",
+    "--task",
+    "plan_pages",
+    "--chrome",
+    "linux",
+    "--compare",
+    "lowest monthly price",
+    "--more",
+    "Next page",
+  );
+  expect(started.out).toContain("MORE: Next page");
+  ScriptedJev.moves = [
+    ["CLICK", "Choose Tuff", null],
+    ["DONE", null, null],
+  ];
+  const { out } = await cli("run");
+  expect(out).toMatch(/COMPARED \(\d+ scrolls, loaded more 3 times, reached the bottom\): Choose Tuff — /);
+  expect(
+    events()
+      .filter((e) => e.type === "more")
+      .map((e) => e.changed),
+  ).toEqual(["page", "page", "page", undefined]);
+  expect((await research("finish", "--status", "done", "--reason", "Tuff")).out).toContain("verified=true");
+});
+
+test("replan --more none stops pressing the control", async () => {
+  await research("start", "--task", "plan_pages", "--chrome", "linux", "--compare", "lowest", "--more", "Next page");
+  ScriptedJev.moves = [["BLOCKED", null, null]];
+  await cli("run");
+  const replanned = await cli("replan", "--reason", "One page", "--more", "none");
+  expect(replanned.out).not.toContain("MORE:");
+  ScriptedJev.moves = [["BLOCKED", null, null]];
+  expect((await cli("run")).out).toMatch(/COMPARED \(\d+ scrolls, reached the bottom\)/);
+});

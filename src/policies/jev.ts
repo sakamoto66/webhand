@@ -27,6 +27,7 @@ import {
   COMPARED_RULES,
   type Controls,
   jevGoal,
+  MORE_RULES,
   modelState,
   NEXT_ACTION,
   NOT_VISIBLE,
@@ -191,6 +192,17 @@ export function buildCompare(
   };
 }
 
+/** The question that finds Claude's control for more items among the elements in view, or NONE. */
+export function buildMore(control: string, candidates: Candidate[]): Record<string, unknown> {
+  const criteria = new Map<string, string>();
+  for (const item of candidates) {
+    const context = item.context && item.context !== item.action.label ? ` — ${item.context}` : "";
+    criteria.set(item.key, `[${item.key}] ${item.action.label}${context}`);
+  }
+  criteria.set(NONE, "Claude's control is not listed, or it is disabled");
+  return { more: { type: "choice", criteria, instructions: { control, rules: MORE_RULES } } };
+}
+
 /** The collection questions: one per item, MATCH or NO. The plan is in the state. */
 export function buildCollect(criterion: string, rows: Row[]): Record<string, unknown> {
   const questions: Record<string, unknown> = {};
@@ -261,6 +273,15 @@ export class JevPolicy implements Policy {
     const result = await this.post(body, "compare");
     const keys = [...candidates.map((item) => item.key), best ? KEEP : NONE];
     return validateChoice(result?.answers?.compare ?? {}, keys).choice;
+  }
+
+  async more(page: Page, plan: Plan, control: string, candidates: Candidate[]): Promise<string> {
+    // The page is in the state here: with the plan only, Jev was unsure whether the control was there (about
+    // 0.5); with the page, it chose the control at 0.98 or more.
+    const body = { model: this.model, state: modelState(page, [], plan), questions: buildMore(control, candidates) };
+    const result = await this.post(body, "more");
+    const keys = [...candidates.map((item) => item.key), NONE];
+    return validateChoice(result?.answers?.more ?? {}, keys).choice;
   }
 
   async collect(page: Page, plan: Plan, criterion: string, rows: Row[]): Promise<Set<string>> {

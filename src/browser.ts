@@ -260,6 +260,11 @@ export class Browser {
     return (await this.evaluate(`${CONTEXTS}(${JSON.stringify(nodes)})`)) ?? {};
   }
 
+  /** Opens a page a scan has already visited, to come back to an item on it. Navigation only. */
+  async goto(url: string): Promise<void> {
+    await this.page.goto(url, { waitUntil: "load" });
+  }
+
   /** The text of each list or table item in view, top to bottom of the document. */
   async rows(): Promise<string[]> {
     return (await this.evaluate(ROWS)) ?? [];
