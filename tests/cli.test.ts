@@ -511,14 +511,22 @@ test("--collect gathers every matching item, acts on nothing, and stops; the nex
   expect(code).toBe(0);
   expect(out).toMatch(/COLLECTED \(\d+ scrolls, reached the bottom\): 4 of 40 items meet: 200 GB/);
   expect(out.match(/^- \S+ 200 GB €\d+$/gm)).toHaveLength(4);
-  expect(out).toContain("Nothing was clicked or typed.");
+  expect(out).toContain("Nothing was clicked or typed, and the page is back where it was.");
   expect(ScriptedJev.plans).toHaveLength(0);
   expect(events().find((e) => e.type === "collect_end")).toMatchObject({ matched: 4, seen: 40, stopped: "bottom" });
   expect(events().find((e) => e.type === "collect_end")).not.toHaveProperty("items");
-  ScriptedJev.moves = [["BLOCKED", null, null]];
-  const again = await cli("run");
+  expect(out).toContain("run --value 'LABEL=VALUE'");
+  ScriptedJev.moves = [
+    ["TYPE_TEXT", "Plan names", "Plan names"],
+    ["CLICK", "Submit", null],
+    ["DONE", null, null],
+  ];
+  const names = out.match(/^- (\S+) 200 GB/gm)?.map((line) => line.split(" ")[1]) ?? [];
+  const again = await cli("run", "--value", `Plan names=${names.join(", ")}`);
   expect(again.out).not.toContain("COLLECTED");
-  expect(ScriptedJev.plans).toHaveLength(1);
+  expect(ScriptedJev.plans).toHaveLength(3);
+  const finished = await research("finish", "--status", "done", "--reason", "Names sent");
+  expect(finished.out).toContain("verified=true");
 });
 
 test("--compare and --collect are not used together; replan --collect none stops collecting", async () => {

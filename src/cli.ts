@@ -562,8 +562,9 @@ async function commandRun(args: Args): Promise<number> {
       session.save(state);
       print(collectedLine(scan.collected));
       print(
-        "Nothing was clicked or typed. Check these items against the goal and write the answer from them. " +
-          "If the goal still needs something done on the page: run again (Jev acts), or replan. Otherwise: finish",
+        "Nothing was clicked or typed, and the page is back where it was. Check these items against the goal and " +
+          "write the answer from them. To put the answer into the page, give it as a value: run --value " +
+          "'LABEL=VALUE' (Jev types only values). Otherwise: finish",
       );
       return OK;
     }
