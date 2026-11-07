@@ -174,6 +174,17 @@ function compactOptions(element: Element): Element {
 }
 
 /** The observation sent to a choosing model: service, plan, page, and this run's actions. */
+/**
+ * The goal Jev works toward. After a collection, the part of the goal about reading the list is done. Seeing
+ * a goal about the list, Jev scrolled back to it, and did not choose values that neither the goal nor the plan
+ * mentioned. It works toward Claude's steps for what follows instead, with Claude's values named.
+ */
+export function jevGoal(plan: Plan): string {
+  if (!plan.collected || !plan.steps.length) return plan.goal;
+  const values = plan.values.map((value) => `${value.label}: ${value.value}`).join("; ");
+  return `${planText(plan).join(" ")}${values ? ` Values Claude wrote: ${values}.` : ""}`;
+}
+
 export function modelState(page: Page, history: HistoryEntry[], plan: Plan | null = null): Record<string, unknown> {
   const state: Record<string, unknown> = {};
   if (plan) {
@@ -186,7 +197,7 @@ export function modelState(page: Page, history: HistoryEntry[], plan: Plan | nul
       };
     }
     state.plan = {
-      goal: plan.goal,
+      goal: jevGoal(plan),
       steps: planText(plan),
       attempt: plan.attempt ?? 1,
       notes_from_earlier_attempts: plan.notes ?? [],

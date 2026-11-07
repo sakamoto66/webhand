@@ -26,6 +26,7 @@ import {
   COMPARE_RULES,
   COMPARED_RULES,
   type Controls,
+  jevGoal,
   modelState,
   NEXT_ACTION,
   NOT_VISIBLE,
@@ -110,7 +111,7 @@ const NO_VALUE = "NONE";
 
 /** Claude's plan travels with every question, not only in the state. */
 function taskBrief(plan: Plan): Record<string, unknown> {
-  const brief: Record<string, unknown> = { goal: plan.goal };
+  const brief: Record<string, unknown> = { goal: jevGoal(plan) };
   if (plan.steps?.length) brief.plan = planText(plan);
   if (plan.notes?.length) brief.notes_from_earlier_attempts = plan.notes;
   return brief;

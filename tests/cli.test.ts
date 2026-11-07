@@ -505,7 +505,19 @@ test("replan --compare none stops comparing; without it, the next attempt compar
 
 test("--collect gathers every matching item, acts on nothing, and stops; the next run lets Jev act", async () => {
   const condition = "200 GB of storage and less than €40 a month";
-  const started = await research("start", "--task", "collect_more", "--chrome", "linux", "--collect", condition);
+  const started = await research(
+    "start",
+    "--task",
+    "collect_more",
+    "--chrome",
+    "linux",
+    "--collect",
+    condition,
+    "--step",
+    "Type the Plan names value into the Plan names box",
+    "--step",
+    "Press Submit; done when Answer sent is shown",
+  );
   expect(started.out).toContain(`COLLECT: ${condition}`);
   const { out, code } = await cli("run");
   expect(code).toBe(0);
@@ -525,6 +537,9 @@ test("--collect gathers every matching item, acts on nothing, and stops; the nex
   const again = await cli("run", "--value", `Plan names=${names.join(", ")}`);
   expect(again.out).not.toContain("COLLECTED");
   expect(ScriptedJev.plans).toHaveLength(3);
+  const goal = (ScriptedJev.states[0] as { plan: { goal: string } }).plan.goal;
+  expect(goal).toMatch(/^1\. .*Values Claude wrote: Plan names: /);
+  expect(goal).not.toContain("All plans table");
   const finished = await research("finish", "--status", "done", "--reason", "Names sent");
   expect(finished.out).toContain("verified=true");
 });

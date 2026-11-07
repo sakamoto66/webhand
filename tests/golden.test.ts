@@ -162,6 +162,17 @@ test("the collection and what Claude is told after it are as recorded", () => {
   golden(collectedLine(collected), "collect", "line");
   golden(collectedLine({ ...collected, matched: 150, stopped: "limit" }), "collect", "line_limit");
   golden(describePlan({ ...plan, collect: collected.criterion }, null), "collect", "describe_plan");
+  const page = pages.plans_reveal;
+  const [, targets, controls] = actionSpace(page.actions);
+  const after = {
+    ...plan,
+    collect: collected.criterion,
+    collected,
+    steps: [{ instruction: "Type the Plan names value into the Plan names box" }, { instruction: "Press Submit" }],
+    values: [{ label: "Plan names", value: "Dolomite, Tuff" }],
+  };
+  golden(toJson(modelState(page, history, after)), "collect", "model_state_after");
+  golden(toJson(buildQuestions(after, targets, controls, valueChoices(after), true)[0]), "collect", "questions_after");
 });
 
 test("plans and recent actions print as recorded", () => {
