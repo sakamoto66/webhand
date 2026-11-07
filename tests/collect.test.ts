@@ -137,3 +137,13 @@ test("Jev's collection answers must each be MATCH or NO", async () => {
   reply = { answers: { item_1: answer(MATCH) } };
   await expect(policy.collect(page, plan("g"), "c", rows)).rejects.toThrow(PolicyError);
 });
+
+test("collect_nav: collecting on the home page finds one popular plan of the four, not the full list", async () => {
+  const task = await loadTask("collect_nav");
+  browser = await Browser.open(task.startUrl(ROOT));
+  const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
+  const result = await collectScan(browser, new Matching(40), plan(task.GOAL), "200 GB and cheap", recorder);
+  recorder.close();
+  expect(result.collected.items.map((item) => item.split(" ")[0])).toEqual(["Tuff"]);
+  expect((await task.verify(browser)).success).toBe(false);
+});
