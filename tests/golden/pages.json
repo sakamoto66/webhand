@@ -9912,6 +9912,14 @@
         "offscreen_actions": 0
       }
     ],
-    "omitted_regions": 0
+    "omitted_regions": 0,
+    "status": {
+      "kind": "ready",
+      "unseen": {
+        "frames": 0,
+        "canvases": 0,
+        "objects": 0
+      }
+    }
   }
 }

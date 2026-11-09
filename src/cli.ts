@@ -142,7 +142,12 @@ function regionLine(region: Record<string, any>): string {
 }
 
 function headline(page: Page): string {
-  return `URL: ${page.url}\nTITLE: ${page.title}`;
+  const status = page.status as { kind: string; http_status?: number; signs?: string[] } | undefined;
+  const detail = status ? [status.http_status ? `HTTP ${status.http_status}` : "", ...(status.signs ?? [])] : [];
+  const line = status
+    ? `\nPAGE: ${status.kind}${detail.some(Boolean) ? ` (${detail.filter(Boolean).join(", ")})` : ""}`
+    : "";
+  return `URL: ${page.url}\nTITLE: ${page.title}${line}`;
 }
 
 /** How a scan went: its scrolls, how often more items were loaded (with --more), and why it stopped. */

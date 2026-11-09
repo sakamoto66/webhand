@@ -67,6 +67,19 @@ const PAGE_CHECK = `(() => {
     text_chars: document.body ? document.body.innerText.length : 0,
   };
 })()`;
+// v2: the kind of page, from signs only (element presence and the document's HTTP status, never text or values).
+const STATUS = `(() => {
+  const shown = e => { const r=e.getBoundingClientRect(); return r.width>0 && r.height>0 && getComputedStyle(e).visibility !== 'hidden'; };
+  const any = selector => [...document.querySelectorAll(selector)].some(shown);
+  const nav = performance.getEntriesByType('navigation')[0];
+  const http = nav && nav.responseStatus ? nav.responseStatus : null;
+  const signs = ${JSON.stringify(CHALLENGES)}.filter(([, selector]) => document.querySelector(selector)).map(([name]) => name);
+  const kind = http >= 400 ? 'error' : signs.length ? 'check' : any('input[type="password"]') ? 'sign_in'
+    : any('dialog[open],[role="dialog"],[role="alertdialog"],[aria-modal="true"]') ? 'dialog' : 'ready';
+  const count = selector => [...document.querySelectorAll(selector)].filter(shown).length;
+  const unseen = {frames: count('iframe,frame'), canvases: count('canvas'), objects: count('object,embed')};
+  return {kind, ...(http ? {http_status: http} : {}), ...(signs.length ? {signs} : {}), unseen};
+})()`;
 const UNSEEN = `(() => {
   const shown = e => { const r=e.getBoundingClientRect(); return r.width>0 && r.height>0; };
   const count = selector => [...document.querySelectorAll(selector)].filter(shown).length;
@@ -84,7 +97,14 @@ const GUARD_PARTS = [
   ...Array(9).fill("target_state"),
   "target_link",
   "scope_text",
+  "scope_kind",
 ];
+// v2: what the freshness check leaves out. The target is hit-tested just before input whatever the scroll, and
+// the text around a target outside a list item (a form, a dialog) can change without changing what it does.
+// Without a target (Jev's DONE or BLOCKED), the page's own text is left out too: a ticking timer or a rotating
+// banner would otherwise keep any answer from standing. The address, the elements, and field values still count.
+const V2_IGNORED = new Set(["scroll", "viewport"]);
+const V2_IGNORED_PAGE = new Set(["scroll", "viewport", "title", "text"]);
 const MARKER_PARTS = [...VIEWPORT_PARTS, "title", "text", "semantics", "form_fields"];
 
 /** The names of the parts that differ between two freshness keys, each name once, in order. */
@@ -317,6 +337,8 @@ export class Browser {
       try {
         await this.evaluate(SETTLE, { awaitPromise: true });
         state = await this.evaluate(readState(this.view));
+        // v2: what kind of page this is, for Jev and Claude.
+        if (state !== null && this.view?.whole) state.status = await this.evaluate(STATUS);
       } catch (error) {
         if (!(error instanceof StalePage)) throw error;
         state = null;
@@ -333,7 +355,17 @@ export class Browser {
 
   /** What differs from the observation: nothing when fresh. The parts are named for the run log only. */
   async staleParts(page: Page, action: Action | null = null): Promise<string[]> {
-    if (action !== null && ["click", "select", "reveal"].includes(action.kind)) {
+    const parts = await this.differingParts(page, action);
+    if (!this.view?.whole) return parts;
+    if (action === null) return parts.filter((part) => !V2_IGNORED_PAGE.has(part));
+    const item = page.guards?.[String(action.node)]?.[14] === "item";
+    return parts.filter((part) => !V2_IGNORED.has(part) && (item || part !== "scope_text"));
+  }
+
+  private async differingParts(page: Page, action: Action | null): Promise<string[]> {
+    // v2 checks typing against its field too, instead of against the whole viewport's text.
+    const targeted = ["click", "select", "reveal", ...(this.view?.whole ? ["fill"] : [])];
+    if (action !== null && targeted.includes(action.kind)) {
       const node = action.node;
       if (!Number.isInteger(node)) return ["target_unknown"];
       const current = await this.evaluate(

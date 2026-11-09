@@ -240,6 +240,8 @@
       element.getAttribute('aria-checked'), element.getAttribute('aria-selected'),
       element.getAttribute('href'),
       scope?.innerText?.slice(0, TEXT_LIMIT) || '',
+      // Whether the scope is a list item or row (its text says which item the target belongs to).
+      scope?.matches?.('article,li,tr,[role="row"]') ? 'item' : 'other',
     ];
   };
 

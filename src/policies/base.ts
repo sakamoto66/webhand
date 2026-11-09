@@ -16,7 +16,10 @@ const WHOLE_ELEMENTS = `Elements cover the whole page: an element beyond the vis
 choosing it scrolls it into view before its operation runs. Page text covers only the visible viewport;
 page.offscreen says how much of the page is above and below it. Choose the element the next step needs wherever
 it is listed, never a different element in view as a stand-in. page.regions outlines the whole page by region.
-Answer NOT_VISIBLE only when the needed element is not listed at all.`;
+Answer NOT_VISIBLE only when the needed element is not listed at all.
+page.status.kind says what kind of page this is: check (a bot check or CAPTCHA) or sign_in needs a person, so
+NEEDS_HUMAN; error is an error page, so BLOCKED; dialog means a dialog is open, so deal with it first.
+page.status.unseen counts frames, canvases, and plugin objects, whose content is not observed.`;
 
 export const NEXT_ACTION = `Advance the user's entire goal from the CURRENT page using one operation.
 Work through the plan's steps in order; the action history shows what was already done in this run.
@@ -229,6 +232,7 @@ export function modelState(page: Page, history: HistoryEntry[], plan: Plan | nul
   }
   const shown: Record<string, unknown> = { url: page.url, title: page.title, text: page.text };
   shown.offscreen = offscreen(page);
+  if (page.status) shown.status = page.status;
   if (page.regions?.length) shown.regions = page.regions;
   if (page.read) shown.read = { text: page.read.text, chars: page.read.chars };
   state.page = shown;

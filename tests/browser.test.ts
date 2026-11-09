@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { loadTask } from "../research/tasks.ts";
-import { runAgent } from "../src/agent.ts";
+import { Budget, runAgent } from "../src/agent.ts";
 import { Browser, SETTLE_CAP_MS, type ViewChoice } from "../src/browser.ts";
 import { Recorder } from "../src/metrics.ts";
 import { ScriptedPolicy } from "../src/policies/scripted.ts";
@@ -507,4 +507,57 @@ test("v2: choosing an element beyond the viewport scrolls to it, then acts on it
     .map((line) => JSON.parse(line));
   expect(events.filter((e) => e.type === "into_view").map((e) => e.found)).toEqual([true, true]);
   expect((await settings.verify(browser)).success).toBe(true);
+});
+
+test("v1 refuses every action while the form's own text keeps changing; v2 checks only the target", {
+  timeout: 60_000,
+}, async () => {
+  const signup = await loadTask("signup_ticker");
+  const plan = { goal: signup.GOAL, steps: [], values: [] };
+  for (const view of [null, { whole: true }]) {
+    await browser.close();
+    await open(signup.startUrl(ROOT), view);
+    const log = join(tmpPath(), "run.jsonl");
+    const recorder = new Recorder(log);
+    const v2 = view ? { ...plan, flow: "v2" as const } : plan;
+    // Jev takes seconds to answer; here, longer than one tick of the page.
+    const scripted = new ScriptedPolicy(signup.SCRIPT);
+    const slow = {
+      name: "slow",
+      calls: scripted.calls,
+      config: () => scripted.config(),
+      choose: async (...args: Parameters<ScriptedPolicy["choose"]>) => {
+        await new Promise((resolve) => setTimeout(resolve, 900));
+        return scripted.choose(...args);
+      },
+    };
+    const result = await runAgent(browser, slow, v2, recorder, new Budget(30, 6));
+    recorder.close();
+    const stale = readFileSync(log, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+      .filter((e) => e.type === "stale");
+    if (view) {
+      expect(result.outcome).toBe("GOAL_REPORTED");
+      expect((await signup.verify(browser)).success).toBe(true);
+    } else {
+      // Each refusal sees a changed page, so it never counts toward STUCK: the attempt runs out of decisions
+      // with nothing typed or pressed. (The scripted policy moves on after a refusal, so each step is refused once.)
+      expect(result).toMatchObject({ outcome: "ATTEMPT_BUDGET", actions: 0 });
+      expect(stale.map((e) => e.changed)).toEqual([["text"], ["text"], ["scope_text"]]);
+    }
+  }
+});
+
+test("v2 tells what kind of page it is", async () => {
+  await browser.close();
+  await open(task.startUrl(ROOT), { whole: true });
+  expect((await browser.observe()).status).toMatchObject({ kind: "ready" });
+  await browser.evaluate("document.body.append(Object.assign(document.createElement('input'), {type: 'password'}))");
+  expect((await browser.observe()).status.kind).toBe("sign_in");
+  await browser.evaluate(
+    "document.body.append(Object.assign(document.createElement('div'), {className: 'g-recaptcha'}))",
+  );
+  expect((await browser.observe()).status).toMatchObject({ kind: "check", signs: ["recaptcha"] });
 });
