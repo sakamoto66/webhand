@@ -8,6 +8,7 @@ import type { PageCheck } from "./browser.ts";
 import { quote } from "./format.ts";
 import { pageEvent, type Recorder, type ScreenshotAfter, safeUrl } from "./metrics.ts";
 import {
+  type Action,
   type Decision,
   type HistoryEntry,
   MutationUncertain,
@@ -52,6 +53,23 @@ export interface Actor {
   act(action: Page, page: Page, text?: string | null): Promise<void>;
   screenshot?(): Promise<Buffer>;
   check?(): Promise<PageCheck>;
+  /** Parts of the page webhand cannot see into, counted for the run log. */
+  unseen?(): Promise<Record<string, number>>;
+}
+
+/** What the observation offered when Jev found the element it needed missing: counts for the run log only. */
+function offered(page: Page): Record<string, number> {
+  const actions: Action[] = page.actions ?? [];
+  const scroll = page.scroll ?? {};
+  return {
+    in_view: actions.filter((a) => a.kind !== "reveal").length,
+    offscreen: actions.filter((a) => a.kind === "reveal").length,
+    omitted_actions: page.omitted_actions ?? 0,
+    omitted_reveals: page.omitted_reveals ?? 0,
+    regions_with_offscreen: (page.regions ?? []).filter((r: { offscreen_actions?: number }) => r.offscreen_actions)
+      .length,
+    below_px: Math.max(0, Math.round((scroll.height ?? 0) - (scroll.y ?? 0) - (page.h ?? 0))),
+  };
 }
 
 /** Outcomes after which the log keeps a page check, to tell a bot check or an error page from a plan problem. */
@@ -237,7 +255,13 @@ export async function runAgent(
           page_changed: false,
         };
         history.push(entry);
-        recorder.event("not_visible", { attempt, wanted: decision.wanted, confidence: decision.confidence });
+        recorder.event("not_visible", {
+          attempt,
+          wanted: decision.wanted,
+          confidence: decision.confidence,
+          offered: offered(page),
+          ...(browser.unseen ? { unseen: await browser.unseen().catch(() => null) } : {}),
+        });
         onChange(page);
         continue;
       }
@@ -280,6 +304,7 @@ export async function runAgent(
             wanted: decision.operation,
             target: decision.action.label,
             reason: error.message,
+            changed: error.changed,
             page_changed: entry.page_changed,
           });
         }

@@ -13,6 +13,12 @@ export class PolicyError extends Error {
 /** A decision no longer refers to the observed page. Nothing was executed. */
 export class StalePage extends Error {
   override name = "StalePage";
+  /** What differed from the observation, for the run log only (such as url, scroll, scope_text). */
+  readonly changed: string[];
+  constructor(message: string, changed: string[] = []) {
+    super(message);
+    this.changed = changed;
+  }
 }
 
 /** A browser mutation may have happened. It must never be retried. */

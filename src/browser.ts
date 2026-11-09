@@ -65,7 +65,33 @@ const PAGE_CHECK = `(() => {
     text_chars: document.body ? document.body.innerText.length : 0,
   };
 })()`;
+const UNSEEN = `(() => {
+  const shown = e => { const r=e.getBoundingClientRect(); return r.width>0 && r.height>0; };
+  const count = selector => [...document.querySelectorAll(selector)].filter(shown).length;
+  return {frames: count('iframe,frame'), canvases: count('canvas'), objects: count('object,embed')};
+})()`;
 const MARKER = `(() => { const state=${READ_STATE}; return state?.marker ?? null; })()`;
+
+// The parts of the freshness keys in assets/snapshot.js (viewportKey, pageKey, guard, marker), by position.
+const VIEWPORT_PARTS = ["navigation", "url", "scroll", "scroll", "viewport", "viewport"];
+const PAGE_KEY_PARTS = [...VIEWPORT_PARTS, "form_fields"];
+const GUARD_PARTS = [
+  "target_replaced",
+  "target_label",
+  "target_label",
+  ...Array(9).fill("target_state"),
+  "target_link",
+  "scope_text",
+];
+const MARKER_PARTS = [...VIEWPORT_PARTS, "title", "text", "semantics", "form_fields"];
+
+/** The names of the parts that differ between two freshness keys, each name once, in order. */
+function differing(current: unknown, observed: unknown, parts: string[]): string[] {
+  if (isDeepStrictEqual(current, observed)) return [];
+  if (!Array.isArray(current) || !Array.isArray(observed) || current.length !== observed.length) return ["shape"];
+  const names = current.flatMap((value, i) => (isDeepStrictEqual(value, observed[i]) ? [] : [parts[i] ?? "other"]));
+  return [...new Set(names)];
+}
 // Read only once the document has loaded and the DOM has stopped changing, so content rendered by
 // DOMContentLoaded handlers or after an XHR is observed. A page that never goes quiet is read at the cap.
 const SETTLE_QUIET_MS = 150;
@@ -300,16 +326,27 @@ export class Browser {
   }
 
   async fresh(page: Page, action: Action | null = null): Promise<boolean> {
+    return (await this.staleParts(page, action)).length === 0;
+  }
+
+  /** What differs from the observation: nothing when fresh. The parts are named for the run log only. */
+  async staleParts(page: Page, action: Action | null = null): Promise<string[]> {
     if (action !== null && ["click", "select", "reveal"].includes(action.kind)) {
       const node = action.node;
-      if (!Number.isInteger(node)) return false;
+      if (!Number.isInteger(node)) return ["target_unknown"];
       const current = await this.evaluate(
         "(() => { const c=window.__browserLab; " +
           `return c ? [c.pageKey(),c.guard(c.nodes.get(${node}))] : null; })()`,
       );
-      return isDeepStrictEqual(current, [page.page_key, page.guards?.[String(node)] ?? null]);
+      if (current === null) return ["snapshot_gone"];
+      const guard = page.guards?.[String(node)] ?? null;
+      return [
+        ...differing(current[0], page.page_key, PAGE_KEY_PARTS),
+        ...(current[1] === null && guard !== null ? ["target_gone"] : differing(current[1], guard, GUARD_PARTS)),
+      ];
     }
-    return isDeepStrictEqual(await this.evaluate(MARKER), page.marker);
+    const marker = await this.evaluate(MARKER);
+    return marker === null && page.marker != null ? ["snapshot_gone"] : differing(marker, page.marker, MARKER_PARTS);
   }
 
   /** The text around observed elements, by node. Read-only. */
@@ -334,7 +371,8 @@ export class Browser {
 
   /** Execute once. StalePage means nothing happened; MutationUncertain means do not retry. */
   async act(action: Action, page: Page, text: string | null = null): Promise<void> {
-    if (!(await this.fresh(page, action))) throw new StalePage("Page changed since this decision");
+    const changed = await this.staleParts(page, action);
+    if (changed.length) throw new StalePage("Page changed since this decision", changed);
     const kind = action.kind;
     if (kind === "wait") {
       await sleep(100);
@@ -342,13 +380,13 @@ export class Browser {
     }
     if (kind === "reveal") {
       const found = await this.evaluate(`${REVEAL}(${JSON.stringify(action.node)})`);
-      if (!found) throw new StalePage("Target changed");
+      if (!found) throw new StalePage("Target changed", ["target_gone"]);
       return;
     }
     let target: { x: number; y: number } | null = null;
     if (kind !== "scroll") {
       target = await this.evaluate(`${RESOLVE_TARGET}(${JSON.stringify(action)})`);
-      if (target === null) throw new StalePage("Target changed or is covered");
+      if (target === null) throw new StalePage("Target changed or is covered", ["target_covered_or_moved"]);
     }
     try {
       if (kind === "scroll") {
@@ -398,6 +436,11 @@ export class Browser {
   /** Read-only signs of why a page cannot be used: see PageCheck. */
   async check(): Promise<PageCheck> {
     return await this.evaluate(PAGE_CHECK);
+  }
+
+  /** Frames, canvases, and plugin objects in the page: parts whose content webhand does not observe. */
+  async unseen(): Promise<Record<string, number>> {
+    return (await this.evaluate(UNSEEN)) ?? {};
   }
 
   /** A PNG of the viewport. Read-only; typed values show in it. */

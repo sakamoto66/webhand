@@ -56,6 +56,26 @@ test("a stale decision is not executed", async () => {
   expect(((await task.verify(browser)).evidence as any).opened_casa_flora).toBe(false);
 });
 
+test("a refused action names what changed: a form field or the scroll", async () => {
+  let page = await browser.observe();
+  const button = find(page, (a) => a.label === "Find stays");
+  await browser.evaluate("document.getElementById('destination').value='changed'");
+  await expect(browser.act(button, page)).rejects.toMatchObject({ changed: ["form_fields"] });
+  page = await browser.observe();
+  await browser.evaluate("scrollBy(0, 40)");
+  const again = find(page, (a) => a.label === "Find stays");
+  expect(await browser.staleParts(page, again)).toEqual(["scroll"]);
+  expect(await browser.staleParts(page)).toEqual(["scroll", "text", "semantics"]);
+});
+
+test("unseen() counts the frames and canvases in the page", async () => {
+  await browser.evaluate(
+    "document.body.append(Object.assign(document.createElement('iframe'), {width: 50, height: 50}), " +
+      "Object.assign(document.createElement('canvas'), {width: 50, height: 50}))",
+  );
+  expect(await browser.unseen()).toEqual({ frames: 1, canvases: 1, objects: 0 });
+});
+
 test("password values are not observed", async () => {
   await browser.evaluate(
     "const p=document.createElement('input');p.type='password';p.value='hunter2';" +

@@ -765,6 +765,15 @@ webhand の側で直せる一番大きな型は「ページには着いたが、
 
 `stale` は2つの回で164回あり、理由は「Page changed since this decision」116回、「Target changed or is covered」48回でした。操作の直前の鮮度の確認は、アドレス、スクロール位置、フォームの全項目の値と、対象の要素とそれを囲む範囲（フォーム、行など）の文章を比べています。どれが変わったのかはログに残っていません。
 
+## v2 の設計と段階0（2026-11-09）
+
+利用者と相談して、Claude と Jev の役割と流れを0から見直すことにしました。設計は `docs/design-v2.md` です。今の流れと並べて作り（`start --flow v2`）、段階ごとにローカルの A/B で確かめます。物差しは、頼まれた作業が終わったか（`verify()`）です。
+
+段階0は診断だけで、CLI の出力と Jev への入力は変えません（golden は同じ）。
+
+- `stale` イベントに `changed` を足しました。断られた操作で、観測のときと違った部分の名前です（`navigation`、`url`、`scroll`、`viewport`、`form_fields`、`title`、`text`、`semantics`、`target_gone`、`target_replaced`、`target_label`、`target_state`、`target_link`、`scope_text`、`target_covered_or_moved`）。
+- `not_visible` イベントに `offered`（画面内の操作の数、画面外の操作の数、上限で落とした数、画面外の操作がある領域の数、下に残る高さ）と `unseen`（画面に出ている iframe、canvas、object の数）を足しました。
+
 ## 次の手順
 
 1. GOAL 単位の設計で `hotel_filter` と `hotel_reserve` を実行し、変更後の基準値を取る。
