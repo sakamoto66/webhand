@@ -1,5 +1,6 @@
-// view = {focus: [...], skip: [...], read: [...]}: region patterns Claude chose from what was learned, and the
-// kinds of content to read beyond the viewport. Empty: DOM order, viewport only.
+// view = {focus: [...], skip: [...], read: [...], whole: true}: region patterns Claude chose from what was
+// learned, the kinds of content to read beyond the viewport, and (v2) whether elements beyond the viewport are
+// offered with their own operations. Empty: DOM order, viewport only.
 (view => {
   if (!document.body) return null;
 
@@ -8,6 +9,8 @@
   const TEXT_LIMIT = 6000;
   const MAX_ACTIONS = 250;
   const MAX_REVEALS = 60;
+  // v2: elements beyond the viewport offered as they are, the nearest first.
+  const MAX_BEYOND = 200;
   const SCROLL_STEP = 560;
   const MAX_REGIONS = 40;
   const REGION_NAME_LIMIT = 40;
@@ -290,6 +293,9 @@
   // Elements beyond the viewport, in DOM order, offered only to be scrolled into view (read layer only).
   const reveals = [];
   const revealed = new Set();
+  // v2 (view.whole): elements beyond the viewport with their own operations; acting scrolls them into view first.
+  const whole = Boolean(view.whole);
+  const beyond = [];
 
   // In DOM order. Each action's region is kept aside so the freshness marker does not depend on it.
   const collectActions = () => {
@@ -302,6 +308,19 @@
       const region = regionOf(element);
       if (!centerInViewport(rect)) {
         region.offscreen_actions++;
+        if (whole) {
+          const base = baseAction(element, role, rect);
+          const found = element.tagName === 'SELECT' ? selectActions(element, base) : otherActions(element, role, base);
+          const at = where(rect);
+          const distance = rect.bottom <= 0 ? -rect.bottom : rect.top - innerHeight;
+          for (const action of found) {
+            action.at = at;
+            action.offscreen = true;
+            actionRegions.set(action, region);
+            beyond.push({action, distance});
+          }
+          continue;
+        }
         // With a read layer, an element beyond the viewport can be scrolled into view, never acted on as it is.
         if (readKinds.length && readable(element) && !revealed.has(element)) {
           revealed.add(element);
@@ -681,13 +700,25 @@
     region.shown_actions++;
     action.region = region.key;
   }
+  // v2: the nearest elements beyond the viewport, back in DOM order, after those in view.
+  const beyondKept = beyond
+    .map((entry, index) => ({...entry, index}))
+    .filter(({action}) => !viewing || decide(actionRegions.get(action)).view !== 'skip')
+    .sort((a, b) => a.distance - b.distance || a.index - b.index)
+    .slice(0, MAX_BEYOND)
+    .sort((a, b) => a.index - b.index)
+    .map(({action}) => action);
+  for (const action of beyondKept) {
+    if (!(action.node in guards)) guards[action.node] = state.guard(state.nodes.get(action.node));
+    action.region = actionRegions.get(action).key;
+  }
   // The nearest and the farthest are kept: the end of a list is what loads more of it.
   const kept = reveals.length > MAX_REVEALS
     ? [...reveals.slice(0, MAX_REVEALS / 2), ...reveals.slice(-MAX_REVEALS / 2)] : reveals;
   for (const reveal of kept) {
     if (!(reveal.node in guards)) guards[reveal.node] = state.guard(state.nodes.get(reveal.node));
   }
-  chosen = [...chosen, ...kept];
+  chosen = [...chosen, ...beyondKept, ...kept];
   chosen.forEach((action, index) => action.id = 'e' + (index + 1));
   if (scrollY + innerHeight < height - 2) {
     chosen.push({id: 'scroll_down', kind: 'scroll', label: 'Scroll down', delta: SCROLL_STEP});
@@ -713,5 +744,6 @@
   return {url: location.href, title: document.title, w: innerWidth, h: innerHeight, text: shown.text,
     scroll: {y: scrollY, height}, actions: chosen, marker, page_key, guards, omitted_actions,
     regions: regionSummary, omitted_regions: outline.length - regionSummary.length, ...(read ? {read} : {}),
-    ...(reveals.length > kept.length ? {omitted_reveals: reveals.length - kept.length} : {})};
+    ...(reveals.length > kept.length ? {omitted_reveals: reveals.length - kept.length} : {}),
+    ...(beyond.length > beyondKept.length ? {omitted_beyond: beyond.length - beyondKept.length} : {})};
 })
