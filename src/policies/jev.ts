@@ -30,6 +30,7 @@ import {
   MORE_RULES,
   modelState,
   NEXT_ACTION,
+  NEXT_ACTION_WHOLE,
   NOT_VISIBLE,
   NOT_VISIBLE_HELP,
   OPERATION_HELP,
@@ -137,7 +138,8 @@ export function buildQuestions(
   reading = false,
 ): [Record<string, unknown>, Record<string, string>] {
   const brief = taskBrief(plan);
-  let rules = reading ? `${NEXT_ACTION}\n${READ_RULES}` : NEXT_ACTION;
+  const next = plan.flow === "v2" ? NEXT_ACTION_WHOLE : NEXT_ACTION;
+  let rules = reading ? `${next}\n${READ_RULES}` : next;
   if (plan.compared) rules = `${rules}\n${COMPARED_RULES}`;
   const operations: Record<string, string> = {};
   for (const key of targets.keys()) operations[key] = OPERATION_HELP[key];

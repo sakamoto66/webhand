@@ -22,6 +22,8 @@ export interface ViewChoice {
   focus?: string[];
   skip?: string[];
   read?: string[];
+  /** v2: offer elements beyond the viewport with their own operations. */
+  whole?: boolean;
 }
 
 /** The snapshot expression for a view ({focus, skip} region patterns). The view never changes freshness. */

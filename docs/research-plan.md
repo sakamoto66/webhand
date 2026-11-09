@@ -774,6 +774,14 @@ webhand の側で直せる一番大きな型は「ページには着いたが、
 - `stale` イベントに `changed` を足しました。断られた操作で、観測のときと違った部分の名前です（`navigation`、`url`、`scroll`、`viewport`、`form_fields`、`title`、`text`、`semantics`、`target_gone`、`target_replaced`、`target_label`、`target_state`、`target_link`、`scope_text`、`target_covered_or_moved`）。
 - `not_visible` イベントに `offered`（画面内の操作の数、画面外の操作の数、上限で落とした数、画面外の操作がある領域の数、下に残る高さ）と `unseen`（画面に出ている iframe、canvas、object の数）を足しました。
 
+### 段階1の1つ目: ページ全体の操作（2026-11-09）
+
+`start --flow v2` を足しました（既定は `v1` で、今の流れのまま）。v2 では、画面の外の要素も、自分の操作（押す、入力する、選ぶ）のまま Jev に渡します。どれも `at`（上か下に、どれだけ離れているか）を持ちます。Jev が画面の外の要素を選ぶと、webhand はまずそこまでスクロールし（入力ではない）、観測し直して、同じ要素の同じ操作が画面内にあるときだけ1回実行します。なければ何もせず、断られた操作として記録します（`changed` は `target_unreachable`）。Jev への規則は、画面内だけを前提にした5行を、ページ全体を前提にした5行に差し替えます。鮮度の確認と、その鍵（画面内の要素と文章）は v1 と同じです。
+
+golden は、v2 の state と質問、`FLOW: v2` の行を新しく足しただけで、今までの出力は1文字も変わっていません。研究用の CLI は、環境変数 `WEBHAND_RESEARCH_FLOW` があれば `start` に `--flow` を足します。A/B で Claude への指示を両方の条件でそろえるためです。
+
+確かめるためのタスク `settings_long` を足しました。30の設定（見出し、2行の文、チェックボックス）が約15画面に並び、24番目の Weekly summary を入れて、一番下の Save settings を押します。ほかの設定は変えてはいけません。
+
 ## 次の手順
 
 1. GOAL 単位の設計で `hotel_filter` と `hotel_reserve` を実行し、変更後の基準値を取る。

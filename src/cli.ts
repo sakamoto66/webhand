@@ -9,7 +9,7 @@ import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import * as agent from "./agent.ts";
 import { Budget, execute, runAgent } from "./agent.ts";
-import { Browser } from "./browser.ts";
+import { Browser, type ViewChoice } from "./browser.ts";
 import { type Collected, type Collector, collectScan, MAX_COLLECTED } from "./collect.ts";
 import { type Compared, type Comparer, compareScan, MAX_PAGES, MAX_SCROLLS, type Reader } from "./compare.ts";
 import { describeError, quote, show, stamp, toJson } from "./format.ts";
@@ -180,6 +180,7 @@ export function describePlan(plan: Plan, view: runbook.View | null = null): stri
   if (plan.compare) lines.push(`COMPARE: ${plan.compare}`);
   if (plan.collect) lines.push(`COLLECT: ${plan.collect}`);
   if (plan.more) lines.push(`MORE: ${plan.more}`);
+  if (plan.flow) lines.push(`FLOW: ${plan.flow}`);
   return lines.join("\n");
 }
 
@@ -228,7 +229,7 @@ function requireSession(): session.State {
 }
 
 async function openPage(state: session.State, url: string | null = null, restart = false): Promise<void> {
-  const browser = await Browser.open(url, { port: state.port, view: state.view ?? null });
+  const browser = await Browser.open(url, { port: state.port, view: browserView(state) });
   try {
     state.page = await browser.observe();
     if (restart && process.env.WEBHAND_SCREENSHOTS === "1") {
@@ -261,6 +262,12 @@ function defaultLog(name: string): string {
 }
 
 // --- Commands ------------------------------------------------------------------------------
+
+/** The snapshot's view: learned and Claude's regions, and with flow v2, the whole page. */
+function browserView(state: session.State): ViewChoice | null {
+  const view = (state.view ?? null) as ViewChoice | null;
+  return state.plan?.flow === "v2" ? { ...(view ?? {}), whole: true } : view;
+}
 
 /** Everything learned, for Claude to plan from. */
 async function commandCatalog(args: Args): Promise<number> {
@@ -374,6 +381,7 @@ async function commandStart(args: Args): Promise<number> {
     ...(args.compare ? { compare: args.compare } : {}),
     ...(args.collect ? { collect: args.collect } : {}),
     ...(args.more ? { more: args.more } : {}),
+    ...(args.flow === "v2" ? { flow: "v2" as const } : {}),
   };
   if (plan.compare && plan.collect) throw new CliExit("Use --compare or --collect, not both");
   if (plan.more && !plan.compare && !plan.collect) throw new CliExit("--more needs --compare or --collect");
@@ -411,7 +419,7 @@ async function commandStart(args: Args): Promise<number> {
   const recorder = new Recorder(state.log);
   let browser: Browser | null = null;
   try {
-    browser = await Browser.open(state.start_url, { port: chromeState.port, view: state.view });
+    browser = await Browser.open(state.start_url, { port: chromeState.port, view: browserView(state) });
     state.page = await browser.observe();
     recorder.event("run_start", {
       task,
@@ -423,6 +431,7 @@ async function commandStart(args: Args): Promise<number> {
       runbook: state.runbook,
       service: serviceName,
       view: state.view,
+      ...(plan.flow ? { flow: plan.flow } : {}),
       max_attempts: args.max_attempts,
       started_at: new Date().toISOString(),
     });
@@ -538,7 +547,7 @@ async function commandRun(args: Args): Promise<number> {
   session.save(state);
 
   const policy = deps.policy();
-  const browser = await Browser.open(null, { port: state.port, view: state.view ?? null });
+  const browser = await Browser.open(null, { port: state.port, view: browserView(state) });
   const recorder = new Recorder(state.log);
   let result: agent.AgentResult;
   // With --more, a scan presses Claude's control for more items when the list ends.
@@ -753,7 +762,7 @@ async function commandAct(args: Args): Promise<number> {
   decision.text = decision.action.kind === "fill" ? args.text : null;
   state.decisions += 1;
   session.save(state);
-  const browser = await Browser.open(null, { port: state.port, view: state.view ?? null });
+  const browser = await Browser.open(null, { port: state.port, view: browserView(state) });
   const recorder = new Recorder(state.log);
   try {
     await execute(browser, state.page, decision, state.history, recorder, {
@@ -1117,6 +1126,13 @@ function commands(): Record<string, CommandSpec> {
         compareOption,
         collectOption,
         moreOption,
+        {
+          name: "flow",
+          type: "string",
+          choices: ["v1", "v2"],
+          default: "v1",
+          help: "v2: offer Jev the whole page (research)",
+        },
         { name: "session", type: "string", default: "new", help: "new (temporary) or profile:NAME (saved sign-in)" },
         chromeOption,
         { name: "headed", type: "boolean" },

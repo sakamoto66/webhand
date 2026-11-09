@@ -83,6 +83,8 @@ export interface Plan {
   notes?: string[];
   attempt?: number;
   service?: { description: string; facts: string[] } | null;
+  /** v2: the page is offered whole (elements beyond the viewport with their own operations). */
+  flow?: "v2" | null;
   /** Claude's criterion for choosing one item of a long list; the run compares before it acts. */
   compare?: string | null;
   /** What the comparison found in this attempt. */

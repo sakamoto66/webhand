@@ -9,7 +9,7 @@ import { quote } from "./format.ts";
 import { pageEvent, type Recorder, type ScreenshotAfter, safeUrl } from "./metrics.ts";
 import {
   type Action,
-  type Decision,
+  Decision,
   type HistoryEntry,
   MutationUncertain,
   type Page,
@@ -177,6 +177,31 @@ export async function execute(
   return newPage;
 }
 
+/**
+ * v2: Jev chose an element beyond the viewport. It is scrolled into view (a scroll, never an input), the page
+ * is observed again, and the same element with the same operation is taken from that observation. When it is
+ * no longer offered, nothing runs: StalePage, as for any refused action.
+ */
+async function intoView(
+  browser: Actor,
+  page: Page,
+  decision: Decision,
+  recorder: Recorder,
+  attempt: number,
+): Promise<{ page: Page; decision: Decision }> {
+  const action = decision.action as Action;
+  await browser.act({ kind: "reveal", node: action.node, label: action.label }, page);
+  const next = await browser.observe();
+  const same = (next.actions ?? []).find(
+    (a: Action) =>
+      !a.offscreen && a.node === action.node && a.kind === action.kind && (a.value ?? null) === (action.value ?? null),
+  );
+  recorder.event("into_view", { attempt, at: action.at ?? null, found: Boolean(same) });
+  if (!same) throw new StalePage("Target was not in view after scrolling to it", ["target_unreachable"]);
+  const chosen = new Decision(decision.operation, same, { confidence: decision.confidence, text: decision.text });
+  return { page: next, decision: chosen };
+}
+
 /** Markers are JSON values from the page; equal content means the same page. */
 function sameMarker(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -275,6 +300,7 @@ export async function runAgent(
         for (const key of ["label", "role", "value"]) field[key] = decision.action[key] ?? null;
         return finish(NEEDS_VALUE, "no value from the plan fits this field", { field });
       }
+      if (decision.action.offscreen) ({ page, decision } = await intoView(browser, page, decision, recorder, attempt));
       page = await execute(browser, page, decision, history, recorder, {
         decidedBy: policy.name,
         attempt,

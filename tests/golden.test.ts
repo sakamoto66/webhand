@@ -235,3 +235,12 @@ test("region layers combine as recorded", () => {
   });
   golden(toJson(view), "view");
 });
+
+test("v2: the whole page Jev is given and asked about is as recorded", () => {
+  const page = pages.settings_whole;
+  const v2 = { ...plan, flow: "v2" as const };
+  const [, targets, controls] = actionSpace(page.actions);
+  golden(toJson(modelState(page, history, v2)), "v2", "model_state");
+  golden(toJson(buildQuestions(v2, targets, controls, valueChoices(v2), false)[0]), "v2", "questions");
+  golden(describePlan(v2, null), "v2", "describe_plan");
+});

@@ -1,6 +1,6 @@
 /** Real headless Chrome on the local fixtures. No model calls. */
 
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { loadTask } from "../research/tasks.ts";
 import { runAgent } from "../src/agent.ts";
-import { Browser, SETTLE_CAP_MS } from "../src/browser.ts";
+import { Browser, SETTLE_CAP_MS, type ViewChoice } from "../src/browser.ts";
 import { Recorder } from "../src/metrics.ts";
 import { ScriptedPolicy } from "../src/policies/scripted.ts";
 import { type Action, type Page, StalePage } from "../src/types.ts";
@@ -18,7 +18,7 @@ const task = await loadTask("hotel_filter");
 
 let browser: Browser;
 
-async function open(url: string, view: Record<string, string[]> | null = null) {
+async function open(url: string, view: ViewChoice | null = null) {
   browser = await Browser.open(url, { view });
   return browser;
 }
@@ -470,4 +470,41 @@ test("in a list that loads as it is scrolled, SCROLL_TO its last element loads m
   }
   expect(page.read.text).toMatch(/\nTuff \| [^|\n]+ \| €11 \| Choose Tuff\n/);
   expect((await plans.verify(browser)).success).toBe(false);
+});
+
+test("v2: elements beyond the viewport are offered with their own operations, and the marker stays the same", async () => {
+  const settings = await loadTask("settings_long");
+  await browser.close();
+  const plain = await (await open(settings.startUrl(ROOT))).observe();
+  await browser.close();
+  const page = await (await open(settings.startUrl(ROOT), { whole: true })).observe();
+  const weekly = find(page, (a) => a.label === "Weekly summary on");
+  expect(weekly).toMatchObject({ kind: "click", offscreen: true });
+  expect(weekly.at).toMatch(/^below \d+px$/);
+  expect(find(plain, (a) => a.label === "Weekly summary on")).toBeUndefined();
+  // The same marker apart from when the page was loaded (two separate loads).
+  expect(page.marker.slice(1)).toEqual(plain.marker.slice(1));
+});
+
+test("v2: choosing an element beyond the viewport scrolls to it, then acts on it once", async () => {
+  const settings = await loadTask("settings_long");
+  await browser.close();
+  await open(settings.startUrl(ROOT), { whole: true });
+  const log = join(tmpPath(), "run.jsonl");
+  const recorder = new Recorder(log);
+  const script = [
+    { operation: "CLICK", label: "Weekly summary on" },
+    { operation: "CLICK", label: "Save settings" },
+  ];
+  const plan = { goal: settings.GOAL, steps: [], values: [], flow: "v2" as const };
+  const result = await runAgent(browser, new ScriptedPolicy(script), plan, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect(result.actions).toBe(2);
+  const events = readFileSync(log, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(events.filter((e) => e.type === "into_view").map((e) => e.found)).toEqual([true, true]);
+  expect((await settings.verify(browser)).success).toBe(true);
 });
