@@ -46,7 +46,7 @@
     "prepublishOnly": "npm run check && npm run build && npm run check:package"
   },
   "dependencies": {
-    "playwright-core": "~1.64.1",
+    "playwright-core": "~1.65.0",
     "smol-toml": "^1.9.1",
     "undici": "^8.12.3"
   },
