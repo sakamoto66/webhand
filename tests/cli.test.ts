@@ -602,3 +602,14 @@ test("replan --more none stops pressing the control", async () => {
   ScriptedJev.moves = [["BLOCKED", null, null]];
   expect((await cli("run")).out).toMatch(/COMPARED \(\d+ scrolls, reached the bottom\)/);
 });
+
+test("WEBHAND_FLOW sets the default flow; an unknown flow is refused before Chrome starts", async () => {
+  vi.stubEnv("WEBHAND_FLOW", "v3");
+  expect(await researchExit("start", "--task", "hotel_filter", "--chrome", "linux")).toBe(
+    "WEBHAND_FLOW must be one of: v1, v2",
+  );
+  expect(session.load()).toBeNull();
+  vi.stubEnv("WEBHAND_FLOW", "v2");
+  expect((await research("start", "--task", "hotel_filter", "--chrome", "linux")).out).toContain("FLOW: v2");
+  expect(session.load()?.plan?.flow).toBe("v2");
+});

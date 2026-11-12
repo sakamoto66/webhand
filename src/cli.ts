@@ -373,6 +373,7 @@ async function commandStart(args: Args): Promise<number> {
   if (steps.some((step) => step.actor === "human") && !args.headed) {
     throw new CliExit("This plan has [person] steps. Add --headed so the person can see the window");
   }
+  if (!FLOWS.includes(args.flow)) throw new CliExit(`WEBHAND_FLOW must be one of: ${FLOWS.join(", ")}`);
   if (!process.env.TYPESAFE_API_KEY) {
     throw new CliExit("TYPESAFE_API_KEY is not set. Set it as an environment variable");
   }
@@ -1065,6 +1066,8 @@ interface CommandSpec {
   run: (args: Args) => Promise<number>;
 }
 
+const FLOWS = ["v1", "v2"];
+
 function commands(): Record<string, CommandSpec> {
   const chromeDefault = process.env.WEBHAND_CHROME ?? "auto";
   const chromeOption: OptionSpec = {
@@ -1134,9 +1137,9 @@ function commands(): Record<string, CommandSpec> {
         {
           name: "flow",
           type: "string",
-          choices: ["v1", "v2"],
-          default: "v1",
-          help: "v2: offer Jev the whole page (research)",
+          choices: [...FLOWS],
+          default: process.env.WEBHAND_FLOW || "v1",
+          help: "v2: offer Jev the whole page (research). Default: WEBHAND_FLOW, else v1",
         },
         { name: "session", type: "string", default: "new", help: "new (temporary) or profile:NAME (saved sign-in)" },
         chromeOption,
