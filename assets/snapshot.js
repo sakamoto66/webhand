@@ -216,6 +216,31 @@
     return false;
   };
 
+  // What lies over (x, y) instead of the element: the nearest dialog, or fixed or sticky layer, above the topmost
+  // element there, as its role and a short name. For telling Jev why a click on a covered element did not run.
+  state.cover = (x, y) => {
+    const top = deepElementFromPoint(x, y);
+    let layer = null;
+    for (let node = top; node instanceof Element; node = flatParent(node)) {
+      const position = getComputedStyle(node).position;
+      if (node.tagName === 'DIALOG' || ['dialog', 'alertdialog'].includes(node.getAttribute('role')) ||
+          node.getAttribute('aria-modal') === 'true' || position === 'fixed' || position === 'sticky') {
+        layer = node;
+        break;
+      }
+    }
+    const shown = layer || top;
+    if (!shown) return 'something';
+    const role = shown.getAttribute('role') || (shown.tagName === 'DIALOG' ? 'dialog' : shown.tagName.toLowerCase());
+    const heading = shown.querySelector?.('h1,h2,h3,h4,[role="heading"],legend');
+    const name = (shown.getAttribute('aria-label') || heading?.textContent || shown.textContent || '')
+      .replace(/\s+/g, ' ').trim().slice(0, 60);
+    const modal = layer && (layer.tagName === 'DIALOG' || ['dialog', 'alertdialog'].includes(layer.getAttribute('role')) ||
+      layer.getAttribute('aria-modal') === 'true');
+    const kind = modal ? 'a dialog' : layer ? 'a fixed ' + role : 'a ' + role;
+    return name ? kind + ' "' + name + '"' : kind;
+  };
+
   state.describe = element => {
     let target = closestDeep(element, INTERACTIVE_SELECTOR);
     for (let current = element; !target && current instanceof Element; current = flatParent(current)) {

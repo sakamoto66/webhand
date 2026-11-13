@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fieldnote · Email preferences</title>
+<style>
+  body { font: 16px/1.6 system-ui, sans-serif; margin: 0 auto; max-width: 640px; padding: 0 24px; }
+  #result { position: fixed; top: 0; right: 24px; background: #ffe; padding: 4px 12px; }
+  label { display: block; margin: 10px 0; }
+  /* A consent layer over the whole page, as many sites show before anything else can be used. */
+  #consent { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: flex; align-items: flex-end; }
+  #consent .box { background: #fff; width: 100%; padding: 16px 24px; }
+</style></head>
+<body>
+  <div id="result" role="status"></div>
+  <h1>Email preferences</h1>
+  <p>Choose which emails Fieldnote sends you.</p>
+  <form id="prefs">
+    <label><input type="checkbox" name="Product news" checked> Product news</label>
+    <label><input type="checkbox" name="Weekly digest"> Weekly digest</label>
+    <label><input type="checkbox" name="Event invitations"> Event invitations</label>
+    <label><input type="checkbox" name="Tips and tutorials" checked> Tips and tutorials</label>
+    <button type="submit">Save preferences</button>
+  </form>
+  <div id="consent">
+    <div class="box">
+      <h2>We value your privacy</h2>
+      <p>We use cookies to run this site and, with your consent, to measure how it is used.</p>
+      <button type="button" data-choice="all">Accept all</button>
+      <button type="button" data-choice="necessary">Only necessary</button>
+    </div>
+  </div>
+<script>
+  const INITIAL = Object.fromEntries([...document.querySelectorAll("#prefs input")].map((i) => [i.name, i.checked]));
+  window.INITIAL = INITIAL;
+  for (const button of document.querySelectorAll("#consent button")) {
+    button.addEventListener("click", () => {
+      document.body.dataset.consent = button.dataset.choice;
+      document.getElementById("consent").remove();
+    });
+  }
+  document.getElementById("prefs").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const saved = Object.fromEntries([...document.querySelectorAll("#prefs input")].map((i) => [i.name, i.checked]));
+    document.body.dataset.saved = JSON.stringify(saved);
+    document.getElementById("result").textContent = "Preferences saved";
+  });
+</script>
+</body>
+</html>

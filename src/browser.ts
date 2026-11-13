@@ -134,19 +134,24 @@ const SETTLE = `new Promise(resolve => {
   check();
 })`;
 // Node ids are code-owned references to observed elements, never model output.
+// Where to click an observed element, or why not: gone, disabled, hidden, read-only, outside the viewport, or
+// covered (with what covers it).
 const RESOLVE_TARGET = `(action => {
   const c=window.__browserLab, e=c?.nodes.get(action.node);
-  if (!e?.isConnected || e.matches(':disabled') || c.closest(e,'[aria-disabled="true"],[inert]') ||
-      !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
-  if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
+  if (!e?.isConnected) return {reason:'gone'};
+  if (e.matches(':disabled') || c.closest(e,'[aria-disabled="true"],[inert]')) return {reason:'disabled'};
+  if (!e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return {reason:'hidden'};
+  if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return {reason:'read_only'};
   // The center of the whole box first. An inline element that wraps can leave that center between its lines,
   // so the center of each line box is tried next.
+  let covered=null;
   for (const r of [e.getBoundingClientRect(), ...e.getClientRects()]) {
     const x=r.x+r.width/2, y=r.y+r.height/2;
     if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
     if (c.hit(e,x,y)) return {x,y};
+    covered ??= c.cover(x,y);
   }
-  return null;
+  return covered ? {reason:'covered', cover:covered} : {reason:'outside'};
 })`;
 // Scrolls an observed element into the middle of the viewport. It never clicks or types.
 const REVEAL = `(node => {
@@ -403,6 +408,29 @@ export class Browser {
     return (await this.evaluate(LIST_END)) ?? null;
   }
 
+  /**
+   * Where to click the action's element. When it is covered or outside the viewport, it is scrolled to the
+   * middle once and tried again: a sticky header or a fixed bar often covers an element near an edge. Otherwise
+   * StalePage, saying what covers it, so Jev can deal with that first. Nothing is clicked or typed here.
+   */
+  private async target(action: Action): Promise<{ x: number; y: number }> {
+    const resolve = async () =>
+      (await this.evaluate(`${RESOLVE_TARGET}(${JSON.stringify(action)})`)) as
+        | { x: number; y: number }
+        | { reason: string; cover?: string };
+    let found = await resolve();
+    if ("reason" in found && (found.reason === "covered" || found.reason === "outside")) {
+      await this.evaluate(`${REVEAL}(${JSON.stringify(action.node)})`);
+      await sleep(100);
+      found = await resolve();
+    }
+    if (!("reason" in found)) return found;
+    if (found.reason === "covered") {
+      throw new StalePage(`Target is covered by ${found.cover}; deal with that first`, ["target_covered"]);
+    }
+    throw new StalePage(`Target is ${found.reason.replace("_", "-")}`, [`target_${found.reason}`]);
+  }
+
   /** Execute once. StalePage means nothing happened; MutationUncertain means do not retry. */
   async act(action: Action, page: Page, text: string | null = null): Promise<void> {
     const changed = await this.staleParts(page, action);
@@ -418,10 +446,7 @@ export class Browser {
       return;
     }
     let target: { x: number; y: number } | null = null;
-    if (kind !== "scroll") {
-      target = await this.evaluate(`${RESOLVE_TARGET}(${JSON.stringify(action)})`);
-      if (target === null) throw new StalePage("Target changed or is covered", ["target_covered_or_moved"]);
-    }
+    if (kind !== "scroll") target = await this.target(action);
     try {
       if (kind === "scroll") {
         await this.call("Input.dispatchMouseEvent", {

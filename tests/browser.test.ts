@@ -14,7 +14,7 @@ import { Recorder } from "../src/metrics.ts";
 import { actionSpace, modelState, valueChoices } from "../src/policies/base.ts";
 import { buildQuestions, estimateTokens, type Fetch, JevPolicy } from "../src/policies/jev.ts";
 import { ScriptedPolicy } from "../src/policies/scripted.ts";
-import { type Action, type Page, StalePage } from "../src/types.ts";
+import { type Action, type HistoryEntry, type Page, StalePage } from "../src/types.ts";
 import { ROOT, tmpPath } from "./helpers.ts";
 
 const task = await loadTask("hotel_filter");
@@ -655,4 +655,52 @@ test("order_signin: the cart can be filled, the order only behind a sign-in no o
     success: true,
     evidence: { cart: ["Moss Towel 23"], signin_tried: false },
   });
+});
+
+test("a covered target does not run, and Jev is told what covers it; closing the cover lets it run", async () => {
+  const wall = await loadTask("cookie_wall");
+  await browser.close();
+  await open(wall.startUrl(ROOT));
+  const plan = { goal: wall.GOAL, steps: [], values: [] };
+  const log = join(tmpPath(), "run.jsonl");
+  const recorder = new Recorder(log);
+  const history: HistoryEntry[] = [];
+  const first = await runAgent(
+    browser,
+    new ScriptedPolicy([{ operation: "CLICK", label: "Weekly digest" }]),
+    plan,
+    recorder,
+    new Budget(),
+    { history },
+  );
+  // The scripted chooser moves on after a refused step; what matters is the refusal and what Jev is told.
+  expect(first.actions).toBe(0);
+  expect(history[0].action).toContain('did not run: Target is covered by a fixed div "We value your privacy"');
+  const result = await runAgent(browser, new ScriptedPolicy(wall.SCRIPT), plan, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect((await wall.verify(browser)).success).toBe(true);
+  const stale = readFileSync(log, "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l))
+    .filter((e) => e.type === "stale");
+  expect(stale[0].changed).toEqual(["target_covered"]);
+});
+
+test("a target under a sticky header is scrolled to the middle once, then clicked", async () => {
+  const file = join(tmpPath(), "sticky.html");
+  writeFileSync(
+    file,
+    `<style>header{position:sticky;top:0;height:240px;background:#eee}main{height:3000px}</style>
+     <header>Site</header><main><p style="margin-top:900px"><button onclick="document.title='pressed'">Go</button></p></main>`,
+  );
+  await browser.close();
+  await open(pathToFileURL(file).href);
+  // Scroll so the button sits just under the top edge, where the header covers it.
+  await browser.evaluate("scrollTo(0, document.querySelector('button').getBoundingClientRect().top + scrollY - 120)");
+  const page = await browser.observe();
+  const go = find(page, (a) => a.label === "Go");
+  await browser.act(go, page);
+  expect(await browser.evaluate("document.title")).toBe("pressed");
 });
