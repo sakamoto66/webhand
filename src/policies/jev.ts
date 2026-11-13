@@ -56,14 +56,27 @@ export type Fetch = (
 // biome-ignore lint/suspicious/noExplicitAny: Jev's response is validated field by field.
 type Json = any;
 
+/** The start of Jev's error body, for the run log. */
+const ERROR_CHARS = 500;
+
+async function errorBody(response: Awaited<ReturnType<Fetch>>): Promise<string | null> {
+  try {
+    const body = await response.json();
+    return (typeof body === "string" ? body : JSON.stringify(body)).slice(0, ERROR_CHARS);
+  } catch {
+    return null;
+  }
+}
+
 async function postJson(fetchJson: Fetch, key: string, body: unknown): Promise<Json> {
+  const request = toJson(body);
   for (let attempt = 0; attempt < 3; attempt++) {
     let response: Awaited<ReturnType<Fetch>>;
     try {
       response = await fetchJson(URL, {
         method: "POST",
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: toJson(body),
+        body: request,
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
     } catch {
@@ -73,7 +86,13 @@ async function postJson(fetchJson: Fetch, key: string, body: unknown): Promise<J
       await sleep(500 * 2 ** attempt);
       continue;
     }
-    if (response.status >= 400) throw new PolicyError(`Jev returned HTTP ${response.status}; no action executed.`);
+    if (response.status >= 400) {
+      throw new PolicyError(`Jev returned HTTP ${response.status}; no action executed.`, {
+        http_status: response.status,
+        request_chars: request.length,
+        error: await errorBody(response),
+      });
+    }
     try {
       return await response.json();
     } catch {

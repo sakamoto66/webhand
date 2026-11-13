@@ -93,6 +93,17 @@ test("a Jev HTTP error is a policy error", async () => {
   await expect(jevPolicy(() => ({ status: 401 })).policy.choose(PAGE, PLAN, [])).rejects.toThrow(/HTTP 401/);
 });
 
+test("a Jev HTTP error keeps the status, the request size and the start of the error body", async () => {
+  const { policy, sent } = jevPolicy(() => ({ status: 400, body: { error: { message: "x".repeat(600) } } }));
+  const error = (await policy.choose(PAGE, PLAN, []).catch((e: unknown) => e)) as PolicyError;
+  expect(error.message).toBe("Jev returned HTTP 400; no action executed.");
+  const diagnostic = error.diagnostic as Record<string, unknown>;
+  expect(diagnostic.http_status).toBe(400);
+  expect(diagnostic.request_chars).toBe(JSON.stringify(sent[0].body).length);
+  expect(String(diagnostic.error)).toMatch(/^\{"error":\{"message":"x+$/);
+  expect(String(diagnostic.error)).toHaveLength(500);
+});
+
 test("a busy Jev is asked at most three times", async () => {
   let count = 0;
   const { policy } = jevPolicy(() => {

@@ -215,6 +215,8 @@ export interface AgentResult {
   decisions: number;
   elapsed_ms: number;
   field?: Record<string, unknown>;
+  /** Why Jev refused (JEV_FAILED), for the run log only. */
+  jev?: Record<string, unknown>;
 }
 
 /** Runs one attempt until an outcome above. history is extended in place. */
@@ -336,7 +338,7 @@ export async function runAgent(
         }
         onChange(page);
       } else if (error instanceof PolicyError) {
-        return finish(JEV_FAILED, error.message);
+        return finish(JEV_FAILED, error.message, error.diagnostic ? { jev: error.diagnostic } : {});
       } else if (error instanceof MutationUncertain) {
         return finish(UNCERTAIN, `mutation uncertain: ${error.message}`);
       } else {

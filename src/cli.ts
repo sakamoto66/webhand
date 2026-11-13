@@ -268,6 +268,11 @@ function defaultLog(name: string): string {
 
 // --- Commands ------------------------------------------------------------------------------
 
+/** Why Jev refused, for the run log only. */
+function jevDiagnostic(error: Error): { jev?: Record<string, unknown> } {
+  return error instanceof PolicyError && error.diagnostic ? { jev: error.diagnostic } : {};
+}
+
 /** The snapshot's view: learned and Claude's regions, and with flow v2, the whole page. */
 function browserView(state: session.State): ViewChoice | null {
   const view = (state.view ?? null) as ViewChoice | null;
@@ -587,7 +592,11 @@ async function commandRun(args: Args): Promise<number> {
         if (error instanceof MutationUncertain) return uncertain(error, "compare");
         if (!(error instanceof PolicyError || error instanceof StalePage)) throw error;
         // Only scrolls happened. The attempt goes on; run again, or replan.
-        recorder.event("compare_failed", { attempt: state.plan.attempt, error: error.message });
+        recorder.event("compare_failed", {
+          attempt: state.plan.attempt,
+          error: error.message,
+          ...jevDiagnostic(error),
+        });
         print(`COMPARE FAILED: ${error.message} Nothing was clicked or typed. Run again, or replan`);
         return FAILED;
       }
@@ -607,7 +616,11 @@ async function commandRun(args: Args): Promise<number> {
       } catch (error) {
         if (error instanceof MutationUncertain) return uncertain(error, "collect");
         if (!(error instanceof PolicyError || error instanceof StalePage)) throw error;
-        recorder.event("collect_failed", { attempt: state.plan.attempt, error: error.message });
+        recorder.event("collect_failed", {
+          attempt: state.plan.attempt,
+          error: error.message,
+          ...jevDiagnostic(error),
+        });
         print(`COLLECT FAILED: ${error.message} Nothing was clicked or typed. Run again, or replan`);
         return FAILED;
       }
@@ -637,7 +650,12 @@ async function commandRun(args: Args): Promise<number> {
     });
     state.page = result.page;
     state.outcome = result.outcome;
-    recorder.event("escalation", { reason: result.outcome, attempt: state.plan.attempt, detail: result.detail });
+    recorder.event("escalation", {
+      reason: result.outcome,
+      attempt: state.plan.attempt,
+      detail: result.detail,
+      ...(result.jev ? { jev: result.jev } : {}),
+    });
     if (agent.CHECKED_OUTCOMES.includes(result.outcome)) {
       await agent.checkPage(browser, recorder, "escalation", state.plan.attempt, result.page.url);
     }

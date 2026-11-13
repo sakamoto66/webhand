@@ -8,6 +8,12 @@ export type Action = Record<string, any>;
 /** The model gave no usable decision. Nothing was executed. */
 export class PolicyError extends Error {
   override name = "PolicyError";
+  /** Why the model refused, for the run log only (such as Jev's HTTP status, request size and error body). */
+  readonly diagnostic: Record<string, unknown> | null;
+  constructor(message: string, diagnostic: Record<string, unknown> | null = null) {
+    super(message);
+    this.diagnostic = diagnostic;
+  }
 }
 
 /** A decision no longer refers to the observed page. Nothing was executed. */
