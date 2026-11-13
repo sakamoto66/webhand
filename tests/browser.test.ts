@@ -613,3 +613,26 @@ test("v2: a whole page over Jev's token limit is fitted; the target a few screen
   expect(calls[0].dropped_elements).toBeGreaterThan(0);
   expect((await catalog.verify(browser)).success).toBe(true);
 });
+
+test("item_moved: the old link offers nothing; the shop's home page, learned as a service, finds the item", async () => {
+  const moved = await loadTask("item_moved");
+  await browser.close();
+  await open(moved.startUrl(ROOT));
+  const plan = { goal: moved.GOAL, steps: [], values: [] };
+  const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
+  expect((await runAgent(browser, new ScriptedPolicy(moved.SCRIPT), plan, recorder)).outcome).toBe("BLOCKED");
+  const offered = (await browser.observe()).actions.filter((a: Action) => a.kind !== "wait");
+  expect(offered).toEqual([]);
+  await browser.close();
+  await open(pathToFileURL(join(ROOT, "tasks", "fixtures", "kinari_shop.html")).href);
+  const script = [
+    { operation: "TYPE_TEXT", label: "Search the shop", text: "Moss Towel 23" },
+    { operation: "CLICK", label: "Find" },
+    { operation: "CLICK", label: "Add Moss Towel 23 to cart" },
+  ];
+  const values = [{ label: "Search", value: "Moss Towel 23" }];
+  const result = await runAgent(browser, new ScriptedPolicy(script), { ...plan, values }, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect((await moved.verify(browser)).success).toBe(true);
+});
