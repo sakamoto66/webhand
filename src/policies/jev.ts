@@ -34,6 +34,7 @@ import {
   NOT_VISIBLE,
   NOT_VISIBLE_HELP,
   OPERATION_HELP,
+  OPERATIONS,
   planText,
   READ_RULES,
   resolve,
@@ -129,6 +130,60 @@ export function validateChoice(answer: Json, ids: Iterable<string>): Json {
 }
 
 const NO_VALUE = "NONE";
+
+// Jev refuses a request over its token limit (HTTP 400 max_tokens_exceeded; requests of about 40k tokens
+// passed, 2026-11-13) and a question with more than 255 choices (HTTP 422). The estimate counts high, so a
+// request within the budget is no larger than ones Jev has taken.
+const TOKEN_BUDGET = 40_000;
+const MAX_CHOICES = 255;
+
+/** A cautious token count: about 3 characters a token for ASCII, a token for each other character (such as CJK). */
+export function estimateTokens(text: string): number {
+  let ascii = 0;
+  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) < 128) ascii++;
+  return Math.ceil(ascii / 3) + (text.length - ascii);
+}
+
+function fits(body: unknown, questions: Record<string, unknown>): boolean {
+  for (const question of Object.values(questions)) {
+    const criteria = (question as { criteria: Map<string, unknown> | Record<string, unknown> }).criteria;
+    if ((criteria instanceof Map ? criteria.size : Object.keys(criteria).length) > MAX_CHOICES) return false;
+  }
+  return estimateTokens(toJson(body)) <= TOKEN_BUDGET;
+}
+
+const pixels = (action: Action): number => Number(/(\d+)px/.exec(String(action.at ?? ""))?.[1] ?? 0);
+
+/**
+ * Asks about the page as observed when the request fits Jev's limits. Otherwise elements are left out until it
+ * fits: beyond the viewport the farthest first, then those in view from the end of the page. Controls (wait,
+ * scroll, reveal) stay. Jev can still answer NOT_VISIBLE, and nothing left out can be chosen.
+ */
+function fitChoose<T extends { body: unknown; questions: Record<string, unknown> }>(
+  page: Page,
+  build: (page: Page) => T,
+): T & { page: Page; dropped: number } {
+  let built = build(page);
+  if (fits(built.body, built.questions)) return { ...built, page, dropped: 0 };
+  const nodes = new Map<unknown, { offscreen: boolean; distance: number; order: number }>();
+  for (const action of page.actions) {
+    if (!(action.kind in OPERATIONS) || nodes.has(action.node)) continue;
+    nodes.set(action.node, { offscreen: Boolean(action.offscreen), distance: pixels(action), order: nodes.size });
+  }
+  const order = [...nodes].sort(
+    ([, a], [, b]) => Number(b.offscreen) - Number(a.offscreen) || b.distance - a.distance || b.order - a.order,
+  );
+  const left = new Set<unknown>();
+  let asked = page;
+  while (left.size < order.length) {
+    const step = Math.max(1, Math.ceil((order.length - left.size) / 10));
+    for (const [node] of order.slice(left.size, left.size + step)) left.add(node);
+    asked = { ...page, actions: page.actions.filter((a: Action) => !(a.kind in OPERATIONS && left.has(a.node))) };
+    built = build(asked);
+    if (fits(built.body, built.questions)) break;
+  }
+  return { ...built, page: asked, dropped: left.size };
+}
 
 /** Claude's plan travels with every question, not only in the state. */
 function taskBrief(plan: Plan): Record<string, unknown> {
@@ -315,7 +370,7 @@ export class JevPolicy implements Policy {
     return keys;
   }
 
-  private async post(body: unknown, purpose: string): Promise<Json> {
+  private async post(body: unknown, purpose: string, extra: Partial<ModelCall> = {}): Promise<Json> {
     const started = performance.now();
     const result = await postJson(this.fetchJson, this.key, body);
     const isObject = result && typeof result === "object" && !Array.isArray(result);
@@ -332,15 +387,23 @@ export class JevPolicy implements Policy {
         "output_tokens" in usage ? usage.output_tokens : (usage.completion_tokens ?? null),
       ),
     );
+    Object.assign(this.calls[this.calls.length - 1], extra);
     return isObject ? result : {};
   }
 
-  async choose(page: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {
-    const [, targets, controls] = actionSpace(page.actions);
+  async choose(whole: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {
     const values = valueChoices(plan);
-    const [questions, operations] = buildQuestions(plan, targets, controls, values, Boolean(page.read));
-    const body = { model: this.model, state: modelState(page, history, plan), questions };
-    const result = await this.post(body, "choose");
+    const { page, targets, operations, body, dropped } = fitChoose(whole, (page) => {
+      const [, targets, controls] = actionSpace(page.actions);
+      const [questions, operations] = buildQuestions(plan, targets, controls, values, Boolean(page.read));
+      return {
+        targets,
+        questions,
+        operations,
+        body: { model: this.model, state: modelState(page, history, plan), questions },
+      };
+    });
+    const result = await this.post(body, "choose", dropped ? { dropped_elements: dropped } : {});
     const answers = result.answers || {};
     const operationAnswer = validateChoice(answers.operation ?? {}, Object.keys(operations));
     const operation: string = operationAnswer.choice;

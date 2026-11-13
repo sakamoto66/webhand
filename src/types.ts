@@ -45,6 +45,8 @@ export interface ModelCall {
   latency_ms: number;
   input_tokens: number | null;
   output_tokens: number | null;
+  /** Elements left out so the request fits Jev's limits, when any were */
+  dropped_elements?: number;
 }
 
 export function modelCall(
