@@ -52,7 +52,7 @@ webhand start --goal "..." --url "..." --step "..." --step "[person] Sign in" --
 webhand run
 ```
 
-Add `--headed` when there are `[person]` steps or the user wants to watch. With `--runbook`, `--goal`, `--url`, and the steps come from the runbook unless you give them.
+Add `--headed` when there are `[person]` steps, when the goal may stop at something only the user can do (signing in, paying, a CAPTCHA, as an order or an account page often does), or when the user wants to watch. Without it the user cannot see the window to do their part. With `--runbook`, `--goal`, `--url`, and the steps come from the runbook unless you give them.
 
 `run` returns only on one of these:
 
