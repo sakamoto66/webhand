@@ -3,6 +3,9 @@
  *
  * The start URL is an old link to the item; it shows only "Sorry, this page is not available", with no link or
  * search. The learned service kinari lists the shop's home page, whose search finds the item. No network.
+ *
+ * The home page is research/sites/kinari_shop.html, outside tasks/: research sessions are refused any command
+ * that names tasks/, and replan --url must be able to open it.
  */
 
 import { join } from "node:path";

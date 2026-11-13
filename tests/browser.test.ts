@@ -624,7 +624,7 @@ test("item_moved: the old link offers nothing; the shop's home page, learned as 
   const offered = (await browser.observe()).actions.filter((a: Action) => a.kind !== "wait");
   expect(offered).toEqual([]);
   await browser.close();
-  await open(pathToFileURL(join(ROOT, "tasks", "fixtures", "kinari_shop.html")).href);
+  await open(pathToFileURL(join(ROOT, "research", "sites", "kinari_shop.html")).href);
   const script = [
     { operation: "TYPE_TEXT", label: "Search the shop", text: "Moss Towel 23" },
     { operation: "CLICK", label: "Find" },

@@ -1,8 +1,8 @@
-# The local shop fixture (tasks/fixtures/kinari_shop.html). No network, no orders.
+# The local shop fixture (research/sites/kinari_shop.html). No network, no orders.
 service = "kinari"
 description = "A local shop: search for an item from the home page and add it to the cart."
-base_url = "tasks/fixtures/kinari_shop.html"
-sources = ["code:tasks/fixtures/kinari_shop.html"]
+base_url = "research/sites/kinari_shop.html"
+sources = ["code:research/sites/kinari_shop.html"]
 
 facts = [
   "The home page shows a few featured items; Find, next to Search the shop, finds any item by its name.",
@@ -12,5 +12,5 @@ facts = [
 required = false
 
 [[pages]]
-url = "tasks/fixtures/kinari_shop.html"
+url = "research/sites/kinari_shop.html"
 purpose = "Home: the shop's search, featured items, and search results with Add to cart"
