@@ -47,6 +47,8 @@ export interface ModelCall {
   output_tokens: number | null;
   /** Elements left out so the request fits Jev's limits, when any were */
   dropped_elements?: number;
+  /** The lowered token budget the request was fitted to, after Jev refused one over its limit */
+  token_budget?: number;
 }
 
 export function modelCall(

@@ -182,8 +182,35 @@ test("over the token budget, elements in view are left out from the end", async 
   expect(clickChoices(sent[0].body)).toContain("NOT_VISIBLE");
 });
 
-test("tokens are counted cautiously: about 3 ASCII characters, or 1 other character, a token", () => {
-  expect([estimateTokens("abcdef"), estimateTokens("商品"), estimateTokens("ab商")]).toEqual([2, 2, 2]);
+test("tokens are estimated at about 3 ASCII characters a token and 1.5 tokens for each other character", () => {
+  expect([estimateTokens("abcdef"), estimateTokens("商品"), estimateTokens("ab商")]).toEqual([2, 3, 3]);
+});
+
+const overLimit = { status: 400, body: { detail: { error_type: "max_tokens_exceeded" } } };
+
+test("refused over its limit, the request is fitted again to a lower budget, which the run keeps", async () => {
+  let refusals = 1;
+  const { policy, sent } = jevPolicy((request) => (refusals-- > 0 ? overLimit : clickTwo(request)));
+  const decision = await policy.choose(bigPage(5, 200), PLAN, []);
+  expect(decision.action?.label).toBe("Item 2");
+  expect(sent).toHaveLength(2);
+  const sizes = sent.map((s) => estimateTokens(JSON.stringify(s.body)));
+  expect(sizes[1]).toBeLessThanOrEqual(Math.floor(sizes[0] * 0.6));
+  expect(policy.calls[0].token_budget).toBe(Math.floor(sizes[0] * 0.6));
+  await policy.choose(bigPage(5, 200), PLAN, []);
+  expect(estimateTokens(JSON.stringify(sent[2].body))).toBeLessThanOrEqual(sizes[1]);
+});
+
+test("refused over its limit three times, Jev's refusal stands and nothing is chosen", async () => {
+  const { policy, sent } = jevPolicy(() => overLimit);
+  await expect(policy.choose(bigPage(5, 200), PLAN, [])).rejects.toThrow(/HTTP 400/);
+  expect(sent).toHaveLength(3);
+});
+
+test("another HTTP 400 is not fitted again", async () => {
+  const { policy, sent } = jevPolicy(() => ({ status: 400, body: { detail: "bad" } }));
+  await expect(policy.choose(bigPage(5, 200), PLAN, [])).rejects.toThrow(/HTTP 400/);
+  expect(sent).toHaveLength(1);
 });
 
 test("a busy Jev is asked at most three times", async () => {

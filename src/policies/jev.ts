@@ -131,25 +131,29 @@ export function validateChoice(answer: Json, ids: Iterable<string>): Json {
 
 const NO_VALUE = "NONE";
 
-// Jev refuses a request over its token limit (HTTP 400 max_tokens_exceeded; requests of about 40k tokens
-// passed, 2026-11-13) and a question with more than 255 choices (HTTP 422). The estimate counts high, so a
-// request within the budget is no larger than ones Jev has taken.
+// Jev refuses a request over its token limit (HTTP 400 max_tokens_exceeded) and a question with more than 255
+// choices (HTTP 422), found 2026-11-13. Requests of about 40k tokens passed. Jev's tokenizer is not known, and
+// Japanese counted higher than estimated (round 17), so a refusal over the limit lowers the budget and the
+// request is fitted again; nothing runs in the browser in between.
 const TOKEN_BUDGET = 40_000;
 const MAX_CHOICES = 255;
+const OVER_LIMIT = "max_tokens_exceeded";
+const FIT_TRIES = 3;
+const SHRINK = 0.6;
 
-/** A cautious token count: about 3 characters a token for ASCII, a token for each other character (such as CJK). */
+/** A rough token count: about 3 characters a token for ASCII, 1.5 tokens for each other character (such as CJK). */
 export function estimateTokens(text: string): number {
   let ascii = 0;
   for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) < 128) ascii++;
-  return Math.ceil(ascii / 3) + (text.length - ascii);
+  return Math.ceil(ascii / 3 + (text.length - ascii) * 1.5);
 }
 
-function fits(body: unknown, questions: Record<string, unknown>): boolean {
+function fits(body: unknown, questions: Record<string, unknown>, budget: number): boolean {
   for (const question of Object.values(questions)) {
     const criteria = (question as { criteria: Map<string, unknown> | Record<string, unknown> }).criteria;
     if ((criteria instanceof Map ? criteria.size : Object.keys(criteria).length) > MAX_CHOICES) return false;
   }
-  return estimateTokens(toJson(body)) <= TOKEN_BUDGET;
+  return estimateTokens(toJson(body)) <= budget;
 }
 
 const pixels = (action: Action): number => Number(/(\d+)px/.exec(String(action.at ?? ""))?.[1] ?? 0);
@@ -162,9 +166,10 @@ const pixels = (action: Action): number => Number(/(\d+)px/.exec(String(action.a
 function fitChoose<T extends { body: unknown; questions: Record<string, unknown> }>(
   page: Page,
   build: (page: Page) => T,
+  budget: number,
 ): T & { page: Page; dropped: number } {
   let built = build(page);
-  if (fits(built.body, built.questions)) return { ...built, page, dropped: 0 };
+  if (fits(built.body, built.questions, budget)) return { ...built, page, dropped: 0 };
   const nodes = new Map<unknown, { offscreen: boolean; distance: number; order: number }>();
   for (const action of page.actions) {
     if (!(action.kind in OPERATIONS) || nodes.has(action.node)) continue;
@@ -180,7 +185,7 @@ function fitChoose<T extends { body: unknown; questions: Record<string, unknown>
     for (const [node] of order.slice(left.size, left.size + step)) left.add(node);
     asked = { ...page, actions: page.actions.filter((a: Action) => !(a.kind in OPERATIONS && left.has(a.node))) };
     built = build(asked);
-    if (fits(built.body, built.questions)) break;
+    if (fits(built.body, built.questions, budget)) break;
   }
   return { ...built, page: asked, dropped: left.size };
 }
@@ -312,6 +317,8 @@ export class JevPolicy implements Policy {
   readonly model: string;
   private readonly fetchJson: Fetch;
   private readonly agent: Agent | null;
+  /** Lowered for the rest of the run when Jev refuses a request over its limit. */
+  private budget = TOKEN_BUDGET;
 
   constructor(options: { fetch?: Fetch } = {}) {
     const key = process.env.TYPESAFE_API_KEY;
@@ -393,7 +400,7 @@ export class JevPolicy implements Policy {
 
   async choose(whole: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {
     const values = valueChoices(plan);
-    const { page, targets, operations, body, dropped } = fitChoose(whole, (page) => {
+    const build = (page: Page) => {
       const [, targets, controls] = actionSpace(page.actions);
       const [questions, operations] = buildQuestions(plan, targets, controls, values, Boolean(page.read));
       return {
@@ -402,8 +409,23 @@ export class JevPolicy implements Policy {
         operations,
         body: { model: this.model, state: modelState(page, history, plan), questions },
       };
-    });
-    const result = await this.post(body, "choose", dropped ? { dropped_elements: dropped } : {});
+    };
+    let fitted = fitChoose(whole, build, this.budget);
+    let result: Json;
+    for (let tries = 1; ; tries++) {
+      const extra: Partial<ModelCall> = fitted.dropped ? { dropped_elements: fitted.dropped } : {};
+      if (this.budget !== TOKEN_BUDGET) extra.token_budget = this.budget;
+      try {
+        result = await this.post(fitted.body, "choose", extra);
+        break;
+      } catch (error) {
+        const over = error instanceof PolicyError && String(error.diagnostic?.error ?? "").includes(OVER_LIMIT);
+        if (!over || tries >= FIT_TRIES) throw error;
+        this.budget = Math.floor(estimateTokens(toJson(fitted.body)) * SHRINK);
+        fitted = fitChoose(whole, build, this.budget);
+      }
+    }
+    const { page, targets, operations } = fitted;
     const answers = result.answers || {};
     const operationAnswer = validateChoice(answers.operation ?? {}, Object.keys(operations));
     const operation: string = operationAnswer.choice;
