@@ -5,11 +5,14 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { loadTask } from "../research/tasks.ts";
 import { Budget, runAgent } from "../src/agent.ts";
 import { Browser, SETTLE_CAP_MS, type ViewChoice } from "../src/browser.ts";
+import { toJson } from "../src/format.ts";
 import { Recorder } from "../src/metrics.ts";
+import { actionSpace, modelState, valueChoices } from "../src/policies/base.ts";
+import { buildQuestions, estimateTokens, type Fetch, JevPolicy } from "../src/policies/jev.ts";
 import { ScriptedPolicy } from "../src/policies/scripted.ts";
 import { type Action, type Page, StalePage } from "../src/types.ts";
 import { ROOT, tmpPath } from "./helpers.ts";
@@ -560,4 +563,53 @@ test("v2 tells what kind of page it is", async () => {
     "document.body.append(Object.assign(document.createElement('div'), {className: 'g-recaptcha'}))",
   );
   expect((await browser.observe()).status).toMatchObject({ kind: "check", signs: ["recaptcha"] });
+});
+
+test("v2: a whole page over Jev's token limit is fitted; the target a few screens down stays offered", {
+  timeout: 60_000,
+}, async () => {
+  const catalog = await loadTask("catalog_big");
+  await browser.close();
+  await open(catalog.startUrl(ROOT), { whole: true });
+  const plan = { goal: catalog.GOAL, steps: [], values: [], flow: "v2" as const };
+  const page = await browser.observe();
+  const [, targets, controls] = actionSpace(page.actions);
+  const [questions] = buildQuestions(plan, targets, controls, valueChoices(plan));
+  const whole = toJson({ model: "jev", state: modelState(page, [], plan), questions });
+  expect(estimateTokens(whole)).toBeGreaterThan(60_000);
+  const sent: string[] = [];
+  // Jev presses the target when it is offered, then reports the goal.
+  const fetch: Fetch = async (_url, init) => {
+    sent.push(init.body);
+    const request = JSON.parse(init.body);
+    const pick = (criteria: Record<string, unknown>, choice: string) => ({
+      choice,
+      confidence: 0.9,
+      probabilities: Object.fromEntries(Object.keys(criteria).map((k) => [k, k === choice ? 1 : 0])),
+    });
+    const offered = Object.entries(request.questions.click_target.criteria).find(([, c]) =>
+      JSON.stringify(c).includes("Add Moss Towel 23 to cart"),
+    );
+    const done = sent.length > 1;
+    const answers = {
+      operation: pick(request.questions.operation.criteria, done ? "DONE" : offered ? "CLICK" : "NEEDS_HUMAN"),
+      click_target: pick(request.questions.click_target.criteria, offered && !done ? offered[0] : "NOT_VISIBLE"),
+    };
+    return { status: 200, json: async () => ({ model: "jev", usage: {}, answers }) };
+  };
+  vi.stubEnv("TYPESAFE_API_KEY", "test");
+  const policy = new JevPolicy({ fetch });
+  const log = join(tmpPath(), "run.jsonl");
+  const recorder = new Recorder(log);
+  const result = await runAgent(browser, policy, plan, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect(estimateTokens(sent[0])).toBeLessThanOrEqual(40_000);
+  const calls = readFileSync(log, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .filter((e) => e.type === "call");
+  expect(calls[0].dropped_elements).toBeGreaterThan(0);
+  expect((await catalog.verify(browser)).success).toBe(true);
 });

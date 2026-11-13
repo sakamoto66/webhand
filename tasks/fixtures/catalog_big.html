@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><title>Kinari · Catalog</title>
+<style>
+  body { font: 15px/1.6 system-ui, sans-serif; margin: 0 auto; max-width: 860px; padding: 0 24px; }
+  #result { position: fixed; top: 0; right: 24px; background: #ffe; padding: 4px 12px; }
+  article { border-bottom: 1px solid #ddd; padding: 12px 0; }
+  article a { color: inherit; display: block; text-decoration: none; }
+  article a strong { font-size: 17px; }
+  article p { margin: 4px 0; color: #444; }
+</style></head>
+<body>
+  <div id="result" role="status"></div>
+  <h1>Catalog</h1>
+  <p>400 items. Each card opens the item; Add to cart adds one to the cart.</p>
+  <main id="list"></main>
+<script>
+  // A long catalog: every card is a link whose name includes its description, as many shops do.
+  const colors = ["Linen", "Indigo", "Oat", "Charcoal", "Sage", "Rust", "Ivory", "Moss"];
+  const kinds = ["Shirt", "Apron", "Tote", "Scarf", "Cushion", "Towel", "Pouch", "Throw"];
+  const phrases = [
+    "天然素材を使い、職人が一点ずつ丁寧に仕上げました。", "洗うほどに風合いが増し、長く使えます。",
+    "季節を問わず使える、やわらかな肌ざわりです。", "自然な色味で、どんな部屋にもなじみます。",
+    "軽くて丈夫なので、毎日の暮らしに向いています。", "縫製は国内の工房で行っています。",
+    "化学染料を使わず、植物で染めています。", "サイズと色は写真と少し異なる場合があります。",
+  ];
+  const list = document.getElementById("list");
+  for (let i = 1; i <= 400; i++) {
+    const name = `${colors[i % 8]} ${kinds[(i * 3) % 8]} ${i}`;
+    const description = Array.from({ length: 14 }, (_, k) => phrases[(i + k) % 8]).join("");
+    const card = document.createElement("article");
+    card.innerHTML = `<a href="#item-${i}"><strong>${name}</strong><p>${description}</p></a>` +
+      `<button type="button" aria-label="Add ${name} to cart">Add to cart</button>`;
+    card.querySelector("button").addEventListener("click", () => {
+      const cart = JSON.parse(document.body.dataset.cart ?? "[]");
+      cart.push(name);
+      document.body.dataset.cart = JSON.stringify(cart);
+      document.getElementById("result").textContent = `Added ${name} to the cart`;
+    });
+    list.append(card);
+  }
+</script>
+</body>
+</html>
