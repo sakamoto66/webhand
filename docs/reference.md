@@ -87,7 +87,7 @@ If the CLI is not installed globally, read `webhand` in the table below as `npx 
 | `webhand catalog` | Claude | Lists learned services, runbooks, and saved profiles |
 | `webhand start --goal G --url U --step S ... --value L=V ... --session ...` | Claude | Records the plan and opens the start URL in Chrome |
 | `webhand run` | Jev | Operates the page toward the GOAL |
-| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart]` | Claude | Revises the plan and starts the next attempt |
+| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | Claude | Revises the plan and starts the next attempt, from the start URL again (`--restart`) or from another page (`--url`) |
 | `webhand act OP [TARGET]` | Claude | Performs a single action in Jev's place |
 | `webhand observe` | Claude | Shows the current page |
 | `webhand finish --status STATUS` | Claude | Runs independent verification, writes the log, and closes Chrome |

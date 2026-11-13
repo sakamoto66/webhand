@@ -87,7 +87,7 @@ networkingMode=mirrored
 | `webhand catalog` | Claude | 学習済みのサービス、手順書、保存プロファイルを一覧する |
 | `webhand start --goal G --url U --step S ... --value L=V ... --session ...` | Claude | 計画を記録し、Chrome で開始 URL を開く |
 | `webhand run` | Jev | GOAL まで操作する |
-| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart]` | Claude | 計画を見直して、次の試行を始める |
+| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | Claude | 計画を見直して、次の試行を始める。開始 URL から（`--restart`）、または別のページから（`--url`） |
 | `webhand act OP [TARGET]` | Claude | Jev の代わりに操作を1つ実行する |
 | `webhand observe` | Claude | 現在のページを表示する |
 | `webhand finish --status STATUS` | Claude | 独立検証、ログ記録、Chrome の終了 |

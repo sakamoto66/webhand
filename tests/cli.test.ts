@@ -613,3 +613,27 @@ test("WEBHAND_FLOW sets the default flow; an unknown flow is refused before Chro
   expect((await research("start", "--task", "hotel_filter", "--chrome", "linux")).out).toContain("FLOW: v2");
   expect(session.load()?.plan?.flow).toBe("v2");
 });
+
+test("replan --url opens another page for the next attempt; it is refused with --restart or a bad URL", async () => {
+  await begin();
+  const other = pathToFileURL(join(process.cwd(), "tasks", "fixtures", "dense.html")).href;
+  expect((await cli("replan", "--reason", "x", "--url", other, "--restart")).out).toContain(
+    "REJECTED: use --url or --restart, not both",
+  );
+  expect((await cli("replan", "--reason", "x", "--url", "javascript:alert(1)")).out).toContain(
+    "REJECTED: --url needs an http, https, or file URL, or a local file path",
+  );
+  expect((await cli("replan", "--reason", "x", "--url", "tasks/fixtures/no_such.html")).out).toContain(
+    "REJECTED: --url file not found: tasks/fixtures/no_such.html",
+  );
+  expect(session.load()?.plan.attempt).toBe(1);
+  const replanned = await cli("replan", "--reason", "The start page moved; try the dense page", "--url", other);
+  expect(replanned.code).toBe(OK);
+  const state = session.load() as session.State;
+  expect([state.plan.attempt, state.page?.url]).toEqual([2, other]);
+  expect(events().find((e) => e.type === "plan" && e.attempt === 2)?.url).toBe(other);
+  expect(
+    (await cli("replan", "--reason", "Back by the catalog's path", "--url", "tasks/fixtures/dense.html")).code,
+  ).toBe(OK);
+  expect(session.load()?.page?.url).toBe(other);
+});

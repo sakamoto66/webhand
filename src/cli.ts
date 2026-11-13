@@ -268,6 +268,15 @@ function defaultLog(name: string): string {
 
 // --- Commands ------------------------------------------------------------------------------
 
+/** A URL replan may open: http, https, or file. */
+function openableUrl(url: string): boolean {
+  try {
+    return ["http:", "https:", "file:"].includes(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
+
 /** Why Jev refused, for the run log only. */
 function jevDiagnostic(error: Error): { jev?: Record<string, unknown> } {
   return error instanceof PolicyError && error.diagnostic ? { jev: error.diagnostic } : {};
@@ -683,6 +692,25 @@ async function commandReplan(args: Args): Promise<number> {
     print(`ATTEMPTS EXHAUSTED (${state.max_attempts}). Run: webhand finish --status blocked`);
     return BUDGET;
   }
+  if (args.url && args.restart) {
+    print("REJECTED: use --url or --restart, not both");
+    return FAILED;
+  }
+  let url: string | null = null;
+  if (args.url) {
+    // A path without a scheme is a local file, as the catalog shows a learned page (tasks/fixtures/...).
+    try {
+      url = runbook.resolveUrl(args.url);
+    } catch (error) {
+      if (!(error instanceof runbook.RunbookError)) throw error;
+      print(`REJECTED: ${error.message.replace("start_url", "--url")}`);
+      return FAILED;
+    }
+    if (!openableUrl(url)) {
+      print("REJECTED: --url needs an http, https, or file URL, or a local file path");
+      return FAILED;
+    }
+  }
   if (args.step.length) {
     const steps = parseSteps(args.step);
     if (steps.some((step) => step.actor === "human") && !state.headed) {
@@ -734,10 +762,13 @@ async function commandReplan(args: Args): Promise<number> {
     ...(plan.collect ? { collect: plan.collect } : {}),
     ...(plan.more ? { more: plan.more } : {}),
     restart: args.restart,
+    ...(url ? { url: safeUrl(url) } : {}),
     source: "claude",
   });
-  if (args.restart) await openPage(state, state.start_url, true); // Navigation only; no earlier mutation is repeated.
-  if (!args.restart && viewChanged) await openPage(state); // Observe again with the new regions.
+  // Navigation only; no earlier mutation is repeated.
+  if (url) await openPage(state, url, true);
+  else if (args.restart) await openPage(state, state.start_url, true);
+  else if (viewChanged) await openPage(state); // Observe again with the new regions.
   print(
     `${describePlan(plan, state.view ?? null)}\nATTEMPT ${plan.attempt}/${state.max_attempts}\n${headline(state.page)}`,
   );
@@ -1183,6 +1214,7 @@ function commands(): Record<string, CommandSpec> {
         { name: "step", type: "string", multiple: true, help: "Replace the steps" },
         { name: "value", type: "string", multiple: true, metavar: "LABEL=VALUE" },
         { name: "restart", type: "boolean", help: "Open the start URL again before the next attempt" },
+        { name: "url", type: "string", help: "Open this URL before the next attempt instead (another way in)" },
         ...viewOptions,
         compareOption,
         collectOption,
