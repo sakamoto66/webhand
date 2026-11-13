@@ -704,3 +704,19 @@ test("a target under a sticky header is scrolled to the middle once, then clicke
   await browser.act(go, page);
   expect(await browser.evaluate("document.title")).toBe("pressed");
 });
+
+test("v2 never refuses a scroll or a wait for staleness; v1 does when the page's text has changed", async () => {
+  const signup = await loadTask("signup_ticker");
+  for (const view of [null, { whole: true }]) {
+    await browser.close();
+    await open(signup.startUrl(ROOT), view);
+    const page = await browser.observe();
+    await new Promise((resolve) => setTimeout(resolve, 900)); // The tip and the countdown tick every 400 ms.
+    for (const id of ["wait", "scroll_down"]) {
+      const action = find(page, (a) => a.id === id);
+      const parts = await browser.staleParts(page, action);
+      if (view) expect(parts).toEqual([]);
+      else expect(parts).toContain("text");
+    }
+  }
+});

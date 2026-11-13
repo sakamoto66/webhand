@@ -105,6 +105,7 @@ const GUARD_PARTS = [
 // banner would otherwise keep any answer from standing. The address, the elements, and field values still count.
 const V2_IGNORED = new Set(["scroll", "viewport"]);
 const V2_IGNORED_PAGE = new Set(["scroll", "viewport", "title", "text"]);
+const UNCHANGING = new Set(["scroll", "wait"]);
 const MARKER_PARTS = [...VIEWPORT_PARTS, "title", "text", "semantics", "form_fields"];
 
 /** The names of the parts that differ between two freshness keys, each name once, in order. */
@@ -362,6 +363,9 @@ export class Browser {
   async staleParts(page: Page, action: Action | null = null): Promise<string[]> {
     const parts = await this.differingParts(page, action);
     if (!this.view?.whole) return parts;
+    // Scrolling and waiting change nothing on the page, and waiting is for the page to change: v2 never refuses
+    // them (in BU Bench round gv2, 22 of 41 refusals were these, on pages whose text kept changing).
+    if (action !== null && UNCHANGING.has(action.kind)) return [];
     if (action === null) return parts.filter((part) => !V2_IGNORED_PAGE.has(part));
     const item = page.guards?.[String(action.node)]?.[14] === "item";
     return parts.filter((part) => !V2_IGNORED.has(part) && (item || part !== "scope_text"));
