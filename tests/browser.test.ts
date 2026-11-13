@@ -636,3 +636,23 @@ test("item_moved: the old link offers nothing; the shop's home page, learned as 
   expect(result.outcome).toBe("GOAL_REPORTED");
   expect((await moved.verify(browser)).success).toBe(true);
 });
+
+test("order_signin: the cart can be filled, the order only behind a sign-in no one can do", async () => {
+  const order = await loadTask("order_signin");
+  await browser.close();
+  await open(order.startUrl(ROOT));
+  const plan = { goal: order.GOAL, steps: [], values: [{ label: "Search", value: "Moss Towel 23" }] };
+  const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
+  const result = await runAgent(browser, new ScriptedPolicy(order.SCRIPT), plan, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("NEEDS_HUMAN");
+  const page = await browser.observe();
+  // The sign-in form is shown; a password field is never offered.
+  const labels = page.actions.map((a: Action) => a.label);
+  expect(labels).toContain("Sign in and place order");
+  expect(labels).not.toContain("Password");
+  expect(await order.verify(browser)).toEqual({
+    success: true,
+    evidence: { cart: ["Moss Towel 23"], signin_tried: false },
+  });
+});
