@@ -637,3 +637,15 @@ test("replan --url opens another page for the next attempt; it is refused with -
   ).toBe(OK);
   expect(session.load()?.page?.url).toBe(other);
 });
+
+test("replan --url gives the Windows Chrome a local file by its Windows path, as start does", async () => {
+  await begin();
+  const state = session.load() as session.State;
+  session.save({ ...state, chrome: "windows" });
+  vi.spyOn(session.probes, "toWindows").mockImplementation(
+    (path: string) => `\\\\wsl.localhost\\Ubuntu${path.replaceAll("/", "\\")}`,
+  );
+  const opened = vi.spyOn(Browser, "open").mockRejectedValue(new Error("stop here"));
+  await cli("replan", "--reason", "Another way in", "--url", "tasks/fixtures/dense.html").catch(() => {});
+  expect(opened.mock.calls[0]?.[0]).toMatch(/^file:\/\/wsl\.localhost\/Ubuntu\/.+\/tasks\/fixtures\/dense\.html$/);
+});

@@ -710,6 +710,8 @@ async function commandReplan(args: Args): Promise<number> {
       print("REJECTED: --url needs an http, https, or file URL, or a local file path");
       return FAILED;
     }
+    // As start does: the Windows Chrome on WSL opens a local file by its Windows path (round 19).
+    url = session.browserUrl(url, state.chrome ?? "linux");
   }
   if (args.step.length) {
     const steps = parseSteps(args.step);
