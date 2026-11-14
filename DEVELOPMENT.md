@@ -72,7 +72,7 @@ docs/                research plan
 
 ## How a run flows
 
-Each CLI call is one short process. State that must survive between calls (the Chrome debugging endpoint, the plan, history, attempt count, the tab the run is on) lives in `state/` under the user folder.
+Each CLI call is one short process. State that must survive between calls (the Chrome debugging endpoint, the plan, history, attempt count, the tab the run is on; one set of files per `--id`) lives in `state/` under the user folder.
 
 1. `start` saves the plan and opens Chrome through `session.startChrome`.
 2. `run` attaches to that Chrome, then `agent.runAgent` loops: `Browser.observe` → `Policy.choose` → `agent.execute` → `Browser.act`.

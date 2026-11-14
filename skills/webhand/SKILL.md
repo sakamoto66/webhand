@@ -7,7 +7,7 @@ allowed-tools: Bash(webhand:*), Bash(npx -y webhand@0.3:*), AskUserQuestion
 
 # webhand
 
-You plan and judge; Jev operates the browser toward your goal. Use only the `webhand` command: run `webhand --version`, and if that fails, use `npx -y webhand@0.3` in its place for every command below (same arguments). It needs Node.js 22 or later and Google Chrome. If `start` says `TYPESAFE_API_KEY` is not set, tell the user to set it as an environment variable (for example `export TYPESAFE_API_KEY=...` in their shell profile) and restart Claude Code, then stop. Run one command at a time. Do not read project files, take screenshots, or write scripts.
+You plan and judge; Jev operates the browser toward your goal. Use only the `webhand` command: run `webhand --version`, and if that fails, use `npx -y webhand@0.3` in its place for every command below (same arguments). It needs Node.js 22 or later and Google Chrome. If `start` says `TYPESAFE_API_KEY` is not set, tell the user to set it as an environment variable (for example `export TYPESAFE_API_KEY=...` in their shell profile) and restart Claude Code, then stop. Run one command at a time per session. To work on two pages at once, start each with its own `--id NAME` and pass that same `--id` to every command of that session (`run`, `replan`, `act`, `observe`, `finish`); `catalog` lists the open sessions. Without `--id`, there is one session. Do not read project files, take screenshots, or write scripts.
 
 | Role | Owns |
 | --- | --- |

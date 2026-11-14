@@ -84,7 +84,16 @@ interface Context {
 let context: Context = { out: [], err: () => {}, log: null, hooks: {} };
 
 function print(text = ""): void {
-  context.out.push(`${text}\n`);
+  context.out.push(`${named(text)}\n`);
+}
+
+/** Commands Claude is told to run next carry the session's --id, so a second session is not mixed up with the first. */
+function named(text: string): string {
+  const id = session.id();
+  if (id === session.DEFAULT_ID) return text;
+  return text
+    .replace(/\b(finish|run) (?=--(?:status|human-done|value)\b)/g, `$1 --id ${id} `)
+    .replace(/\bwebhand (start|run|replan|finish|act|observe)\b(?! --)/g, `webhand $1 --id ${id}`);
 }
 
 /** Runs fn and returns what it printed. For tests of the output Claude reads. */
@@ -351,6 +360,11 @@ async function commandCatalog(args: Args): Promise<number> {
   const profiles = session.listProfiles(chrome);
   print(`CHROME: ${chrome}${note ? ` (${note})` : ""}`);
   print(`SAVED PROFILES: ${profiles.length ? profiles.join(", ") : "(none)"}`);
+  const open = session.active();
+  if (open.length) {
+    print("ACTIVE SESSIONS (use --id on every command of one):");
+    for (const [id, state] of open) print(`  ${id}: ${quote(String(state.plan?.goal ?? "").slice(0, 80))}`);
+  }
   return OK;
 }
 
@@ -364,7 +378,9 @@ function chooseChrome(choice: string): [string, string | null] {
 }
 
 async function commandStart(args: Args): Promise<number> {
-  if (session.load()) throw new CliExit("A session is active. Run: webhand finish --status abandoned");
+  if (session.load()) {
+    throw new CliExit(named("A session is active. Run: webhand finish --status abandoned, or start another with --id"));
+  }
   const task = context.hooks.task ?? null;
   let book: runbook.Runbook | null = null;
   let service: runbook.ServiceInfo | null = null;
@@ -1083,9 +1099,8 @@ async function commandProfile(args: Args): Promise<number> {
       return OK;
     }
     if (!args.url) throw new CliExit("profile login needs --url");
-    const active = session.load();
-    if (active && active.saved_profile === args.name) {
-      throw new CliExit(`Profile ${args.name} is in use by the active run. Finish it first`);
+    if (session.active().some(([, state]) => state.saved_profile === args.name)) {
+      throw new CliExit(`Profile ${args.name} is in use by an active run. Finish it first`);
     }
     chromeState = await session.startChrome({ headed: true, profile: args.name, chrome });
   } catch (error) {
@@ -1138,6 +1153,12 @@ const FLOWS = ["v1", "v2"];
 
 function commands(): Record<string, CommandSpec> {
   const chromeDefault = process.env.WEBHAND_CHROME ?? "auto";
+  const idOption: OptionSpec = {
+    name: "id",
+    type: "string",
+    default: session.DEFAULT_ID,
+    help: "Name of the session, to run several at once. Give the same --id to every command of one session",
+  };
   const chromeOption: OptionSpec = {
     name: "chrome",
     type: "string",
@@ -1190,6 +1211,7 @@ function commands(): Record<string, CommandSpec> {
     start: {
       help: "Record Claude's plan and open the start page",
       options: [
+        idOption,
         { name: "goal", type: "string" },
         { name: "url", type: "string" },
         { name: "step", type: "string", multiple: true, help: 'A plan step. "[person] ..." is done by a person' },
@@ -1221,6 +1243,7 @@ function commands(): Record<string, CommandSpec> {
     run: {
       help: "Jev: work toward the goal until Claude or a person is needed",
       options: [
+        idOption,
         { name: "value", type: "string", multiple: true, metavar: "LABEL=VALUE", help: "Add or replace a value" },
         { name: "human-done", type: "boolean", help: "The person finished what NEEDS_HUMAN asked" },
       ],
@@ -1229,6 +1252,7 @@ function commands(): Record<string, CommandSpec> {
     replan: {
       help: "Claude: revise the plan and start the next attempt",
       options: [
+        idOption,
         { name: "reason", type: "string", required: true, help: "Why the last attempt fell short; Jev sees it" },
         { name: "step", type: "string", multiple: true, help: "Replace the steps" },
         { name: "value", type: "string", multiple: true, metavar: "LABEL=VALUE" },
@@ -1243,14 +1267,15 @@ function commands(): Record<string, CommandSpec> {
     },
     act: {
       help: "Claude: override Jev with one operation",
-      options: [{ name: "text", type: "string" }],
+      options: [idOption, { name: "text", type: "string" }],
       positionals: [{ name: "operation" }, { name: "target", optional: true }],
       run: commandAct,
     },
-    observe: { help: "Print the current page", options: [], run: commandObserve },
+    observe: { help: "Print the current page", options: [idOption], run: commandObserve },
     finish: {
       help: "Verify, log, and close Chrome",
       options: [
+        idOption,
         {
           name: "status",
           type: "string",
@@ -1462,6 +1487,23 @@ const processIO: IO = {
  * Runs one command and returns its exit code. A CliExit or UsageError is thrown after the output is written,
  * so the caller prints its message and exits with 1 or 2.
  */
+const SESSION_COMMANDS = ["start", "run", "replan", "act", "observe", "finish"];
+
+/** Picks the session a command works on and holds its lock until the command ends. Returns the release function. */
+function takeSession(command: string, args: Args): () => void {
+  if (!SESSION_COMMANDS.includes(command)) {
+    session.use();
+    return () => {};
+  }
+  try {
+    session.use(args.id);
+    return session.lock();
+  } catch (error) {
+    if (error instanceof session.SessionError) throw new CliExit(error.message);
+    throw error;
+  }
+}
+
 export async function main(argv: string[], io: IO = processIO, hooks: Hooks = {}): Promise<number> {
   const parsed = parse(argv);
   if ("help" in parsed) {
@@ -1470,10 +1512,12 @@ export async function main(argv: string[], io: IO = processIO, hooks: Hooks = {}
   }
   context = { out: [], err: io.err, log: null, hooks };
   const current = context;
+  const release = takeSession(parsed.command, parsed.args);
   // What Claude must read is a real cost of this design, so every handoff is sized and logged.
   try {
     return await parsed.run(parsed.args);
   } finally {
+    release();
     const text = current.out.join("");
     io.out(text);
     if (current.log) logOnce(current.log, "handoff", { command: parsed.command, chars: [...text].length });

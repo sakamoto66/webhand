@@ -72,7 +72,7 @@ docs/                研究計画
 
 ## 実行の流れ
 
-CLI の呼び出しは1回ずつ短いプロセスです。呼び出しをまたいで必要な状態（Chrome のデバッグ接続先、計画、履歴、試行回数、今のタブ）は、ユーザーフォルダーの `state/` に置きます。
+CLI の呼び出しは1回ずつ短いプロセスです。呼び出しをまたいで必要な状態（Chrome のデバッグ接続先、計画、履歴、試行回数、今のタブ。`--id` ごとに1組のファイル）は、ユーザーフォルダーの `state/` に置きます。
 
 1. `start` が計画を保存し、`session.startChrome` で Chrome を開く。
 2. `run` がその Chrome に接続し、`agent.runAgent` が `Browser.observe` → `Policy.choose` → `agent.execute` → `Browser.act` を繰り返す。

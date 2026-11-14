@@ -9,7 +9,7 @@ import * as cliModule from "../src/cli.ts";
 import { logOnce } from "../src/metrics.ts";
 import { actionSpace } from "../src/policies/base.ts";
 import * as session from "../src/session.ts";
-import { cli, readEvents, research, researchExit, tmpPath } from "./helpers.ts";
+import { cli, cliExit, readEvents, research, researchExit, tmpPath } from "./helpers.ts";
 import { isolate, type Move, ScriptedJev } from "./jev.ts";
 
 const { OK, FAILED, UNCERTAIN, BUDGET, UsageError } = cliModule;
@@ -86,6 +86,66 @@ test("Jev runs to the goal in one call and verification passes", async () => {
   expect(JSON.stringify(pages)).not.toContain("Lisbon");
   expect([end.service, end.runbook]).toEqual([null, null]);
   expect(end.handoff_chars).toBeGreaterThan(0);
+});
+
+test("two sessions run side by side, each with its own Chrome and state", async () => {
+  await begin("--id", "a");
+  const second = await research(
+    "start",
+    "--id",
+    "b",
+    "--task",
+    "hotel_filter",
+    "--chrome",
+    "linux",
+    "--step",
+    "Search for Lisbon",
+    "--value",
+    "Destination=Lisbon",
+  );
+  expect(second.code).toBe(OK);
+  expect(second.out).toContain("NEXT: webhand run --id b");
+  const list = await cli("catalog", "--chrome", "linux");
+  expect(list.out).toMatch(/ACTIVE SESSIONS[^\n]*\n {2}a: [^\n]*\n {2}b: /);
+  // The default session was never started.
+  expect(session.load()).toBeNull();
+  session.use("a");
+  const a = session.load();
+  session.use("b");
+  const b = session.load();
+  expect(a?.port).not.toBe(b?.port);
+  // Only a is run to the goal; b has not moved.
+  ScriptedJev.moves = [...FULL];
+  expect((await cli("run", "--id", "a")).out).toContain("OUTCOME GOAL_REPORTED");
+  expect((await research("finish", "--id", "a", "--status", "done")).code).toBe(OK);
+  expect(events().at(-1).verified).toBe(true);
+  session.use("b");
+  expect(session.load()).not.toBeNull();
+  ScriptedJev.moves = [...FULL];
+  expect((await cli("run", "--id", "b")).out).toContain("OUTCOME GOAL_REPORTED");
+  expect((await research("finish", "--id", "b", "--status", "done")).code).toBe(OK);
+  expect(events().at(-1).verified).toBe(true);
+  session.use("b");
+  expect(session.load()).toBeNull();
+});
+
+test("a session is used by one command at a time, and an id that is already open cannot start", async () => {
+  await begin("--id", "a");
+  await expect(begin("--id", "a")).rejects.toThrow();
+  expect(await researchExit("start", "--id", "a", "--task", "hotel_filter", "--chrome", "linux")).toContain(
+    "A session is active",
+  );
+  // A live process holding the lock: the parent of this test process.
+  session.use("a");
+  const lockFile = join(session.home(), "session-a.lock");
+  writeFileSync(lockFile, String(process.ppid));
+  expect(await cliExit("observe", "--id", "a")).toMatch(/Session "a" is busy/);
+  // A lock left by a command that died is taken over.
+  writeFileSync(lockFile, "999999999");
+  expect((await cli("observe", "--id", "a")).code).toBe(OK);
+  expect(existsSync(lockFile)).toBe(false);
+  await research("finish", "--id", "a", "--status", "abandoned");
+  expect(await cliExit("observe", "--id", "../x")).toContain("--id");
 });
 
 test("Jev sees the goal, plan, page, and full history", async () => {

@@ -62,6 +62,23 @@ webhand profile delete work
 
 webhand never connects to your everyday Chrome profile, because Chrome 136 and later refuse debugging connections to the default profile. Saved profiles live in `~/.webhand/state/profiles/` on Linux and `%LOCALAPPDATA%\webhand\profiles\` on Windows.
 
+### Several sessions at once
+
+Each session has its own Chrome, profile, plan, and history. Give a session a name with `--id NAME` (letters, digits, `-`, `_`; up to 40) on `start`, and the same `--id` on every later command of it (`run`, `replan`, `act`, `observe`, `finish`). Without `--id` the session is called `default`, as before.
+
+```bash
+webhand start --id a --goal "..." --url ...
+webhand start --id b --goal "..." --url ...    # a second Chrome, state kept apart from a
+webhand run --id a
+webhand finish --id a --status done
+```
+
+- When the id is not `default`, the commands the output tells Claude to run next carry the `--id`. `webhand catalog` lists the open sessions with their goals.
+- Only one command at a time runs on a session: a second one stops with "Session is busy", since two `run`s on one Chrome would act twice. A lock left by a command that died is taken over. Commands on different ids do not wait for each other.
+- Starting an id that is already open stops. Two sessions cannot use the same saved profile (the second Chrome exits), and `profile login` refuses a profile an open session uses.
+- Each session writes its own run log. State files are `state/session-ID.json`, `state/tab-ID`, and `state/session-ID.lock` (the default session: `session.json`, `tab`, `session.lock`).
+- Not supported yet: a session shared by several people or machines, and one `run` that works on several sessions.
+
 **Pages viewed while logged in are sent to Jev (the TypeSafe API).** Decide before each run whether it is acceptable to handle screens that contain personal information.
 
 ## Using Windows Chrome from WSL
