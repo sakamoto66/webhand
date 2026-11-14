@@ -162,8 +162,23 @@ function scanned(scan: { rounds: number; stopped: string; pages?: number }): str
   return `${scan.rounds} scrolls${more}, ${stopped}`;
 }
 
+/**
+ * Said when a scan stopped before the end of the list. In round 22, three runs sent 4 of 11 items and finished
+ * done after "stopped at 20 scrolls", read as the end of the list.
+ */
+function cutShort(scan: { stopped: string }, what: string): string[] {
+  if (scan.stopped === "bottom") return [];
+  return [
+    `NOT THE WHOLE LIST: the scan stopped before the end of the list, and items further down were not read. ${what} ` +
+      "Unless the goal needs none of the rest, say the answer is partial and finish blocked.",
+  ];
+}
+
 export function comparedLine(compared: Compared): string {
-  return `COMPARED (${scanned(compared)}): ${compared.best ?? "nothing fit the criterion"}`;
+  return [
+    `COMPARED (${scanned(compared)}): ${compared.best ?? "nothing fit the criterion"}`,
+    ...cutShort(compared, "This is the best among the items read."),
+  ].join("\n");
 }
 
 export function collectedLine(collected: Collected): string {
@@ -172,6 +187,7 @@ export function collectedLine(collected: Collected): string {
     ...collected.items.map((item) => `- ${item}`),
   ];
   if (collected.matched > collected.items.length) lines.push(`(the first ${MAX_COLLECTED} are shown)`);
+  lines.push(...cutShort(collected, "These are the matching items among those read."));
   return lines.join("\n");
 }
 
