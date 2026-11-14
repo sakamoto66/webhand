@@ -8,7 +8,8 @@ import type { PageCheck } from "./browser.ts";
 import { quote } from "./format.ts";
 import { pageEvent, type Recorder, type ScreenshotAfter, safeUrl } from "./metrics.ts";
 import {
-  type Decision,
+  type Action,
+  Decision,
   type HistoryEntry,
   MutationUncertain,
   type Page,
@@ -52,6 +53,23 @@ export interface Actor {
   act(action: Page, page: Page, text?: string | null): Promise<void>;
   screenshot?(): Promise<Buffer>;
   check?(): Promise<PageCheck>;
+  /** Parts of the page webhand cannot see into, counted for the run log. */
+  unseen?(): Promise<Record<string, number>>;
+}
+
+/** What the observation offered when Jev found the element it needed missing: counts for the run log only. */
+function offered(page: Page): Record<string, number> {
+  const actions: Action[] = page.actions ?? [];
+  const scroll = page.scroll ?? {};
+  return {
+    in_view: actions.filter((a) => a.kind !== "reveal").length,
+    offscreen: actions.filter((a) => a.kind === "reveal").length,
+    omitted_actions: page.omitted_actions ?? 0,
+    omitted_reveals: page.omitted_reveals ?? 0,
+    regions_with_offscreen: (page.regions ?? []).filter((r: { offscreen_actions?: number }) => r.offscreen_actions)
+      .length,
+    below_px: Math.max(0, Math.round((scroll.height ?? 0) - (scroll.y ?? 0) - (page.h ?? 0))),
+  };
 }
 
 /** Outcomes after which the log keeps a page check, to tell a bot check or an error page from a plan problem. */
@@ -159,6 +177,31 @@ export async function execute(
   return newPage;
 }
 
+/**
+ * v2: Jev chose an element beyond the viewport. It is scrolled into view (a scroll, never an input), the page
+ * is observed again, and the same element with the same operation is taken from that observation. When it is
+ * no longer offered, nothing runs: StalePage, as for any refused action.
+ */
+async function intoView(
+  browser: Actor,
+  page: Page,
+  decision: Decision,
+  recorder: Recorder,
+  attempt: number,
+): Promise<{ page: Page; decision: Decision }> {
+  const action = decision.action as Action;
+  await browser.act({ kind: "reveal", node: action.node, label: action.label }, page);
+  const next = await browser.observe();
+  const same = (next.actions ?? []).find(
+    (a: Action) =>
+      !a.offscreen && a.node === action.node && a.kind === action.kind && (a.value ?? null) === (action.value ?? null),
+  );
+  recorder.event("into_view", { attempt, at: action.at ?? null, found: Boolean(same) });
+  if (!same) throw new StalePage("Target was not in view after scrolling to it", ["target_unreachable"]);
+  const chosen = new Decision(decision.operation, same, { confidence: decision.confidence, text: decision.text });
+  return { page: next, decision: chosen };
+}
+
 /** Markers are JSON values from the page; equal content means the same page. */
 function sameMarker(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -172,6 +215,8 @@ export interface AgentResult {
   decisions: number;
   elapsed_ms: number;
   field?: Record<string, unknown>;
+  /** Why Jev refused (JEV_FAILED), for the run log only. */
+  jev?: Record<string, unknown>;
 }
 
 /** Runs one attempt until an outcome above. history is extended in place. */
@@ -237,7 +282,13 @@ export async function runAgent(
           page_changed: false,
         };
         history.push(entry);
-        recorder.event("not_visible", { attempt, wanted: decision.wanted, confidence: decision.confidence });
+        recorder.event("not_visible", {
+          attempt,
+          wanted: decision.wanted,
+          confidence: decision.confidence,
+          offered: offered(page),
+          ...(browser.unseen ? { unseen: await browser.unseen().catch(() => null) } : {}),
+        });
         onChange(page);
         continue;
       }
@@ -251,6 +302,7 @@ export async function runAgent(
         for (const key of ["label", "role", "value"]) field[key] = decision.action[key] ?? null;
         return finish(NEEDS_VALUE, "no value from the plan fits this field", { field });
       }
+      if (decision.action.offscreen) ({ page, decision } = await intoView(browser, page, decision, recorder, attempt));
       page = await execute(browser, page, decision, history, recorder, {
         decidedBy: policy.name,
         attempt,
@@ -280,12 +332,13 @@ export async function runAgent(
             wanted: decision.operation,
             target: decision.action.label,
             reason: error.message,
+            changed: error.changed,
             page_changed: entry.page_changed,
           });
         }
         onChange(page);
       } else if (error instanceof PolicyError) {
-        return finish(JEV_FAILED, error.message);
+        return finish(JEV_FAILED, error.message, error.diagnostic ? { jev: error.diagnostic } : {});
       } else if (error instanceof MutationUncertain) {
         return finish(UNCERTAIN, `mutation uncertain: ${error.message}`);
       } else {

@@ -3,7 +3,7 @@
 import { expect, test, vi } from "vitest";
 import { summarize } from "../src/metrics.ts";
 import { actionSpace, modelState, resolve } from "../src/policies/base.ts";
-import { type Fetch, JevPolicy, validateChoice } from "../src/policies/jev.ts";
+import { estimateTokens, type Fetch, JevPolicy, validateChoice } from "../src/policies/jev.ts";
 import { ScriptedPolicy } from "../src/policies/scripted.ts";
 import { modelCall, type Plan, PolicyError } from "../src/types.ts";
 
@@ -61,12 +61,13 @@ function jevAnswer(): any {
 }
 
 /** A JevPolicy whose requests go to handler. sent collects the request bodies. */
-function jevPolicy(handler: () => { status: number; body?: unknown }) {
+function jevPolicy(handler: (request: unknown) => { status: number; body?: unknown }) {
   vi.stubEnv("TYPESAFE_API_KEY", "test");
   const sent: { url: string; body: unknown }[] = [];
   const fetch: Fetch = async (url, init) => {
-    sent.push({ url, body: JSON.parse(init.body) });
-    const { status, body } = handler();
+    const request = JSON.parse(init.body);
+    sent.push({ url, body: request });
+    const { status, body } = handler(request);
     return { status, json: async () => body };
   };
   return { policy: new JevPolicy({ fetch }), sent };
@@ -91,6 +92,125 @@ test("an invalid Jev target is rejected", async () => {
 
 test("a Jev HTTP error is a policy error", async () => {
   await expect(jevPolicy(() => ({ status: 401 })).policy.choose(PAGE, PLAN, [])).rejects.toThrow(/HTTP 401/);
+});
+
+test("a Jev HTTP error keeps the status, the request size and the start of the error body", async () => {
+  const { policy, sent } = jevPolicy(() => ({ status: 400, body: { error: { message: "x".repeat(600) } } }));
+  const error = (await policy.choose(PAGE, PLAN, []).catch((e: unknown) => e)) as PolicyError;
+  expect(error.message).toBe("Jev returned HTTP 400; no action executed.");
+  const diagnostic = error.diagnostic as Record<string, unknown>;
+  expect(diagnostic.http_status).toBe(400);
+  expect(diagnostic.request_chars).toBe(JSON.stringify(sent[0].body).length);
+  expect(String(diagnostic.error)).toMatch(/^\{"error":\{"message":"x+$/);
+  expect(String(diagnostic.error)).toHaveLength(500);
+});
+
+/** A page with links in view and below it, for requests over Jev's limits. */
+function bigPage(inView: number, below: number, label = (i: number) => `Item ${i}`) {
+  const link = (i: number, extra: object) => ({
+    id: `e${i}`,
+    kind: "click",
+    node: i,
+    role: "link",
+    label: label(i),
+    value: "",
+    ...extra,
+  });
+  return {
+    url: "http://local",
+    title: "T",
+    text: "text",
+    actions: [
+      ...Array.from({ length: inView }, (_, i) => link(i + 1, {})),
+      ...Array.from({ length: below }, (_, i) =>
+        link(inView + i + 1, { at: `below ${(i + 1) * 100}px`, offscreen: true }),
+      ),
+      { id: "wait", kind: "wait", label: "Wait for the page to update" },
+    ],
+  };
+}
+
+/** Jev clicks element 2, whatever the click choices offered. */
+// biome-ignore lint/suspicious/noExplicitAny: a request body as JSON.
+const clickTwo = (request: any) => {
+  const answer = jevAnswer();
+  const keys = Object.keys(request.questions.click_target.criteria);
+  answer.answers.click_target.probabilities = Object.fromEntries(keys.map((k) => [k, k === "2" ? 1 : 0]));
+  answer.answers.operation.probabilities = Object.fromEntries(
+    Object.keys(request.questions.operation.criteria).map((k) => [k, k === "CLICK" ? 1 : 0]),
+  );
+  return { status: 200, body: answer };
+};
+
+// biome-ignore lint/suspicious/noExplicitAny: a request body as JSON.
+const clickChoices = (body: any) => Object.keys(body.questions.click_target.criteria);
+
+test("a small request goes to Jev whole", async () => {
+  const { policy, sent } = jevPolicy(clickTwo);
+  await policy.choose(bigPage(5, 5), PLAN, []);
+  expect(clickChoices(sent[0].body)).toHaveLength(11);
+  expect(policy.calls[0].dropped_elements).toBeUndefined();
+});
+
+test("over 255 choices, the farthest elements beyond the viewport are left out", async () => {
+  const { policy, sent } = jevPolicy(clickTwo);
+  const decision = await policy.choose(bigPage(5, 400), PLAN, []);
+  const choices = clickChoices(sent[0].body);
+  expect(choices.length).toBeLessThanOrEqual(255);
+  // biome-ignore lint/suspicious/noExplicitAny: a request body as JSON.
+  const labels = (sent[0].body as any).state.elements.map((e: { label: string }) => e.label);
+  expect(labels.slice(0, 6)).toEqual(["Item 1", "Item 2", "Item 3", "Item 4", "Item 5", "Item 6"]);
+  expect(labels).not.toContain("Item 405");
+  expect(policy.calls[0].dropped_elements).toBe(405 - labels.length);
+  // The answer is read against the page Jev was asked about.
+  expect(decision.action?.label).toBe("Item 2");
+});
+
+test("over the token budget, elements in view are left out from the end", async () => {
+  const { policy, sent } = jevPolicy(clickTwo);
+  await policy.choose(
+    bigPage(200, 0, (i) => `商品${i} ${"説明".repeat(150)}`),
+    PLAN,
+    [],
+  );
+  const request = JSON.stringify(sent[0].body);
+  expect(estimateTokens(request)).toBeLessThanOrEqual(40_000);
+  // biome-ignore lint/suspicious/noExplicitAny: a request body as JSON.
+  const labels = (sent[0].body as any).state.elements.map((e: { label: string }) => e.label);
+  expect(labels[0]).toMatch(/^商品1 /);
+  expect(labels.length).toBeLessThan(200);
+  expect(clickChoices(sent[0].body)).toContain("NOT_VISIBLE");
+});
+
+test("tokens are estimated at about 3 ASCII characters a token and 1.5 tokens for each other character", () => {
+  expect([estimateTokens("abcdef"), estimateTokens("商品"), estimateTokens("ab商")]).toEqual([2, 3, 3]);
+});
+
+const overLimit = { status: 400, body: { detail: { error_type: "max_tokens_exceeded" } } };
+
+test("refused over its limit, the request is fitted again to a lower budget, which the run keeps", async () => {
+  let refusals = 1;
+  const { policy, sent } = jevPolicy((request) => (refusals-- > 0 ? overLimit : clickTwo(request)));
+  const decision = await policy.choose(bigPage(5, 200), PLAN, []);
+  expect(decision.action?.label).toBe("Item 2");
+  expect(sent).toHaveLength(2);
+  const sizes = sent.map((s) => estimateTokens(JSON.stringify(s.body)));
+  expect(sizes[1]).toBeLessThanOrEqual(Math.floor(sizes[0] * 0.6));
+  expect(policy.calls[0].token_budget).toBe(Math.floor(sizes[0] * 0.6));
+  await policy.choose(bigPage(5, 200), PLAN, []);
+  expect(estimateTokens(JSON.stringify(sent[2].body))).toBeLessThanOrEqual(sizes[1]);
+});
+
+test("refused over its limit three times, Jev's refusal stands and nothing is chosen", async () => {
+  const { policy, sent } = jevPolicy(() => overLimit);
+  await expect(policy.choose(bigPage(5, 200), PLAN, [])).rejects.toThrow(/HTTP 400/);
+  expect(sent).toHaveLength(3);
+});
+
+test("another HTTP 400 is not fitted again", async () => {
+  const { policy, sent } = jevPolicy(() => ({ status: 400, body: { detail: "bad" } }));
+  await expect(policy.choose(bigPage(5, 200), PLAN, [])).rejects.toThrow(/HTTP 400/);
+  expect(sent).toHaveLength(1);
 });
 
 test("a busy Jev is asked at most three times", async () => {

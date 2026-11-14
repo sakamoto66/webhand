@@ -131,5 +131,6 @@ export function pageEvent(page: Record<string, any>, attempt: number): Record<st
       return kept;
     }),
     omitted_regions: page.omitted_regions ?? 0,
+    ...(page.read ? { read: page.read.chars } : {}),
   };
 }

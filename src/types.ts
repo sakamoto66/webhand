@@ -8,11 +8,23 @@ export type Action = Record<string, any>;
 /** The model gave no usable decision. Nothing was executed. */
 export class PolicyError extends Error {
   override name = "PolicyError";
+  /** Why the model refused, for the run log only (such as Jev's HTTP status, request size and error body). */
+  readonly diagnostic: Record<string, unknown> | null;
+  constructor(message: string, diagnostic: Record<string, unknown> | null = null) {
+    super(message);
+    this.diagnostic = diagnostic;
+  }
 }
 
 /** A decision no longer refers to the observed page. Nothing was executed. */
 export class StalePage extends Error {
   override name = "StalePage";
+  /** What differed from the observation, for the run log only (such as url, scroll, scope_text). */
+  readonly changed: string[];
+  constructor(message: string, changed: string[] = []) {
+    super(message);
+    this.changed = changed;
+  }
 }
 
 /** A browser mutation may have happened. It must never be retried. */
@@ -33,6 +45,10 @@ export interface ModelCall {
   latency_ms: number;
   input_tokens: number | null;
   output_tokens: number | null;
+  /** Elements left out so the request fits Jev's limits, when any were */
+  dropped_elements?: number;
+  /** The lowered token budget the request was fitted to, after Jev refused one over its limit */
+  token_budget?: number;
 }
 
 export function modelCall(
@@ -77,6 +93,26 @@ export interface Plan {
   notes?: string[];
   attempt?: number;
   service?: { description: string; facts: string[] } | null;
+  /** v2: the page is offered whole (elements beyond the viewport with their own operations). */
+  flow?: "v2" | null;
+  /** Claude's criterion for choosing one item of a long list; the run compares before it acts. */
+  compare?: string | null;
+  /** What the comparison found in this attempt. */
+  compared?: { criterion: string; best: string | null; rounds: number; stopped: string; pages?: number } | null;
+  /** Claude's name for the control that shows more items (--more), pressed during a compare or collect scan. */
+  more?: string | null;
+  /** Claude's condition for collecting every matching item of a long list; the run collects, then stops. */
+  collect?: string | null;
+  /** What the collection found in this attempt. */
+  collected?: {
+    criterion: string;
+    items: string[];
+    matched: number;
+    seen: number;
+    rounds: number;
+    stopped: string;
+    pages?: number;
+  } | null;
 }
 
 export interface Step {

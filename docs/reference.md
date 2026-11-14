@@ -87,14 +87,14 @@ If the CLI is not installed globally, read `webhand` in the table below as `npx 
 | `webhand catalog` | Claude | Lists learned services, runbooks, and saved profiles |
 | `webhand start --goal G --url U --step S ... --value L=V ... --session ...` | Claude | Records the plan and opens the start URL in Chrome |
 | `webhand run` | Jev | Operates the page toward the GOAL |
-| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--restart]` | Claude | Revises the plan and starts the next attempt |
+| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | Claude | Revises the plan and starts the next attempt, from the start URL again (`--restart`) or from another page (`--url`) |
 | `webhand act OP [TARGET]` | Claude | Performs a single action in Jev's place |
 | `webhand observe` | Claude | Shows the current page |
 | `webhand finish --status STATUS` | Claude | Runs independent verification, writes the log, and closes Chrome |
 | `webhand learn --name NAME --url URL [--scope project\|user]` | Person | Records a demonstration |
 | `webhand profile login/list/delete` | Person | Manages saved profiles |
 
-Prefix a step with `[person]` to make it a step a human performs (requires `--headed`). `--focus REGION` / `--skip REGION` on `start` and `replan` choose which regions are observed (see [Page regions](#page-regions)). With `--runbook NAME --param k=v`, the runbook's GOAL, start URL, and steps become the defaults, and the params are passed to Jev as input values.
+Prefix a step with `[person]` to make it a step a human performs (requires `--headed`). `--focus REGION` / `--skip REGION` on `start` and `replan` choose which regions are observed (see [Page regions](#page-regions)), and `--read KIND` adds content from beyond the viewport (see [Reading beyond the viewport](#reading-beyond-the-viewport)). With `--runbook NAME --param k=v`, the runbook's GOAL, start URL, and steps become the defaults, and the params are passed to Jev as input values.
 
 ## Learning mode
 
@@ -187,6 +187,61 @@ In learning logs, `page` events carry a region summary (keys and counts only) an
 
 For services without `verify()`, `verified` is `null`. A runbook's `done_when` is material for Claude's check, not evidence of success.
 
+## Reading beyond the viewport
+
+Jev and Claude normally see only the visible part of the page: about 500 characters of text on a typical page, while the whole page may hold tens of thousands. With `--read KIND` (repeatable) on `start` or `replan`, each observation adds a read layer with the chosen kinds of content from the whole page. Claude sees it as `READ` in the `run` and `observe` output, and Jev as `page.read`.
+
+| Kind | What it holds |
+| --- | --- |
+| `outline` | Headings and their levels. Always included when `--read` is given |
+| `text` | Body text outside tables, lists, headings, links, and controls |
+| `table` | Each table with its caption, row by row, cells separated by ` \| ` |
+| `list` | Top-level list items |
+| `link` | Link names, once each |
+| `control` | Buttons, fields, and other controls outside the viewport: role and name only |
+| `media` | Image alternative text and figure captions |
+
+- It is for reading only. Nothing in it can be acted on; action targets and freshness checks stay limited to the visible part, apart from `SCROLL_TO` below. A line such as `@ below 1200px` says where the lines after it are, so Jev can scroll in the right direction.
+- Text, list items, links, and controls in view are left out, since the viewport text and the elements already hold them. The outline and tables are kept whole.
+- The layer holds at most 12,000 characters. Each kind gets an equal share, and a kind that needs less leaves the rest to the others. Lines are kept whole. A cut kind ends with `... N more characters`.
+- With the layer on, the elements beyond the viewport (up to 60; the nearest and the farthest are kept) are offered for `SCROLL_TO` only, with where they are (`at="below 1200px"`). `SCROLL_TO` scrolls the element into the middle of the viewport and does nothing else; the next observation can then act on it. In a list that loads more items as it is scrolled, a `SCROLL_TO` on its last element loads the next items. Claude can also use it: `webhand act SCROLL_TO N`.
+- `--skip` regions are never read. With `--focus`, only the focused regions (and an open dialog) are read.
+- Field values are never read. Page content is untrusted data.
+- `replan --read KIND` replaces the choice and keeps the regions; `--read none` turns the layer off. The `plan` event records it in `view.read`, and each `page` event records the shown and total characters per kind in `read`.
+- Without `--read`, the observation, the output, and what Jev receives are unchanged.
+
+## Comparing items in a long list
+
+When the goal is to pick one item of a list by a criterion, `--compare CRITERION` on `start` or `replan` (such as `--compare "lowest monthly price"`) makes each attempt's first `run` compare the whole list before anything is acted on:
+
+1. webhand scrolls to the top, then down one screen at a time (each screen overlaps the last by 120px).
+2. After each scroll, Jev chooses which item best meets the criterion: one of the elements in view, given with the text of its row, card, or list item, or `KEEP` for the best so far. The best so far is kept as text, so a list that removes rows scrolled out of view works too. Before any best, `NONE` means no item fits yet.
+3. The scan stops after 20 scrolls, or at the bottom of the page once two seconds of waiting add nothing more (a list that loads as it is scrolled grows there).
+4. The page is scrolled back to where the best item was (and, with a read layer, to the item itself), and the normal loop goes on. Jev sees the result as `plan.compared`, its rules say to act on that item, and for the rest of the attempt its goal is that item instead of the GOAL.
+
+Nothing is clicked or typed during the scan, and its scrolls are not counted as actions. The output shows `COMPARED (N scrolls, ...): item`. The log keeps a `compare_round` event per scroll and a `compare_end` event; a failed comparison logs `compare_failed` and changes nothing. Each new attempt compares again; `replan --compare none` turns it off. Only the page itself is scrolled, not a scrolling box inside it.
+
+## Collecting every matching item of a long list
+
+When the goal needs every item of a list that meets a condition, `--collect CONDITION` on `start` or `replan` (such as `--collect "200 GB of storage and less than €40 a month"`) makes each attempt's first `run` collect them and stop:
+
+1. webhand scrolls through the page exactly as for `--compare`: from the top, one screen at a time, up to 20 scrolls or the bottom once waiting adds nothing more.
+2. After each scroll, webhand reads the list and table items in view (table rows, and blocks of the same tag and class repeated three or more times side by side, such as cards built from divs, list items, or articles; navigation, headers, footers, and header rows left out; of nested items, the outer one, such as a card rather than the bullet points inside it). Each item not seen before is asked about once: Jev answers `MATCH` or `NO` for it, judging by the item's own text. Jev is given the plan and the condition, not the page.
+3. The matching items are kept as text, so a list that removes rows scrolled out of view works too.
+4. For the rest of the attempt, Jev works toward Claude's steps, with Claude's values named, instead of the GOAL: the part of the goal about reading the list is done. Without steps, it keeps the GOAL.
+
+Nothing is clicked or typed, and the run stops after the scan. The output shows `COLLECTED (N scrolls, ...): M of S items meet: CONDITION` and one line per matching item (the first 100). Claude checks them against the goal and writes the answer from them; to put the answer into the page, Claude gives it as a value (`run --value 'LABEL=VALUE'`), and the next `run` goes on with the normal loop from where the page was before the scan. The log keeps a `collect_round` event per scroll and a `collect_end` event with the counts; a failed collection logs `collect_failed` and changes nothing. Each new attempt collects again; `replan --collect none` turns it off. `--compare` and `--collect` are not used together. Items that are not in a table row, list item, or article are not read, and only the page itself is scrolled.
+
+## More items behind a button or a next page
+
+With `--compare` or `--collect`, `--more CONTROL` on `start` or `replan` (such as `--more "Next page"` or `--more "Show more plans"`) names the control that shows more items of the list:
+
+1. Where the list ends (the last item of the longest list on the page has come into view; what is below it is brought into view first) and again at the bottom, once waiting adds nothing more, Jev chooses which element in view is that control, given each element with the text around it, or `NONE`. Jev is given the page for this question. Each place is asked about once.
+2. webhand presses it once and waits up to three seconds for the page to change (a new address, more content, or other text), then the scan goes on from the screen as it is. Without a change, or with `NONE`, the scan scrolls on from where the list ends, and stops at the bottom.
+3. The control is pressed at most 10 times per scan.
+
+Pressing is an action: it is never repeated, and an interrupted press stops the run as `UNCERTAIN`. With `--compare`, when the best item was on an earlier page, that page is opened again (it was already visited) before scrolling to the item; a list that was grown by a button is not grown again there. With `--collect`, the page ends at its top when the scan ended on a later page. The output adds `loaded more N times`, and the log keeps a `more` event per press with what changed. `replan --more none` turns it off; `--more` without `--compare` or `--collect` is refused.
+
 ## Logs
 
 Logs are written as JSONL to `runs/<timestamp>/` in the user folder (`~/.webhand/runs/` by default).
@@ -198,7 +253,7 @@ Logs are written as JSONL to `runs/<timestamp>/` in the user folder (`~/.webhand
 | `plan` | Steps per attempt, input value labels and their source (`claude` / `runbook`), `restart` |
 | `call` | Tokens and latency of each Jev call |
 | `step` / `step_result` | The action taken, its region, the label of the value typed (never the text) and `text_chars`, attempt number, decider, confidence, page change. URL query values are masked |
-| `page` | The region outline at start and after each page change (keys and counts only, no page text) |
+| `page` | The region outline at start and after each page change (keys and counts only, no page text). With `--read`, `read` holds the shown and total characters per kind |
 | `escalation` | The result `run` returned to Claude |
 | `human_step` / `values` | Requests and completions of human steps, labels of added input values |
 | `attempt_end` | Outcome of the attempt and Claude's reason for replanning |

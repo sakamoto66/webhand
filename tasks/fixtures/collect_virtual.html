@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fieldnote · Plan index</title>
+<style>
+  body { font: 16px/1.6 system-ui, sans-serif; margin: 0 auto; max-width: 860px; padding: 0 24px; }
+  #result { position: fixed; top: 0; right: 24px; background: #ffe; padding: 4px 12px; }
+  .featured { border: 1px solid #ccc; padding: 12px; margin: 16px 0; }
+  p { margin: 0 0 22px; }
+  td, th { padding: 6px 12px; text-align: left; }
+</style></head>
+<body>
+  <div id="result" role="status"></div>
+  <h1>Plans</h1>
+  <p>Find the plans that suit you. The full list of plans and their monthly prices is below.</p>
+  <form id="answer"><label>Plan names <input name="names" size="50"></label> <button type="submit">Submit</button></form>
+  <div class="featured"><h2>Featured: Manoku</h2><p>Our most popular plan.</p>
+    <button type="button" data-plan="Manoku">Choose Manoku (featured)</button></div>
+  <h2>About our plans</h2>
+    <p>Every plan includes the same support hours and the same data centre.</p>
+    <p>Plans differ in storage and in price. Prices are per month and include tax.</p>
+    <p>You can change plans at any time. A change starts on the next billing day.</p>
+    <p>Storage is shared across every device you sign in to.</p>
+    <p>Older plans that are no longer sold are not listed here.</p>
+    <p>Every plan includes the same support hours and the same data centre.</p>
+    <p>Plans differ in storage and in price. Prices are per month and include tax.</p>
+    <p>You can change plans at any time. A change starts on the next billing day.</p>
+    <p>Storage is shared across every device you sign in to.</p>
+    <p>Older plans that are no longer sold are not listed here.</p>
+    <p>Every plan includes the same support hours and the same data centre.</p>
+    <p>Plans differ in storage and in price. Prices are per month and include tax.</p>
+    <p>You can change plans at any time. A change starts on the next billing day.</p>
+    <p>Storage is shared across every device you sign in to.</p>
+    <p>Older plans that are no longer sold are not listed here.</p>
+    <p>Every plan includes the same support hours and the same data centre.</p>
+    <p>Plans differ in storage and in price. Prices are per month and include tax.</p>
+    <p>You can change plans at any time. A change starts on the next billing day.</p>
+    <p>Storage is shared across every device you sign in to.</p>
+    <p>Older plans that are no longer sold are not listed here.</p>
+    <p>Every plan includes the same support hours and the same data centre.</p>
+    <p>Plans differ in storage and in price. Prices are per month and include tax.</p>
+    <p>You can change plans at any time. A change starts on the next billing day.</p>
+    <p>Storage is shared across every device you sign in to.</p>
+    <p>Older plans that are no longer sold are not listed here.</p>
+    <p>Every plan includes the same support hours and the same data centre.</p>
+    <p>Plans differ in storage and in price. Prices are per month and include tax.</p>
+    <p>You can change plans at any time. A change starts on the next billing day.</p>
+    <p>Storage is shared across every device you sign in to.</p>
+    <p>Older plans that are no longer sold are not listed here.</p>
+  <h2>All plans</h2>
+  <p>Every plan and its monthly price.</p>
+  <div role="table" aria-label="Every plan and its monthly price">
+    <div role="row"><span role="columnheader">Plan</span> <span role="columnheader">Storage</span> <span role="columnheader">Monthly price</span></div>
+    <div id="rows" role="rowgroup" style="position: relative"></div>
+  </div>
+  <footer><p>Local demo: no accounts or payments.</p></footer>
+<style>
+  .row { position: absolute; left: 0; right: 0; height: 40px; display: flex; gap: 24px; align-items: center; }
+  .row span { min-width: 120px; }
+</style>
+<script>
+  document.getElementById("answer").addEventListener("submit", event => {
+    event.preventDefault();
+    document.body.dataset.answer = event.currentTarget.elements.names.value;
+    document.getElementById("result").textContent = "Answer sent";
+  });
+  // Only the rows within a screen of the viewport are in the page; the others are removed as you scroll.
+  const PLANS = [["Manoku", "50 GB", 39], ["Lumusa", "200 GB", 22], ["Basavo", "5 GB", 78], ["Tinida", "5 GB", 53], ["Nitude", "50 GB", 95], ["Bamolu", "50 GB", 33], ["Tinanu", "50 GB", 70], ["Dalemo", "5 GB", 63], ["Tuniba", "200 GB", 39], ["Niseme", "20 GB", 17], ["Kinina", "5 GB", 75], ["Reteke", "5 GB", 28], ["Bavuna", "20 GB", 42], ["Tuvure", "20 GB", 79], ["Todeno", "5 GB", 43], ["Nuvare", "200 GB", 63], ["Busamu", "20 GB", 36], ["Terida", "5 GB", 56], ["Datatu", "5 GB", 99], ["Tamibo", "200 GB", 54], ["Liredu", "20 GB", 36], ["Balero", "20 GB", 63], ["Nadele", "20 GB", 70], ["Natako", "200 GB", 67], ["Bibari", "5 GB", 43], ["Vivesa", "20 GB", 90], ["Modedu", "200 GB", 95], ["Lureme", "50 GB", 69], ["Doronu", "200 GB", 27], ["Modinu", "200 GB", 40], ["Mubasi", "200 GB", 39], ["Laruko", "20 GB", 48], ["Latora", "5 GB", 36], ["Manumo", "50 GB", 88], ["Busiki", "5 GB", 74], ["Dalinu", "20 GB", 33], ["Mavanu", "50 GB", 54], ["Silobe", "50 GB", 56], ["Koruti", "20 GB", 61], ["Tekuva", "5 GB", 97], ["Daviti", "20 GB", 77], ["Kukuni", "200 GB", 38], ["Betiva", "5 GB", 75], ["Nebumu", "200 GB", 33], ["Besube", "200 GB", 86], ["Lamima", "200 GB", 40], ["Komanu", "20 GB", 58], ["Kovela", "20 GB", 26], ["Nekibo", "200 GB", 23], ["Titade", "200 GB", 34], ["Suveli", "5 GB", 94], ["Bibuso", "200 GB", 46], ["Talami", "200 GB", 23], ["Matidi", "200 GB", 65], ["Tiburo", "5 GB", 48], ["Mumire", "5 GB", 47], ["Berulo", "20 GB", 54], ["Berule", "20 GB", 86], ["Radude", "50 GB", 94], ["Borobe", "50 GB", 35], ["Minaso", "20 GB", 99], ["Venova", "20 GB", 81], ["Varode", "200 GB", 95], ["Vuroto", "200 GB", 73], ["Lubonu", "50 GB", 66], ["Kebomo", "20 GB", 78], ["Lusesu", "50 GB", 19], ["Novali", "200 GB", 73], ["Kebotu", "5 GB", 80], ["Valasi", "20 GB", 39], ["Motono", "20 GB", 29], ["Temide", "20 GB", 47], ["Nivate", "50 GB", 16], ["Bamiti", "20 GB", 21], ["Mivoko", "200 GB", 41], ["Nurinu", "20 GB", 25], ["Temusi", "20 GB", 30], ["Voteva", "5 GB", 22], ["Mokado", "5 GB", 67], ["Nebosi", "20 GB", 32], ["Kedebu", "20 GB", 24], ["Devola", "50 GB", 71], ["Datobo", "5 GB", 30], ["Radivo", "5 GB", 40], ["Dalave", "50 GB", 16], ["Roniri", "5 GB", 54], ["Bumuba", "20 GB", 77], ["Donedi", "200 GB", 69], ["Setile", "50 GB", 62], ["Musubo", "5 GB", 93], ["Voneku", "200 GB", 70], ["Vivara", "50 GB", 99], ["Noroma", "50 GB", 43], ["Nadaka", "50 GB", 94], ["Kasodu", "50 GB", 48], ["Sibumi", "20 GB", 50], ["Dudavo", "5 GB", 80], ["Botade", "50 GB", 42], ["Nevamo", "5 GB", 93], ["Ludive", "5 GB", 54], ["Mimuru", "20 GB", 72], ["Tabevo", "50 GB", 36], ["Mululu", "20 GB", 58], ["Rukalo", "20 GB", 20], ["Lavube", "50 GB", 20], ["Karube", "20 GB", 84], ["Nakela", "5 GB", 62], ["Tamedi", "50 GB", 52], ["Modiba", "200 GB", 52], ["Varoru", "50 GB", 63], ["Rivuto", "200 GB", 42], ["Nivime", "5 GB", 98], ["Tetari", "20 GB", 63], ["Levure", "20 GB", 74], ["Nitanu", "5 GB", 68], ["Lubivi", "50 GB", 26], ["Balosi", "200 GB", 46], ["Birava", "200 GB", 61], ["Kebuso", "5 GB", 70], ["Lomaro", "20 GB", 69], ["Neranu", "20 GB", 42], ["Derubo", "200 GB", 79], ["Mobomo", "50 GB", 22], ["Rasaku", "200 GB", 67], ["Simovu", "50 GB", 76], ["Linulo", "200 GB", 53], ["Dosava", "20 GB", 44], ["Moniva", "50 GB", 18], ["Sadumu", "200 GB", 70], ["Bibeki", "5 GB", 40], ["Teselo", "20 GB", 24], ["Torame", "200 GB", 86], ["Tariru", "20 GB", 60], ["Kuboro", "20 GB", 65], ["Varani", "50 GB", 83], ["Sarimi", "200 GB", 89], ["Remedo", "200 GB", 37], ["Dekebe", "50 GB", 65], ["Lalodu", "5 GB", 71], ["Vetive", "50 GB", 87], ["Liditi", "20 GB", 60], ["Kalade", "200 GB", 56], ["Tatuba", "20 GB", 63], ["Navedi", "200 GB", 79], ["Demeku", "50 GB", 46], ["Susati", "20 GB", 90], ["Dekadu", "50 GB", 44], ["Natome", "5 GB", 81], ["Davebo", "200 GB", 86], ["Datene", "20 GB", 47], ["Kobuvi", "5 GB", 96], ["Liniri", "50 GB", 47], ["Dalene", "200 GB", 44], ["Verido", "50 GB", 79], ["Basobe", "5 GB", 90], ["Neveba", "20 GB", 81], ["Miluku", "200 GB", 65], ["Netari", "50 GB", 86], ["Ruvabi", "20 GB", 73], ["Toburo", "20 GB", 19], ["Tekebu", "200 GB", 94], ["Rovimi", "200 GB", 56], ["Benimo", "20 GB", 86], ["Rovide", "50 GB", 8], ["Tadabu", "20 GB", 95], ["Moboru", "200 GB", 79], ["Toride", "50 GB", 96], ["Lidimo", "5 GB", 76], ["Sunova", "5 GB", 53], ["Lorulu", "200 GB", 28], ["Lutaka", "50 GB", 97], ["Tikuko", "5 GB", 77], ["Nokobo", "20 GB", 56], ["Rolenu", "20 GB", 42], ["Resose", "5 GB", 21], ["Rudode", "20 GB", 32], ["Levuma", "50 GB", 47], ["Veveve", "200 GB", 81], ["Ravibi", "5 GB", 89], ["Rikivo", "5 GB", 74], ["Lemome", "50 GB", 67], ["Kiduki", "200 GB", 20], ["Lisiko", "200 GB", 66], ["Baseve", "5 GB", 92], ["Riboka", "5 GB", 46], ["Karovi", "200 GB", 60], ["Tenate", "50 GB", 20], ["Dinoku", "200 GB", 53], ["Maneko", "5 GB", 16], ["Deture", "200 GB", 71], ["Danuro", "20 GB", 53], ["Mibimi", "20 GB", 70], ["Mobuni", "200 GB", 17], ["Navidi", "20 GB", 59], ["Sibuki", "200 GB", 55], ["Bemare", "200 GB", 77], ["Temobo", "20 GB", 39], ["Danone", "50 GB", 34], ["Menebe", "50 GB", 97], ["Dubide", "20 GB", 35]];
+  const ROW = 40, box = document.getElementById("rows");
+  box.style.height = PLANS.length * ROW + "px";
+  const choose = button => {
+    document.body.dataset.chosen = button.dataset.plan;
+    document.getElementById("result").textContent = "Plan chosen: " + button.dataset.plan;
+  };
+  document.querySelector("button[data-plan]").addEventListener("click", event => choose(event.currentTarget));
+  let shown = "";
+  const render = () => {
+    const top = box.getBoundingClientRect().top;
+    const first = Math.max(0, Math.floor((-top - innerHeight) / ROW));
+    const last = Math.min(PLANS.length, Math.ceil((innerHeight * 2 - top) / ROW));
+    if (first + ":" + last === shown) return;
+    shown = first + ":" + last;
+    box.replaceChildren(...PLANS.slice(first, last).map(([name, storage, price], i) => {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.setAttribute("role", "row");
+      row.style.top = (first + i) * ROW + "px";
+      row.innerHTML = `<span role="cell">${name}</span><span role="cell">${storage}</span><span role="cell">€${price}</span>`;
+      return row;
+    }));
+  };
+  addEventListener("scroll", render, {passive: true});
+  render();
+</script>
+</body>
+</html>

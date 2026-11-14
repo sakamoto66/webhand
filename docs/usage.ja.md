@@ -155,6 +155,7 @@ webhand finish --status done --reason "..."
 | `--param KEY=VALUE`（複数可） | 手順書のパラメータ。入力値として Jev に渡る |
 | `--allow-draft` | 未承認（draft）の手順書を試行する |
 | `--focus REGION` / `--skip REGION`（複数可） | 先に見せる領域 / 外す領域（例: `form:予約`） |
+| `--read KIND`（複数可） | 画面の外から読む内容: `outline`、`text`、`table`、`list`、`link`、`control`、`media`。詳しくはリファレンス |
 | `--session new\|profile:NAME` | セッション。既定は `new` |
 | `--chrome auto\|linux\|windows` | 使う Chrome。既定は `auto`（`WEBHAND_CHROME` でも指定可） |
 | `--headed` | Chrome のウィンドウを表示する |
@@ -198,6 +199,7 @@ webhand replan --reason "検索ボタンが押されていない" --step "..." -
 | `--step S`（複数可） | 手順を置き換える |
 | `--value LABEL=VALUE`（複数可） | 値を追加・置き換える |
 | `--focus` / `--skip` | 領域の指定を置き換える |
+| `--read KIND` | 画面の外から読む内容を置き換える。`--read none` でなくす |
 | `--restart` | 開始 URL を開き直してから次の試行を始める。実サービスで送信した後には使わない |
 
 試行回数の上限を超えると拒否されます。その場合は `finish --status blocked` で終えます。
@@ -288,4 +290,5 @@ networkingMode=mirrored
 | このリポジトリ内で `npx -y webhand@0.3` が `webhand: not found` | `npm run build && npm link` するか、`npx -y webhand@latest` を使う |
 | draft の手順書が使えない | 試行のときだけ `--allow-draft` を付ける。通常実行は承認後 |
 | 必要な部分がページの観測から切れている | 出力の `REGIONS` で `0/N` や `(skip)` を確認し、`--focus` / `--skip` を指定する |
+| 長いページで、Jev が何かを探して上下にスクロールし続ける | 目的に要る種類を `--read` で指定する（例: `--read table`） |
 | 同じ種類の失敗が続く | `/webhand-learn <log>` でその実行から学習させ、次の計画に反映する |

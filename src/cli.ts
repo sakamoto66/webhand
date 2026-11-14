@@ -9,10 +9,13 @@ import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import * as agent from "./agent.ts";
 import { Budget, execute, runAgent } from "./agent.ts";
-import { Browser } from "./browser.ts";
+import { Browser, type ViewChoice } from "./browser.ts";
+import { type Collected, type Collector, collectScan, MAX_COLLECTED } from "./collect.ts";
+import { type Compared, type Comparer, compareScan, MAX_PAGES, MAX_SCROLLS, type Reader } from "./compare.ts";
 import { describeError, quote, show, stamp, toJson } from "./format.ts";
 import * as learn from "./learn.ts";
 import { gitState, logOnce, maskUrls, pageEvent, Recorder, safeUrl, summarize } from "./metrics.ts";
+import { loadMore, type MoreChooser } from "./more.ts";
 import { actionSpace, offscreen, planText, resolve } from "./policies/base.ts";
 import { JevPolicy } from "./policies/jev.ts";
 import * as runbook from "./runbook.ts";
@@ -99,7 +102,11 @@ export function captured<T>(fn: () => T): { result: T; text: string } {
 // --- Output Claude reads -------------------------------------------------------------------
 
 export function render(page: Page): string {
-  const lines = [`URL: ${page.url}`, `TITLE: ${page.title}`, "PAGE TEXT (untrusted data):", page.text, "ELEMENTS:"];
+  const lines = [`URL: ${page.url}`, `TITLE: ${page.title}`, "PAGE TEXT (untrusted data):", page.text];
+  if (page.read) {
+    lines.push("READ (untrusted data; the whole page beyond the viewport, for reading only):", page.read.text);
+  }
+  lines.push("ELEMENTS:");
   const [elements, , controls] = actionSpace(page.actions);
   for (const element of elements) {
     // Claude sees every option with its own line.
@@ -107,6 +114,7 @@ export function render(page: Page): string {
     for (const key of ["checked", "selected", "expanded"]) {
       if (key in element) details.push(`${key}=${show(element[key])}`);
     }
+    if (element.at) details.push(`at=${quote(element.at)}`);
     const operations = element.operations.join(",");
     lines.push(`[${element.index}] ${show(element.role)} ${quote(element.label)} ${details.join(" ")} (${operations})`);
     for (const option of element.options ?? []) {
@@ -134,16 +142,66 @@ function regionLine(region: Record<string, any>): string {
 }
 
 function headline(page: Page): string {
-  return `URL: ${page.url}\nTITLE: ${page.title}`;
+  const status = page.status as { kind: string; http_status?: number; signs?: string[] } | undefined;
+  const detail = status ? [status.http_status ? `HTTP ${status.http_status}` : "", ...(status.signs ?? [])] : [];
+  const line = status
+    ? `\nPAGE: ${status.kind}${detail.some(Boolean) ? ` (${detail.filter(Boolean).join(", ")})` : ""}`
+    : "";
+  return `URL: ${page.url}\nTITLE: ${page.title}${line}`;
+}
+
+/** How a scan went: its scrolls, how often more items were loaded (with --more), and why it stopped. */
+function scanned(scan: { rounds: number; stopped: string; pages?: number }): string {
+  const stopped =
+    scan.stopped === "bottom"
+      ? "reached the bottom"
+      : scan.stopped === "pages"
+        ? `stopped after loading more ${MAX_PAGES} times`
+        : `stopped at ${MAX_SCROLLS} scrolls`;
+  const more = scan.pages === undefined ? "" : `, loaded more ${scan.pages} times`;
+  return `${scan.rounds} scrolls${more}, ${stopped}`;
+}
+
+/**
+ * Said when a scan stopped before the end of the list. In round 22, three runs sent 4 of 11 items and finished
+ * done after "stopped at 20 scrolls", read as the end of the list.
+ */
+function cutShort(scan: { stopped: string }, what: string): string[] {
+  if (scan.stopped === "bottom") return [];
+  return [
+    `NOT THE WHOLE LIST: the scan stopped before the end of the list, and items further down were not read. ${what} ` +
+      "Unless the goal needs none of the rest, say the answer is partial and finish blocked.",
+  ];
+}
+
+export function comparedLine(compared: Compared): string {
+  return [
+    `COMPARED (${scanned(compared)}): ${compared.best ?? "nothing fit the criterion"}`,
+    ...cutShort(compared, "This is the best among the items read."),
+  ].join("\n");
+}
+
+export function collectedLine(collected: Collected): string {
+  const lines = [
+    `COLLECTED (${scanned(collected)}): ${collected.matched} of ${collected.seen} items meet: ${collected.criterion}`,
+    ...collected.items.map((item) => `- ${item}`),
+  ];
+  if (collected.matched > collected.items.length) lines.push(`(the first ${MAX_COLLECTED} are shown)`);
+  lines.push(...cutShort(collected, "These are the matching items among those read."));
+  return lines.join("\n");
 }
 
 export function describePlan(plan: Plan, view: runbook.View | null = null): string {
   const text = planText(plan);
   const lines = [`GOAL: ${plan.goal}`, "PLAN:", ...(text.length ? text : ["(goal only)"]).map((line) => `  ${line}`)];
   if (plan.values.length) lines.push(`VALUES: ${plan.values.map((value) => value.label).join(", ")}`);
-  for (const key of ["focus", "skip"] as const) {
+  for (const key of ["focus", "skip", "read"] as const) {
     if (view?.[key]?.length) lines.push(`${key.toUpperCase()}: ${view[key].join(", ")}`);
   }
+  if (plan.compare) lines.push(`COMPARE: ${plan.compare}`);
+  if (plan.collect) lines.push(`COLLECT: ${plan.collect}`);
+  if (plan.more) lines.push(`MORE: ${plan.more}`);
+  if (plan.flow) lines.push(`FLOW: ${plan.flow}`);
   return lines.join("\n");
 }
 
@@ -192,7 +250,7 @@ function requireSession(): session.State {
 }
 
 async function openPage(state: session.State, url: string | null = null, restart = false): Promise<void> {
-  const browser = await Browser.open(url, { port: state.port, view: state.view ?? null });
+  const browser = await Browser.open(url, { port: state.port, view: browserView(state) });
   try {
     state.page = await browser.observe();
     if (restart && process.env.WEBHAND_SCREENSHOTS === "1") {
@@ -225,6 +283,26 @@ function defaultLog(name: string): string {
 }
 
 // --- Commands ------------------------------------------------------------------------------
+
+/** A URL replan may open: http, https, or file. */
+function openableUrl(url: string): boolean {
+  try {
+    return ["http:", "https:", "file:"].includes(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
+
+/** Why Jev refused, for the run log only. */
+function jevDiagnostic(error: Error): { jev?: Record<string, unknown> } {
+  return error instanceof PolicyError && error.diagnostic ? { jev: error.diagnostic } : {};
+}
+
+/** The snapshot's view: learned and Claude's regions, and with flow v2, the whole page. */
+function browserView(state: session.State): ViewChoice | null {
+  const view = (state.view ?? null) as ViewChoice | null;
+  return state.plan?.flow === "v2" ? { ...(view ?? {}), whole: true } : view;
+}
 
 /** Everything learned, for Claude to plan from. */
 async function commandCatalog(args: Args): Promise<number> {
@@ -325,6 +403,7 @@ async function commandStart(args: Args): Promise<number> {
   if (steps.some((step) => step.actor === "human") && !args.headed) {
     throw new CliExit("This plan has [person] steps. Add --headed so the person can see the window");
   }
+  if (!FLOWS.includes(args.flow)) throw new CliExit(`WEBHAND_FLOW must be one of: ${FLOWS.join(", ")}`);
   if (!process.env.TYPESAFE_API_KEY) {
     throw new CliExit("TYPESAFE_API_KEY is not set. Set it as an environment variable");
   }
@@ -335,7 +414,13 @@ async function commandStart(args: Args): Promise<number> {
     notes: [],
     attempt: 1,
     service: service ? { description: service.description, facts: service.facts } : null,
+    ...(args.compare ? { compare: args.compare } : {}),
+    ...(args.collect ? { collect: args.collect } : {}),
+    ...(args.more ? { more: args.more } : {}),
+    ...(args.flow === "v2" ? { flow: "v2" as const } : {}),
   };
+  if (plan.compare && plan.collect) throw new CliExit("Use --compare or --collect, not both");
+  if (plan.more && !plan.compare && !plan.collect) throw new CliExit("--more needs --compare or --collect");
   let chromeState: session.State;
   try {
     chromeState = await deps.startChrome({ headed: args.headed, profile, chrome });
@@ -344,7 +429,7 @@ async function commandStart(args: Args): Promise<number> {
     throw error;
   }
   const learned = runbook.view(runbook.serviceView(service), book);
-  const claudeView = { focus: args.focus, skip: args.skip };
+  const claudeView = { focus: args.focus, skip: args.skip, read: args.read };
   const state: session.State = {
     ...chromeState,
     view_learned: learned,
@@ -370,7 +455,7 @@ async function commandStart(args: Args): Promise<number> {
   const recorder = new Recorder(state.log);
   let browser: Browser | null = null;
   try {
-    browser = await Browser.open(state.start_url, { port: chromeState.port, view: state.view });
+    browser = await Browser.open(state.start_url, { port: chromeState.port, view: browserView(state) });
     state.page = await browser.observe();
     recorder.event("run_start", {
       task,
@@ -382,6 +467,7 @@ async function commandStart(args: Args): Promise<number> {
       runbook: state.runbook,
       service: serviceName,
       view: state.view,
+      ...(plan.flow ? { flow: plan.flow } : {}),
       max_attempts: args.max_attempts,
       started_at: new Date().toISOString(),
     });
@@ -390,6 +476,9 @@ async function commandStart(args: Args): Promise<number> {
       steps: planText(plan),
       values: values.map((v) => v.label),
       view: state.view,
+      ...(plan.compare ? { compare: plan.compare } : {}),
+      ...(plan.collect ? { collect: plan.collect } : {}),
+      ...(plan.more ? { more: plan.more } : {}),
       source: book && !args.step.length ? "runbook" : "claude",
     });
     recorder.event("page", pageEvent(state.page, 1));
@@ -494,10 +583,83 @@ async function commandRun(args: Args): Promise<number> {
   session.save(state);
 
   const policy = deps.policy();
-  const browser = await Browser.open(null, { port: state.port, view: state.view ?? null });
+  const browser = await Browser.open(null, { port: state.port, view: browserView(state) });
   const recorder = new Recorder(state.log);
   let result: agent.AgentResult;
+  // With --more, a scan presses Claude's control for more items when the list ends.
+  const more = () => {
+    const control = state.plan.more;
+    if (!control) return null;
+    if (!("more" in policy)) throw new CliExit("This chooser cannot find a control for more items");
+    const chooser = policy as unknown as MoreChooser;
+    return loadMore(browser as Reader, chooser, state.plan, control, recorder, state.plan.attempt);
+  };
+  // Pressing the control is an action: when its result is uncertain, the run stops as UNCERTAIN.
+  const uncertain = (error: MutationUncertain, scan: string) => {
+    recorder.event(`${scan}_failed`, { attempt: state.plan.attempt, error: error.message, uncertain: true });
+    state.outcome = agent.UNCERTAIN;
+    session.save(state);
+    print(
+      `OUTCOME ${agent.UNCERTAIN}: ${error.message} while loading more items. Do not repeat or replan. Run: webhand finish --status error`,
+    );
+    return UNCERTAIN;
+  };
   try {
+    // With a criterion, compare the whole list once per attempt before anything is acted on.
+    if (state.plan.compare && !state.plan.compared) {
+      if (!("compare" in policy)) throw new CliExit("This chooser cannot compare items");
+      let scan: Awaited<ReturnType<typeof compareScan>>;
+      try {
+        scan = await compareScan(browser, policy as unknown as Comparer, state.plan, state.plan.compare, recorder, {
+          loadMore: more(),
+        });
+      } catch (error) {
+        if (error instanceof MutationUncertain) return uncertain(error, "compare");
+        if (!(error instanceof PolicyError || error instanceof StalePage)) throw error;
+        // Only scrolls happened. The attempt goes on; run again, or replan.
+        recorder.event("compare_failed", {
+          attempt: state.plan.attempt,
+          error: error.message,
+          ...jevDiagnostic(error),
+        });
+        print(`COMPARE FAILED: ${error.message} Nothing was clicked or typed. Run again, or replan`);
+        return FAILED;
+      }
+      state.plan.compared = scan.compared;
+      state.page = scan.page;
+      session.save(state);
+      print(comparedLine(scan.compared));
+    }
+    // With a condition, collect the matching items once per attempt and give them to Claude; nothing is acted on.
+    if (state.plan.collect && !state.plan.collected) {
+      if (!("collect" in policy)) throw new CliExit("This chooser cannot collect items");
+      let scan: Awaited<ReturnType<typeof collectScan>>;
+      try {
+        scan = await collectScan(browser, policy as unknown as Collector, state.plan, state.plan.collect, recorder, {
+          loadMore: more(),
+        });
+      } catch (error) {
+        if (error instanceof MutationUncertain) return uncertain(error, "collect");
+        if (!(error instanceof PolicyError || error instanceof StalePage)) throw error;
+        recorder.event("collect_failed", {
+          attempt: state.plan.attempt,
+          error: error.message,
+          ...jevDiagnostic(error),
+        });
+        print(`COLLECT FAILED: ${error.message} Nothing was clicked or typed. Run again, or replan`);
+        return FAILED;
+      }
+      state.plan.collected = scan.collected;
+      state.page = scan.page;
+      session.save(state);
+      print(collectedLine(scan.collected));
+      print(
+        "Nothing was clicked or typed, and the page is back where it was. Check these items against the goal and " +
+          "write the answer from them. To put the answer into the page, give it as a value: run --value " +
+          "'LABEL=VALUE' (Jev types only values). Otherwise: finish",
+      );
+      return OK;
+    }
     result = await runAgent(browser, policy, state.plan, recorder, new Budget(state.max_actions, state.max_decisions), {
       history: state.history,
       page: state.page,
@@ -513,7 +675,12 @@ async function commandRun(args: Args): Promise<number> {
     });
     state.page = result.page;
     state.outcome = result.outcome;
-    recorder.event("escalation", { reason: result.outcome, attempt: state.plan.attempt, detail: result.detail });
+    recorder.event("escalation", {
+      reason: result.outcome,
+      attempt: state.plan.attempt,
+      detail: result.detail,
+      ...(result.jev ? { jev: result.jev } : {}),
+    });
     if (agent.CHECKED_OUTCOMES.includes(result.outcome)) {
       await agent.checkPage(browser, recorder, "escalation", state.plan.attempt, result.page.url);
     }
@@ -541,6 +708,27 @@ async function commandReplan(args: Args): Promise<number> {
     print(`ATTEMPTS EXHAUSTED (${state.max_attempts}). Run: webhand finish --status blocked`);
     return BUDGET;
   }
+  if (args.url && args.restart) {
+    print("REJECTED: use --url or --restart, not both");
+    return FAILED;
+  }
+  let url: string | null = null;
+  if (args.url) {
+    // A path without a scheme is a local file, as the catalog shows a learned page (tasks/fixtures/...).
+    try {
+      url = runbook.resolveUrl(args.url);
+    } catch (error) {
+      if (!(error instanceof runbook.RunbookError)) throw error;
+      print(`REJECTED: ${error.message.replace("start_url", "--url")}`);
+      return FAILED;
+    }
+    if (!openableUrl(url)) {
+      print("REJECTED: --url needs an http, https, or file URL, or a local file path");
+      return FAILED;
+    }
+    // As start does: the Windows Chrome on WSL opens a local file by its Windows path (round 19).
+    url = session.browserUrl(url, state.chrome ?? "linux");
+  }
   if (args.step.length) {
     const steps = parseSteps(args.step);
     if (steps.some((step) => step.actor === "human") && !state.headed) {
@@ -550,10 +738,29 @@ async function commandReplan(args: Args): Promise<number> {
     plan.steps = steps;
   }
   plan.values = mergeValues(plan.values, parseValues(args.value));
-  const viewChanged = args.focus.length || args.skip.length;
+  if (args.compare) plan.compare = args.compare === "none" ? null : args.compare;
+  plan.compared = null; // Each attempt compares again from the top.
+  if (args.collect) plan.collect = args.collect === "none" ? null : args.collect;
+  plan.collected = null; // and collects again.
+  if (args.more) plan.more = args.more === "none" ? null : args.more;
+  if (plan.compare && plan.collect) {
+    print("REJECTED: use --compare or --collect, not both (turn one off with none)");
+    return FAILED;
+  }
+  if (plan.more && !plan.compare && !plan.collect) {
+    print("REJECTED: --more needs --compare or --collect (turn it off with --more none)");
+    return FAILED;
+  }
+  const viewChanged = args.focus.length || args.skip.length || args.read.length;
   if (viewChanged) {
-    // Claude's region choice is replaced, on top of what was learned.
-    state.view_claude = { focus: args.focus, skip: args.skip };
+    // Claude's region choice is replaced, on top of what was learned. --read alone keeps the regions.
+    const regions = args.focus.length || args.skip.length;
+    const earlier = state.view_claude ?? { focus: [], skip: [] };
+    state.view_claude = {
+      focus: regions ? args.focus : earlier.focus,
+      skip: regions ? args.skip : earlier.skip,
+      read: args.read.length ? args.read : earlier.read,
+    };
     state.view = runbook.view(state.view_learned, state.view_claude);
   }
   const ended = state.outcome || "CLAUDE_STOPPED";
@@ -569,11 +776,17 @@ async function commandReplan(args: Args): Promise<number> {
     steps: planText(plan),
     values: plan.values.map((v: Value) => v.label),
     view: state.view ?? null,
+    ...(plan.compare ? { compare: plan.compare } : {}),
+    ...(plan.collect ? { collect: plan.collect } : {}),
+    ...(plan.more ? { more: plan.more } : {}),
     restart: args.restart,
+    ...(url ? { url: safeUrl(url) } : {}),
     source: "claude",
   });
-  if (args.restart) await openPage(state, state.start_url, true); // Navigation only; no earlier mutation is repeated.
-  if (!args.restart && viewChanged) await openPage(state); // Observe again with the new regions.
+  // Navigation only; no earlier mutation is repeated.
+  if (url) await openPage(state, url, true);
+  else if (args.restart) await openPage(state, state.start_url, true);
+  else if (viewChanged) await openPage(state); // Observe again with the new regions.
   print(
     `${describePlan(plan, state.view ?? null)}\nATTEMPT ${plan.attempt}/${state.max_attempts}\n${headline(state.page)}`,
   );
@@ -622,7 +835,7 @@ async function commandAct(args: Args): Promise<number> {
   decision.text = decision.action.kind === "fill" ? args.text : null;
   state.decisions += 1;
   session.save(state);
-  const browser = await Browser.open(null, { port: state.port, view: state.view ?? null });
+  const browser = await Browser.open(null, { port: state.port, view: browserView(state) });
   const recorder = new Recorder(state.log);
   try {
     await execute(browser, state.page, decision, state.history, recorder, {
@@ -920,6 +1133,8 @@ interface CommandSpec {
   run: (args: Args) => Promise<number>;
 }
 
+const FLOWS = ["v1", "v2"];
+
 function commands(): Record<string, CommandSpec> {
   const chromeDefault = process.env.WEBHAND_CHROME ?? "auto";
   const chromeOption: OptionSpec = {
@@ -938,7 +1153,33 @@ function commands(): Record<string, CommandSpec> {
       help: "A region to show first, such as form:予約",
     },
     { name: "skip", type: "string", multiple: true, metavar: "REGION", help: "A region to leave out" },
+    {
+      name: "read",
+      type: "string",
+      multiple: true,
+      metavar: "KIND",
+      choices: [...runbook.READ_KINDS, "none"],
+      help: "Content to read beyond the viewport: outline, text, table, list, link, control, media; none clears it",
+    },
   ];
+  const compareOption: OptionSpec = {
+    name: "compare",
+    type: "string",
+    metavar: "CRITERION",
+    help: "Before acting, scroll through the whole list and find the item that best meets this; none clears it",
+  };
+  const collectOption: OptionSpec = {
+    name: "collect",
+    type: "string",
+    metavar: "CONDITION",
+    help: "First scroll through the whole list and collect every item that meets this, then stop; none clears it",
+  };
+  const moreOption: OptionSpec = {
+    name: "more",
+    type: "string",
+    metavar: "CONTROL",
+    help: "With --compare or --collect, press this control when the list ends, such as Next page; none clears it",
+  };
   return {
     catalog: {
       help: "List learned services, procedures, and saved profiles",
@@ -957,6 +1198,16 @@ function commands(): Record<string, CommandSpec> {
         { name: "param", type: "string", multiple: true, metavar: "KEY=VALUE", help: "A runbook parameter" },
         { name: "allow-draft", type: "boolean", help: "Trial a runbook no person has approved yet" },
         ...viewOptions,
+        compareOption,
+        collectOption,
+        moreOption,
+        {
+          name: "flow",
+          type: "string",
+          choices: [...FLOWS],
+          default: process.env.WEBHAND_FLOW || "v1",
+          help: "v2: offer Jev the whole page (research). Default: WEBHAND_FLOW, else v1",
+        },
         { name: "session", type: "string", default: "new", help: "new (temporary) or profile:NAME (saved sign-in)" },
         chromeOption,
         { name: "headed", type: "boolean" },
@@ -981,7 +1232,11 @@ function commands(): Record<string, CommandSpec> {
         { name: "step", type: "string", multiple: true, help: "Replace the steps" },
         { name: "value", type: "string", multiple: true, metavar: "LABEL=VALUE" },
         { name: "restart", type: "boolean", help: "Open the start URL again before the next attempt" },
+        { name: "url", type: "string", help: "Open this URL before the next attempt instead (another way in)" },
         ...viewOptions,
+        compareOption,
+        collectOption,
+        moreOption,
       ],
       run: commandReplan,
     },

@@ -47,7 +47,11 @@ export async function run(argv: string[], io?: IO): Promise<number> {
       throw new CliExit("A task supplies its own goal and start URL. Drop --goal and --url");
     }
     const task = await load(name);
-    return main(["start", "--goal", task.GOAL, "--url", task.startUrl(process.cwd()), ...rest], io, { task: name });
+    // An A/B of the flow sets it for the session, so Claude's instructions are the same in both conditions.
+    const flow = process.env.WEBHAND_RESEARCH_FLOW;
+    const forced = flow && !rest.some((arg) => /^--flow(=|$)/.test(arg)) ? ["--flow", flow] : [];
+    const argv2 = ["start", "--goal", task.GOAL, "--url", task.startUrl(process.cwd()), ...forced, ...rest];
+    return main(argv2, io, { task: name });
   }
   if (command === "finish") {
     const name = session.load()?.task;

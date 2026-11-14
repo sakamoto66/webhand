@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fieldnote · Newsletter</title>
+<style>
+  body { font: 16px/1.6 system-ui, sans-serif; margin: 0 auto; max-width: 640px; padding: 0 24px; }
+  #result { position: fixed; top: 0; right: 24px; background: #ffe; padding: 4px 12px; }
+  form p { margin: 0 0 12px; }
+  .tip { background: #f4f4f4; padding: 6px 10px; }
+</style></head>
+<body>
+  <div id="result" role="status"></div>
+  <h1>Newsletter</h1>
+  <p>Get one email a month about new Fieldnote features.</p>
+  <form id="signup">
+    <p class="tip" id="tip">Tip: you can change plans at any time.</p>
+    <p>Offer ends in <span id="countdown">600</span> seconds.</p>
+    <p><label>Name <input name="name" autocomplete="off"></label></p>
+    <p><label>Email <input name="email" type="email" autocomplete="off"></label></p>
+    <p><button type="submit">Sign up</button></p>
+  </form>
+  <footer><p>Local demo: no accounts or payments.</p></footer>
+<script>
+  // The tip and the countdown inside the form change every 400 ms, as a carousel or a timer would.
+  const TIPS = ["Tip: you can change plans at any time.", "Tip: storage is shared across devices.",
+    "Tip: every plan has the same support hours.", "Tip: receipts are sent by email."];
+  let tick = 0;
+  setInterval(() => {
+    tick += 1;
+    document.getElementById("tip").textContent = TIPS[tick % TIPS.length];
+    document.getElementById("countdown").textContent = String(600 - tick);
+  }, 400);
+  document.getElementById("signup").addEventListener("submit", event => {
+    event.preventDefault();
+    const form = event.currentTarget.elements;
+    document.body.dataset.signup = JSON.stringify({ name: form.name.value, email: form.email.value });
+    document.getElementById("result").textContent = "Thanks for signing up";
+  });
+</script>
+</body>
+</html>

@@ -21,6 +21,9 @@ const SNAPSHOT = asset("snapshot.js").trim();
 export interface ViewChoice {
   focus?: string[];
   skip?: string[];
+  read?: string[];
+  /** v2: offer elements beyond the viewport with their own operations. */
+  whole?: boolean;
 }
 
 /** The snapshot expression for a view ({focus, skip} region patterns). The view never changes freshness. */
@@ -64,7 +67,54 @@ const PAGE_CHECK = `(() => {
     text_chars: document.body ? document.body.innerText.length : 0,
   };
 })()`;
+// v2: the kind of page, from signs only (element presence and the document's HTTP status, never text or values).
+const STATUS = `(() => {
+  const shown = e => { const r=e.getBoundingClientRect(); return r.width>0 && r.height>0 && getComputedStyle(e).visibility !== 'hidden'; };
+  const any = selector => [...document.querySelectorAll(selector)].some(shown);
+  const nav = performance.getEntriesByType('navigation')[0];
+  const http = nav && nav.responseStatus ? nav.responseStatus : null;
+  const signs = ${JSON.stringify(CHALLENGES)}.filter(([, selector]) => document.querySelector(selector)).map(([name]) => name);
+  const kind = http >= 400 ? 'error' : signs.length ? 'check' : any('input[type="password"]') ? 'sign_in'
+    : any('dialog[open],[role="dialog"],[role="alertdialog"],[aria-modal="true"]') ? 'dialog' : 'ready';
+  const count = selector => [...document.querySelectorAll(selector)].filter(shown).length;
+  const unseen = {frames: count('iframe,frame'), canvases: count('canvas'), objects: count('object,embed')};
+  return {kind, ...(http ? {http_status: http} : {}), ...(signs.length ? {signs} : {}), unseen};
+})()`;
+const UNSEEN = `(() => {
+  const shown = e => { const r=e.getBoundingClientRect(); return r.width>0 && r.height>0; };
+  const count = selector => [...document.querySelectorAll(selector)].filter(shown).length;
+  return {frames: count('iframe,frame'), canvases: count('canvas'), objects: count('object,embed')};
+})()`;
 const MARKER = `(() => { const state=${READ_STATE}; return state?.marker ?? null; })()`;
+
+// The parts of the freshness keys in assets/snapshot.js (viewportKey, pageKey, guard, marker), by position.
+const VIEWPORT_PARTS = ["navigation", "url", "scroll", "scroll", "viewport", "viewport"];
+const PAGE_KEY_PARTS = [...VIEWPORT_PARTS, "form_fields"];
+const GUARD_PARTS = [
+  "target_replaced",
+  "target_label",
+  "target_label",
+  ...Array(9).fill("target_state"),
+  "target_link",
+  "scope_text",
+  "scope_kind",
+];
+// v2: what the freshness check leaves out. The target is hit-tested just before input whatever the scroll, and
+// the text around a target outside a list item (a form, a dialog) can change without changing what it does.
+// Without a target (Jev's DONE or BLOCKED), the page's own text is left out too: a ticking timer or a rotating
+// banner would otherwise keep any answer from standing. The address, the elements, and field values still count.
+const V2_IGNORED = new Set(["scroll", "viewport"]);
+const V2_IGNORED_PAGE = new Set(["scroll", "viewport", "title", "text"]);
+const UNCHANGING = new Set(["scroll", "wait"]);
+const MARKER_PARTS = [...VIEWPORT_PARTS, "title", "text", "semantics", "form_fields"];
+
+/** The names of the parts that differ between two freshness keys, each name once, in order. */
+function differing(current: unknown, observed: unknown, parts: string[]): string[] {
+  if (isDeepStrictEqual(current, observed)) return [];
+  if (!Array.isArray(current) || !Array.isArray(observed) || current.length !== observed.length) return ["shape"];
+  const names = current.flatMap((value, i) => (isDeepStrictEqual(value, observed[i]) ? [] : [parts[i] ?? "other"]));
+  return [...new Set(names)];
+}
 // Read only once the document has loaded and the DOM has stopped changing, so content rendered by
 // DOMContentLoaded handlers or after an XHR is observed. A page that never goes quiet is read at the cap.
 const SETTLE_QUIET_MS = 150;
@@ -85,20 +135,117 @@ const SETTLE = `new Promise(resolve => {
   check();
 })`;
 // Node ids are code-owned references to observed elements, never model output.
+// Where to click an observed element, or why not: gone, disabled, hidden, read-only, outside the viewport, or
+// covered (with what covers it).
 const RESOLVE_TARGET = `(action => {
   const c=window.__browserLab, e=c?.nodes.get(action.node);
-  if (!e?.isConnected || e.matches(':disabled') || c.closest(e,'[aria-disabled="true"],[inert]') ||
-      !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
-  if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
+  if (!e?.isConnected) return {reason:'gone'};
+  if (e.matches(':disabled') || c.closest(e,'[aria-disabled="true"],[inert]')) return {reason:'disabled'};
+  if (!e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return {reason:'hidden'};
+  if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return {reason:'read_only'};
   // The center of the whole box first. An inline element that wraps can leave that center between its lines,
   // so the center of each line box is tried next.
+  let covered=null;
   for (const r of [e.getBoundingClientRect(), ...e.getClientRects()]) {
     const x=r.x+r.width/2, y=r.y+r.height/2;
     if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
     if (c.hit(e,x,y)) return {x,y};
+    covered ??= c.cover(x,y);
   }
-  return null;
+  return covered ? {reason:'covered', cover:covered} : {reason:'outside'};
 })`;
+// Scrolls an observed element into the middle of the viewport. It never clicks or types.
+const REVEAL = `(node => {
+  const e=window.__browserLab?.nodes.get(node);
+  if (!e?.isConnected) return false;
+  e.scrollIntoView({block: "center", inline: "nearest", behavior: "instant"});
+  return true;
+})`;
+
+// The text of the row, card, or list item each observed element is in, for comparing items. Page text only;
+// field values are not part of innerText.
+const CONTEXTS = `(nodes => {
+  const c=window.__browserLab, out={};
+  for (const node of nodes) {
+    const e=c?.nodes.get(node);
+    if (!e?.isConnected) continue;
+    const item=e.closest('tr,li,[role="row"],[role="listitem"],article,[role="article"]') || e.parentElement;
+    out[node]=String(item?.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 300);
+  }
+  return out;
+})`;
+
+// The items of lists and tables, header rows left out, in document order. An item is a table row, or one of three or more
+// sibling blocks of the same tag and class (cards built from divs, list items, articles), outside navigation,
+// headers and footers. Of nested items the outer one is kept (a card, not the bullet points inside it), unless
+// it only wraps the inner ones: they hold nearly all of its text (a row of cards in a grid), or it is too long
+// for one item (a section holding a whole list).
+const ITEMS = `(() => {
+  const ROW='tr,[role="row"]', BLOCK=new Set(['DIV','LI','ARTICLE','SECTION','A','DD']);
+  const SKIP='nav,header,footer,aside,[role="navigation"],[role="banner"],[role="contentinfo"],[role="dialog"]';
+  const items=new Set(document.querySelectorAll(ROW));
+  for (const parent of document.querySelectorAll('body *')) {
+    if (parent.childElementCount<3) continue;
+    const groups=new Map();
+    for (const child of parent.children) {
+      if (!BLOCK.has(child.tagName) && !child.matches('[role="listitem"],[role="article"]')) continue;
+      const key=child.tagName+'|'+child.getAttribute('class')+'|'+child.getAttribute('role');
+      groups.set(key, [...(groups.get(key) || []), child]);
+    }
+    for (const group of groups.values()) {
+      if (group.length<3) continue;
+      for (const e of group) if ((e.textContent || '').trim()) items.add(e);
+    }
+  }
+  const length=e=>(e.textContent || '').replace(/\\s+/g, '').length;
+  const up=new Map(), kids=new Map();
+  for (const e of items) {
+    let a=e.parentElement;
+    while (a && !items.has(a)) a=a.parentElement;
+    up.set(e, a);
+    if (a) kids.set(a, [...(kids.get(a) || []), e]);
+  }
+  const wrapper=e=>{
+    const inner=kids.get(e) || [];
+    return inner.length>=2 && (length(e)>1500 || inner.reduce((n,d)=>n+length(d),0)>=0.85*length(e));
+  };
+  const kept=e=>{
+    if (e.closest(SKIP) || wrapper(e)) return false;
+    for (let a=up.get(e); a; a=up.get(a)) if (!a.closest(SKIP) && !wrapper(a)) return false;
+    return true;
+  };
+  const header=e=>e.querySelector('th,[role="columnheader"]') && !e.querySelector('td,[role="cell"],[role="gridcell"]');
+  return [...items].filter(e=>!header(e) && kept(e))
+    .sort((a,b)=>a.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING?-1:1);
+})`;
+
+const ROWS = `(() => {
+  const out=[];
+  for (const e of ${ITEMS}()) {
+    const r=e.getBoundingClientRect();
+    if (r.height<=0 || r.width<=0 || r.bottom<=0 || r.top>=innerHeight) continue;
+    const text=String(e.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 300);
+    if (text) out.push(text);
+  }
+  return out;
+})()`;
+
+// Where the main list ends: the bottom, in the viewport, of the last item of the longest list (items of the same
+// tag and class under parents of the same tag and class, so a grid's rows count as one list). Null without a list
+// of three or more items.
+const LIST_END = `(() => {
+  const sig=e=>e.tagName+'|'+e.getAttribute('class');
+  const lists=new Map();
+  for (const e of ${ITEMS}()) {
+    if (!(e.getBoundingClientRect().height>0)) continue;
+    const key=sig(e)+'<'+(e.parentElement ? sig(e.parentElement) : '');
+    lists.set(key, [...(lists.get(key) || []), e]);
+  }
+  let longest=[];
+  for (const list of lists.values()) if (list.length>longest.length) longest=list;
+  return longest.length>=3 ? Math.round(longest.at(-1).getBoundingClientRect().bottom) : null;
+})()`;
+
 const SELECT_OPTION = `(action => {
   const e=window.__browserLab.nodes.get(action.node);
   if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
@@ -196,6 +343,8 @@ export class Browser {
       try {
         await this.evaluate(SETTLE, { awaitPromise: true });
         state = await this.evaluate(readState(this.view));
+        // v2: what kind of page this is, for Jev and Claude.
+        if (state !== null && this.view?.whole) state.status = await this.evaluate(STATUS);
       } catch (error) {
         if (!(error instanceof StalePage)) throw error;
         state = null;
@@ -207,31 +356,103 @@ export class Browser {
   }
 
   async fresh(page: Page, action: Action | null = null): Promise<boolean> {
-    if (action !== null && (action.kind === "click" || action.kind === "select")) {
+    return (await this.staleParts(page, action)).length === 0;
+  }
+
+  /** What differs from the observation: nothing when fresh. The parts are named for the run log only. */
+  async staleParts(page: Page, action: Action | null = null): Promise<string[]> {
+    // A compare or collect scan's own scroll: no decision to be stale (round gv1: 8 scans ended on "Page changed").
+    if (action?.scan) return [];
+    const parts = await this.differingParts(page, action);
+    if (!this.view?.whole) return parts;
+    // Scrolling and waiting change nothing on the page, and waiting is for the page to change: v2 never refuses
+    // them (in BU Bench round gv2, 22 of 41 refusals were these, on pages whose text kept changing).
+    if (action !== null && UNCHANGING.has(action.kind)) return [];
+    if (action === null) return parts.filter((part) => !V2_IGNORED_PAGE.has(part));
+    const item = page.guards?.[String(action.node)]?.[14] === "item";
+    return parts.filter((part) => !V2_IGNORED.has(part) && (item || part !== "scope_text"));
+  }
+
+  private async differingParts(page: Page, action: Action | null): Promise<string[]> {
+    // v2 checks typing against its field too, instead of against the whole viewport's text.
+    const targeted = ["click", "select", "reveal", ...(this.view?.whole ? ["fill"] : [])];
+    if (action !== null && targeted.includes(action.kind)) {
       const node = action.node;
-      if (!Number.isInteger(node)) return false;
+      if (!Number.isInteger(node)) return ["target_unknown"];
       const current = await this.evaluate(
         "(() => { const c=window.__browserLab; " +
           `return c ? [c.pageKey(),c.guard(c.nodes.get(${node}))] : null; })()`,
       );
-      return isDeepStrictEqual(current, [page.page_key, page.guards?.[String(node)] ?? null]);
+      if (current === null) return ["snapshot_gone"];
+      const guard = page.guards?.[String(node)] ?? null;
+      return [
+        ...differing(current[0], page.page_key, PAGE_KEY_PARTS),
+        ...(current[1] === null && guard !== null ? ["target_gone"] : differing(current[1], guard, GUARD_PARTS)),
+      ];
     }
-    return isDeepStrictEqual(await this.evaluate(MARKER), page.marker);
+    const marker = await this.evaluate(MARKER);
+    return marker === null && page.marker != null ? ["snapshot_gone"] : differing(marker, page.marker, MARKER_PARTS);
+  }
+
+  /** The text around observed elements, by node. Read-only. */
+  async contexts(nodes: number[]): Promise<Record<string, string>> {
+    return (await this.evaluate(`${CONTEXTS}(${JSON.stringify(nodes)})`)) ?? {};
+  }
+
+  /** Opens a page a scan has already visited, to come back to an item on it. Navigation only. */
+  async goto(url: string): Promise<void> {
+    await this.page.goto(url, { waitUntil: "load" });
+  }
+
+  /** The text of each list or table item in view, top to bottom of the document. */
+  async rows(): Promise<string[]> {
+    return (await this.evaluate(ROWS)) ?? [];
+  }
+
+  /** The bottom of the main list's last item, in pixels from the top of the viewport; null without a list. */
+  async listEnd(): Promise<number | null> {
+    return (await this.evaluate(LIST_END)) ?? null;
+  }
+
+  /**
+   * Where to click the action's element. When it is covered or outside the viewport, it is scrolled to the
+   * middle once and tried again: a sticky header or a fixed bar often covers an element near an edge. Otherwise
+   * StalePage, saying what covers it, so Jev can deal with that first. Nothing is clicked or typed here.
+   */
+  private async target(action: Action): Promise<{ x: number; y: number }> {
+    const resolve = async () =>
+      (await this.evaluate(`${RESOLVE_TARGET}(${JSON.stringify(action)})`)) as
+        | { x: number; y: number }
+        | { reason: string; cover?: string };
+    let found = await resolve();
+    if ("reason" in found && (found.reason === "covered" || found.reason === "outside")) {
+      await this.evaluate(`${REVEAL}(${JSON.stringify(action.node)})`);
+      await sleep(100);
+      found = await resolve();
+    }
+    if (!("reason" in found)) return found;
+    if (found.reason === "covered") {
+      throw new StalePage(`Target is covered by ${found.cover}; deal with that first`, ["target_covered"]);
+    }
+    throw new StalePage(`Target is ${found.reason.replace("_", "-")}`, [`target_${found.reason}`]);
   }
 
   /** Execute once. StalePage means nothing happened; MutationUncertain means do not retry. */
   async act(action: Action, page: Page, text: string | null = null): Promise<void> {
-    if (!(await this.fresh(page, action))) throw new StalePage("Page changed since this decision");
+    const changed = await this.staleParts(page, action);
+    if (changed.length) throw new StalePage("Page changed since this decision", changed);
     const kind = action.kind;
     if (kind === "wait") {
       await sleep(100);
       return;
     }
-    let target: { x: number; y: number } | null = null;
-    if (kind !== "scroll") {
-      target = await this.evaluate(`${RESOLVE_TARGET}(${JSON.stringify(action)})`);
-      if (target === null) throw new StalePage("Target changed or is covered");
+    if (kind === "reveal") {
+      const found = await this.evaluate(`${REVEAL}(${JSON.stringify(action.node)})`);
+      if (!found) throw new StalePage("Target changed", ["target_gone"]);
+      return;
     }
+    let target: { x: number; y: number } | null = null;
+    if (kind !== "scroll") target = await this.target(action);
     try {
       if (kind === "scroll") {
         await this.call("Input.dispatchMouseEvent", {
@@ -280,6 +501,11 @@ export class Browser {
   /** Read-only signs of why a page cannot be used: see PageCheck. */
   async check(): Promise<PageCheck> {
     return await this.evaluate(PAGE_CHECK);
+  }
+
+  /** Frames, canvases, and plugin objects in the page: parts whose content webhand does not observe. */
+  async unseen(): Promise<Record<string, number>> {
+    return (await this.evaluate(UNSEEN)) ?? {};
   }
 
   /** A PNG of the viewport. Read-only; typed values show in it. */

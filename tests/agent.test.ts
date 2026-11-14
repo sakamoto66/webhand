@@ -175,6 +175,13 @@ test("rejected model output is logged and executes nothing", async () => {
   expect(result.outcome).toBe("JEV_FAILED");
   expect(browser.acts).toEqual([]);
   expect(recorder.calls).toHaveLength(1);
+  expect(result.jev).toBeUndefined();
+});
+
+test("why Jev refused goes with JEV_FAILED, for the log", async () => {
+  const diagnostic = { http_status: 400, request_chars: 90000, error: "too long" };
+  const result = await run(new FakeBrowser(), [new PolicyError("Jev returned HTTP 400", diagnostic)]);
+  expect([result.outcome, result.detail, result.jev]).toEqual(["JEV_FAILED", "Jev returned HTTP 400", diagnostic]);
 });
 
 test("the budget stops the attempt", async () => {

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fieldnote · Plan list</title>
+<style>
+  body { font: 16px/1.6 system-ui, sans-serif; margin: 0 auto; max-width: 860px; padding: 0 24px; }
+  #result { position: fixed; top: 0; right: 24px; background: #ffe; padding: 4px 12px; }
+  nav ul, .site-footer ul { list-style: none; padding: 0; }
+  nav li { display: inline-block; margin-right: 16px; }
+  .featured { border: 1px solid #ccc; padding: 12px; margin: 16px 0; }
+  p { margin: 0 0 22px; }
+  .plans { display: grid; grid-template-columns: 1fr; gap: 12px; }
+  .card { border: 1px solid #ddd; border-radius: 6px; padding: 8px 12px; }
+  .card-name { font-weight: 600; }
+  .features { margin: 4px 0 0; padding-left: 18px; font-size: 14px; }
+  .site-footer { display: flex; gap: 48px; margin-top: 48px; border-top: 1px solid #ccc; }
+</style></head>
+<body>
+  <div id="result" role="status"></div>
+  <nav><ul><li><a href="#">Home</a></li><li><a href="#">Plans</a></li><li><a href="#">Devices</a></li><li><a href="#">Help</a></li></ul></nav>
+  <h1>Plans</h1>
+  <p>Find the plans that suit you. Every plan and its monthly price is shown as a card below.</p>
+  <p id="ticker" role="status">Prices updated 0 seconds ago</p>
+  <form id="answer"><label>Plan names <input name="names" size="50"></label> <button type="submit">Submit</button></form>
+    <h2>All plans</h2>
+  <div class="plans" id="plans"></div>
+  <div class="site-footer">
+    <div class="col"><h3>Company</h3><ul><li><a href="#">About us</a></li><li><a href="#">Careers</a></li></ul></div>
+    <div class="col"><h3>Support</h3><ul><li><a href="#">Help centre</a></li><li><a href="#">Billing</a></li></ul></div>
+  </div>
+<script>
+  document.getElementById("answer").addEventListener("submit", event => {
+    event.preventDefault();
+    document.body.dataset.answer = event.currentTarget.elements.names.value;
+    document.getElementById("result").textContent = "Answer sent";
+  });
+  // A line near the top keeps changing, as live prices or a clock would.
+  let seconds = 0;
+  setInterval(() => { seconds += 2; document.getElementById("ticker").textContent = `Prices updated ${seconds} seconds ago`; }, 2000);
+  // Two hundred plans, one card each, in one tall column; storage is a bullet point inside the card.
+  const FIRST = ["Bas", "Cal", "Dor", "Fel", "Gar", "Hal", "Jas", "Kor", "Lum", "Mar"];
+  const LAST = ["alt", "ite", "on", "ax", "ene", "ora", "ium", "ek", "yn", "is", "ope", "und", "ar", "ilt", "esh", "ova", "ent", "ux", "ine", "orn"];
+  const SIZES = ["5 GB", "20 GB", "50 GB", "200 GB"];
+  const PLANS = Array.from({ length: 200 }, (_, i) => {
+    const name = FIRST[i % 10] + LAST[Math.floor(i / 10)];
+    const size = SIZES[(i * 7) % 4];
+    const price = 18 + ((i * 37) % 60);
+    return [name, size, price];
+  });
+  window.PLANS = PLANS;
+  const list = document.getElementById("plans");
+  for (const [name, size, price] of PLANS) {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `<div class="card-name">${name}</div><div class="card-price">€${price} a month</div>` +
+      `<ul class="features"><li>${size} storage</li><li>Support every day</li><li>Change any time</li></ul>` +
+      `<p>Shared across your devices. The price includes tax, and a change starts on the next billing day.</p>`;
+    list.append(card);
+  }
+</script>
+</body>
+</html>

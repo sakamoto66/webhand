@@ -1,24 +1,28 @@
 /** Real headless Chrome on the local fixtures. No model calls. */
 
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { loadTask } from "../research/tasks.ts";
-import { runAgent } from "../src/agent.ts";
-import { Browser, SETTLE_CAP_MS } from "../src/browser.ts";
+import { Budget, runAgent } from "../src/agent.ts";
+import { Browser, SETTLE_CAP_MS, type ViewChoice } from "../src/browser.ts";
+import { scroll } from "../src/compare.ts";
+import { toJson } from "../src/format.ts";
 import { Recorder } from "../src/metrics.ts";
+import { actionSpace, modelState, valueChoices } from "../src/policies/base.ts";
+import { buildQuestions, estimateTokens, type Fetch, JevPolicy } from "../src/policies/jev.ts";
 import { ScriptedPolicy } from "../src/policies/scripted.ts";
-import { type Page, StalePage } from "../src/types.ts";
+import { type Action, type HistoryEntry, type Page, StalePage } from "../src/types.ts";
 import { ROOT, tmpPath } from "./helpers.ts";
 
 const task = await loadTask("hotel_filter");
 
 let browser: Browser;
 
-async function open(url: string, view: Record<string, string[]> | null = null) {
+async function open(url: string, view: ViewChoice | null = null) {
   browser = await Browser.open(url, { view });
   return browser;
 }
@@ -54,6 +58,26 @@ test("a stale decision is not executed", async () => {
   await expect(browser.act(button, page)).rejects.toThrow(StalePage);
   // biome-ignore lint/suspicious/noExplicitAny: evidence is the task's own shape.
   expect(((await task.verify(browser)).evidence as any).opened_casa_flora).toBe(false);
+});
+
+test("a refused action names what changed: a form field or the scroll", async () => {
+  let page = await browser.observe();
+  const button = find(page, (a) => a.label === "Find stays");
+  await browser.evaluate("document.getElementById('destination').value='changed'");
+  await expect(browser.act(button, page)).rejects.toMatchObject({ changed: ["form_fields"] });
+  page = await browser.observe();
+  await browser.evaluate("scrollBy(0, 40)");
+  const again = find(page, (a) => a.label === "Find stays");
+  expect(await browser.staleParts(page, again)).toEqual(["scroll"]);
+  expect(await browser.staleParts(page)).toEqual(["scroll", "text", "semantics"]);
+});
+
+test("unseen() counts the frames and canvases in the page", async () => {
+  await browser.evaluate(
+    "document.body.append(Object.assign(document.createElement('iframe'), {width: 50, height: 50}), " +
+      "Object.assign(document.createElement('canvas'), {width: 50, height: 50}))",
+  );
+  expect(await browser.unseen()).toEqual({ frames: 1, canvases: 1, objects: 0 });
 });
 
 test("password values are not observed", async () => {
@@ -314,4 +338,401 @@ test("a page check reports the document's HTTP status and bot-check markers, not
 
 test("a page check on a normal page finds no bot-check markers", async () => {
   expect((await browser.check()).challenge).toEqual([]);
+});
+
+/** A page whose content is mostly below the viewport. */
+function longPage(extra = ""): string {
+  const file = join(tmpPath(), "long.html");
+  writeFileSync(
+    file,
+    `<title>Long</title><nav><a href="#a">Nav home</a></nav><main><h1>Top</h1><p>Intro paragraph.</p>
+    <div style="height:3000px"></div>
+    <h2>Prices</h2><p>Prices change monthly.</p>
+    <table><caption>Plans</caption><tr><th>Plan</th><th>Price</th></tr><tr><td>Basic</td><td>10</td></tr>
+    <tr><td>Pro</td><td>25</td></tr></table>
+    <ul><li>First item</li><li>Second item</li></ul>
+    <a href="#b">Contact us</a><button>Buy now</button><input type="password" value="hunter2" aria-label="Pass">
+    <img alt="A chart of prices" src="data:,"><figure><figcaption>Figure caption</figcaption></figure>${extra}</main>`,
+  );
+  return pathToFileURL(file).href;
+}
+
+test("without --read the page has no read layer", async () => {
+  await browser.close();
+  await open(longPage());
+  expect((await browser.observe()).read).toBeUndefined();
+});
+
+test("the read layer gives chosen kinds from below the viewport, with where they are", async () => {
+  await browser.close();
+  await open(longPage(), { read: ["table"] });
+  const page = await browser.observe();
+  expect(page.read.kinds).toEqual(["outline", "table"]);
+  expect(page.read.text).toContain("@ below 2");
+  expect(page.read.text).toContain("h2 Prices");
+  expect(page.read.text).toMatch(/## table 1 @ below \d+px: Plans \(3 rows\)\nPlan \| Price\nBasic \| 10\nPro \| 25/);
+  expect(page.read.text).not.toContain("First item");
+  expect(page.text).not.toContain("Basic"); // The viewport text is unchanged.
+  expect(page.read.text).not.toContain("Intro paragraph"); // In view already; not repeated.
+  expect(await browser.fresh(page)).toBe(true);
+});
+
+test("every kind is classified once, field values are never read, and skipped regions are left out", async () => {
+  await browser.close();
+  await open(longPage(), { skip: ["nav"], read: ["text", "table", "list", "link", "control", "media"] });
+  const { read } = await browser.observe();
+  expect(read.text).toContain("Prices change monthly.");
+  expect(read.text).toContain("- First item");
+  expect(read.text).toContain("- Contact us");
+  expect(read.text).toMatch(/- button "Buy now"/);
+  expect(read.text).toContain("- A chart of prices");
+  expect(read.text).toContain("- Figure caption");
+  expect(read.text).not.toContain("hunter2");
+  expect(read.text).not.toContain("Nav home");
+  expect(read.text.match(/Basic/g)).toHaveLength(1); // Table text is not repeated as text.
+});
+
+test("the read layer stays within its limit and says how much of each kind is left", async () => {
+  await browser.close();
+  const filler = Array.from({ length: 400 }, (_, i) => `<p>Paragraph ${i} ${"word ".repeat(20)}</p>`).join("");
+  await open(longPage(filler), { read: ["text", "table"] });
+  const { read } = await browser.observe();
+  expect(read.text.length).toBeLessThanOrEqual(read.limit + 200);
+  expect(read.chars.table[0]).toBe(read.chars.table[1]); // A small kind is shown whole.
+  expect(read.chars.text[0]).toBeLessThan(read.chars.text[1]);
+  expect(read.text).toMatch(/\.\.\. \d+ more characters/);
+});
+
+test("the plan_lowest task passes verification only for the cheapest plan, and its table is below the viewport", async () => {
+  const plans = await loadTask("plan_lowest");
+  await browser.close();
+  await open(plans.startUrl(ROOT), { read: ["table"] });
+  const page = await browser.observe();
+  expect(page.text).not.toContain("€12");
+  expect(page.read.text).toMatch(/## table 1 @ below \d+px: Every plan and its monthly price \(41 rows\)/);
+  expect(page.read.text).toMatch(/\nFlax \| [^|\n]+ \| €12 \| Choose Flax\n/);
+  expect((await plans.verify(browser)).success).toBe(false);
+  const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
+  const plan = { goal: plans.GOAL, steps: [], values: [] };
+  const result = await runAgent(browser, new ScriptedPolicy(plans.SCRIPT), plan, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect((await plans.verify(browser)).success).toBe(true);
+});
+
+const reveal = (page: Page, label: string) =>
+  page.actions.find((a: Action) => a.kind === "reveal" && a.label === `Scroll to ${label}`);
+const rows = () => browser.evaluate("document.querySelectorAll('#plans tr').length - 1");
+
+test("without a read layer, nothing beyond the viewport is offered", async () => {
+  const plans = await loadTask("plan_lowest");
+  await browser.close();
+  await open(plans.startUrl(ROOT));
+  const page = await browser.observe();
+  expect(page.actions.some((a: Action) => a.kind === "reveal")).toBe(false);
+});
+
+test("SCROLL_TO brings an element beyond the viewport into view without clicking it", async () => {
+  const plans = await loadTask("plan_lowest");
+  await browser.close();
+  await open(plans.startUrl(ROOT), { read: ["table"] });
+  let page = await browser.observe();
+  const target = reveal(page, "Choose Flax");
+  expect(target?.at).toMatch(/^below \d+px$/);
+  expect(page.actions.some((a: Action) => a.kind === "click" && a.label === "Choose Flax")).toBe(false);
+  await browser.act(target as never, page);
+  expect(await browser.evaluate("document.body.dataset.chosen ?? null")).toBe(null);
+  page = await browser.observe();
+  const click = page.actions.find((a: Action) => a.kind === "click" && a.label === "Choose Flax");
+  expect(click).toBeDefined();
+  await browser.act(click as never, page);
+  expect((await plans.verify(browser)).success).toBe(true);
+});
+
+test("SCROLL_TO on a removed element changes nothing", async () => {
+  const plans = await loadTask("plan_lowest");
+  await browser.close();
+  await open(plans.startUrl(ROOT), { read: ["table"] });
+  const page = await browser.observe();
+  await browser.evaluate("document.querySelector('[data-plan=Flax]').closest('tr').remove()");
+  await expect(browser.act(reveal(page, "Choose Flax") as never, page)).rejects.toThrow(StalePage);
+  expect(await browser.evaluate("scrollY")).toBe(0);
+});
+
+test("in a list that loads as it is scrolled, SCROLL_TO its last element loads more", async () => {
+  const plans = await loadTask("plan_more");
+  await browser.close();
+  await open(plans.startUrl(ROOT), { read: ["table"] });
+  let page = await browser.observe();
+  expect(await rows()).toBe(10);
+  for (const loaded of [20, 30, 40]) {
+    const last = page.actions.filter((a: Action) => a.kind === "reveal").at(-1);
+    await browser.act(last as never, page);
+    page = await browser.observe();
+    for (let i = 0; i < 5 && (await rows()) < loaded; i++) page = await browser.observe();
+    expect(await rows()).toBe(loaded);
+  }
+  expect(page.read.text).toMatch(/\nTuff \| [^|\n]+ \| €11 \| Choose Tuff\n/);
+  expect((await plans.verify(browser)).success).toBe(false);
+});
+
+test("v2: elements beyond the viewport are offered with their own operations, and the marker stays the same", async () => {
+  const settings = await loadTask("settings_long");
+  await browser.close();
+  const plain = await (await open(settings.startUrl(ROOT))).observe();
+  await browser.close();
+  const page = await (await open(settings.startUrl(ROOT), { whole: true })).observe();
+  const weekly = find(page, (a) => a.label === "Weekly summary on");
+  expect(weekly).toMatchObject({ kind: "click", offscreen: true });
+  expect(weekly.at).toMatch(/^below \d+px$/);
+  expect(find(plain, (a) => a.label === "Weekly summary on")).toBeUndefined();
+  // The same marker apart from when the page was loaded (two separate loads).
+  expect(page.marker.slice(1)).toEqual(plain.marker.slice(1));
+});
+
+test("v2: choosing an element beyond the viewport scrolls to it, then acts on it once", async () => {
+  const settings = await loadTask("settings_long");
+  await browser.close();
+  await open(settings.startUrl(ROOT), { whole: true });
+  const log = join(tmpPath(), "run.jsonl");
+  const recorder = new Recorder(log);
+  const script = [
+    { operation: "CLICK", label: "Weekly summary on" },
+    { operation: "CLICK", label: "Save settings" },
+  ];
+  const plan = { goal: settings.GOAL, steps: [], values: [], flow: "v2" as const };
+  const result = await runAgent(browser, new ScriptedPolicy(script), plan, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect(result.actions).toBe(2);
+  const events = readFileSync(log, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(events.filter((e) => e.type === "into_view").map((e) => e.found)).toEqual([true, true]);
+  expect((await settings.verify(browser)).success).toBe(true);
+});
+
+test("v1 refuses every action while the form's own text keeps changing; v2 checks only the target", {
+  timeout: 60_000,
+}, async () => {
+  const signup = await loadTask("signup_ticker");
+  const plan = { goal: signup.GOAL, steps: [], values: [] };
+  for (const view of [null, { whole: true }]) {
+    await browser.close();
+    await open(signup.startUrl(ROOT), view);
+    const log = join(tmpPath(), "run.jsonl");
+    const recorder = new Recorder(log);
+    const v2 = view ? { ...plan, flow: "v2" as const } : plan;
+    // Jev takes seconds to answer; here, longer than one tick of the page.
+    const scripted = new ScriptedPolicy(signup.SCRIPT);
+    const slow = {
+      name: "slow",
+      calls: scripted.calls,
+      config: () => scripted.config(),
+      choose: async (...args: Parameters<ScriptedPolicy["choose"]>) => {
+        await new Promise((resolve) => setTimeout(resolve, 900));
+        return scripted.choose(...args);
+      },
+    };
+    const result = await runAgent(browser, slow, v2, recorder, new Budget(30, 6));
+    recorder.close();
+    const stale = readFileSync(log, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+      .filter((e) => e.type === "stale");
+    if (view) {
+      expect(result.outcome).toBe("GOAL_REPORTED");
+      expect((await signup.verify(browser)).success).toBe(true);
+    } else {
+      // Each refusal sees a changed page, so it never counts toward STUCK: the attempt runs out of decisions
+      // with nothing typed or pressed. (The scripted policy moves on after a refusal, so each step is refused once.)
+      expect(result).toMatchObject({ outcome: "ATTEMPT_BUDGET", actions: 0 });
+      expect(stale.map((e) => e.changed)).toEqual([["text"], ["text"], ["scope_text"]]);
+    }
+  }
+});
+
+test("v2 tells what kind of page it is", async () => {
+  await browser.close();
+  await open(task.startUrl(ROOT), { whole: true });
+  expect((await browser.observe()).status).toMatchObject({ kind: "ready" });
+  await browser.evaluate("document.body.append(Object.assign(document.createElement('input'), {type: 'password'}))");
+  expect((await browser.observe()).status.kind).toBe("sign_in");
+  await browser.evaluate(
+    "document.body.append(Object.assign(document.createElement('div'), {className: 'g-recaptcha'}))",
+  );
+  expect((await browser.observe()).status).toMatchObject({ kind: "check", signs: ["recaptcha"] });
+});
+
+test("v2: a whole page over Jev's token limit is fitted; the target a few screens down stays offered", {
+  timeout: 60_000,
+}, async () => {
+  const catalog = await loadTask("catalog_big");
+  await browser.close();
+  await open(catalog.startUrl(ROOT), { whole: true });
+  const plan = { goal: catalog.GOAL, steps: [], values: [], flow: "v2" as const };
+  const page = await browser.observe();
+  const [, targets, controls] = actionSpace(page.actions);
+  const [questions] = buildQuestions(plan, targets, controls, valueChoices(plan));
+  const whole = toJson({ model: "jev", state: modelState(page, [], plan), questions });
+  expect(estimateTokens(whole)).toBeGreaterThan(60_000);
+  const sent: string[] = [];
+  // Jev presses the target when it is offered, then reports the goal.
+  const fetch: Fetch = async (_url, init) => {
+    sent.push(init.body);
+    const request = JSON.parse(init.body);
+    const pick = (criteria: Record<string, unknown>, choice: string) => ({
+      choice,
+      confidence: 0.9,
+      probabilities: Object.fromEntries(Object.keys(criteria).map((k) => [k, k === choice ? 1 : 0])),
+    });
+    const offered = Object.entries(request.questions.click_target.criteria).find(([, c]) =>
+      JSON.stringify(c).includes("Add Moss Towel 23 to cart"),
+    );
+    const done = sent.length > 1;
+    const answers = {
+      operation: pick(request.questions.operation.criteria, done ? "DONE" : offered ? "CLICK" : "NEEDS_HUMAN"),
+      click_target: pick(request.questions.click_target.criteria, offered && !done ? offered[0] : "NOT_VISIBLE"),
+    };
+    return { status: 200, json: async () => ({ model: "jev", usage: {}, answers }) };
+  };
+  vi.stubEnv("TYPESAFE_API_KEY", "test");
+  const policy = new JevPolicy({ fetch });
+  const log = join(tmpPath(), "run.jsonl");
+  const recorder = new Recorder(log);
+  const result = await runAgent(browser, policy, plan, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect(estimateTokens(sent[0])).toBeLessThanOrEqual(40_000);
+  const calls = readFileSync(log, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .filter((e) => e.type === "call");
+  expect(calls[0].dropped_elements).toBeGreaterThan(0);
+  expect((await catalog.verify(browser)).success).toBe(true);
+});
+
+test("item_moved: the old link offers nothing; the shop's home page, learned as a service, finds the item", async () => {
+  const moved = await loadTask("item_moved");
+  await browser.close();
+  await open(moved.startUrl(ROOT));
+  const plan = { goal: moved.GOAL, steps: [], values: [] };
+  const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
+  expect((await runAgent(browser, new ScriptedPolicy(moved.SCRIPT), plan, recorder)).outcome).toBe("BLOCKED");
+  const offered = (await browser.observe()).actions.filter((a: Action) => a.kind !== "wait");
+  expect(offered).toEqual([]);
+  await browser.close();
+  await open(pathToFileURL(join(ROOT, "research", "sites", "kinari_shop.html")).href);
+  const script = [
+    { operation: "TYPE_TEXT", label: "Search the shop", text: "Moss Towel 23" },
+    { operation: "CLICK", label: "Find" },
+    { operation: "CLICK", label: "Add Moss Towel 23 to cart" },
+  ];
+  const values = [{ label: "Search", value: "Moss Towel 23" }];
+  const result = await runAgent(browser, new ScriptedPolicy(script), { ...plan, values }, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect((await moved.verify(browser)).success).toBe(true);
+});
+
+test("order_signin: the cart can be filled, the order only behind a sign-in no one can do", async () => {
+  const order = await loadTask("order_signin");
+  await browser.close();
+  await open(order.startUrl(ROOT));
+  const plan = { goal: order.GOAL, steps: [], values: [{ label: "Search", value: "Moss Towel 23" }] };
+  const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
+  const result = await runAgent(browser, new ScriptedPolicy(order.SCRIPT), plan, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("NEEDS_HUMAN");
+  const page = await browser.observe();
+  // The sign-in form is shown; a password field is never offered.
+  const labels = page.actions.map((a: Action) => a.label);
+  expect(labels).toContain("Sign in and place order");
+  expect(labels).not.toContain("Password");
+  expect(await order.verify(browser)).toEqual({
+    success: true,
+    evidence: { cart: ["Moss Towel 23"], signin_tried: false },
+  });
+});
+
+test("a covered target does not run, and Jev is told what covers it; closing the cover lets it run", async () => {
+  const wall = await loadTask("cookie_wall");
+  await browser.close();
+  await open(wall.startUrl(ROOT));
+  const plan = { goal: wall.GOAL, steps: [], values: [] };
+  const log = join(tmpPath(), "run.jsonl");
+  const recorder = new Recorder(log);
+  const history: HistoryEntry[] = [];
+  const first = await runAgent(
+    browser,
+    new ScriptedPolicy([{ operation: "CLICK", label: "Weekly digest" }]),
+    plan,
+    recorder,
+    new Budget(),
+    { history },
+  );
+  // The scripted chooser moves on after a refused step; what matters is the refusal and what Jev is told.
+  expect(first.actions).toBe(0);
+  expect(history[0].action).toContain('did not run: Target is covered by a fixed div "We value your privacy"');
+  const result = await runAgent(browser, new ScriptedPolicy(wall.SCRIPT), plan, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect((await wall.verify(browser)).success).toBe(true);
+  const stale = readFileSync(log, "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l))
+    .filter((e) => e.type === "stale");
+  expect(stale[0].changed).toEqual(["target_covered"]);
+});
+
+test("a target under a sticky header is scrolled to the middle once, then clicked", async () => {
+  const file = join(tmpPath(), "sticky.html");
+  writeFileSync(
+    file,
+    `<style>header{position:sticky;top:0;height:240px;background:#eee}main{height:3000px}</style>
+     <header>Site</header><main><p style="margin-top:900px"><button onclick="document.title='pressed'">Go</button></p></main>`,
+  );
+  await browser.close();
+  await open(pathToFileURL(file).href);
+  // Scroll so the button sits just under the top edge, where the header covers it.
+  await browser.evaluate("scrollTo(0, document.querySelector('button').getBoundingClientRect().top + scrollY - 120)");
+  const page = await browser.observe();
+  const go = find(page, (a) => a.label === "Go");
+  await browser.act(go, page);
+  expect(await browser.evaluate("document.title")).toBe("pressed");
+});
+
+test("v2 never refuses a scroll or a wait for staleness; v1 does when the page's text has changed", async () => {
+  const signup = await loadTask("signup_ticker");
+  for (const view of [null, { whole: true }]) {
+    await browser.close();
+    await open(signup.startUrl(ROOT), view);
+    const page = await browser.observe();
+    await new Promise((resolve) => setTimeout(resolve, 900)); // The tip and the countdown tick every 400 ms.
+    for (const id of ["wait", "scroll_down"]) {
+      const action = find(page, (a) => a.id === id);
+      const parts = await browser.staleParts(page, action);
+      if (view) expect(parts).toEqual([]);
+      else expect(parts).toContain("text");
+    }
+  }
+});
+
+test("a scan's own scroll is never refused for staleness, in v1 too; Jev's scroll is", async () => {
+  const signup = await loadTask("signup_ticker");
+  await browser.close();
+  await open(signup.startUrl(ROOT));
+  const page = await browser.observe();
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  expect(await browser.staleParts(page, scroll(200))).toEqual([]);
+  expect(
+    await browser.staleParts(
+      page,
+      find(page, (a) => a.id === "wait"),
+    ),
+  ).toContain("text");
 });

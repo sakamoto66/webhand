@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Kinari · Shop</title>
+<style>
+  body { font: 16px/1.6 system-ui, sans-serif; margin: 0 auto; max-width: 760px; padding: 0 24px; }
+  #result { position: fixed; top: 0; right: 24px; background: #ffe; padding: 4px 12px; }
+  li { margin: 8px 0; }
+</style></head>
+<body>
+  <div id="result" role="status"></div>
+  <h1>Kinari</h1>
+  <form id="search" role="search">
+    <label>Search the shop <input name="q" type="search"></label>
+    <button type="submit">Find</button>
+  </form>
+  <p><button type="button" id="checkout" hidden>Checkout</button></p>
+  <section id="shop">
+    <h2 id="heading">Featured</h2>
+    <ul id="items"></ul>
+  </section>
+  <section id="signin" hidden>
+    <h2>Sign in to place your order</h2>
+    <form id="signin-form">
+      <p><label>Email <input name="email" type="email"></label></p>
+      <p><label>Password <input name="password" type="password"></label></p>
+      <p><button type="submit">Sign in and place order</button></p>
+      <p id="signin-error" role="alert"></p>
+    </form>
+  </section>
+<script>
+  const colors = ["Linen", "Indigo", "Oat", "Charcoal", "Sage", "Rust", "Ivory", "Moss"];
+  const kinds = ["Shirt", "Apron", "Tote", "Scarf", "Cushion", "Towel", "Pouch", "Throw"];
+  const names = Array.from({ length: 40 }, (_, i) => `${colors[(i + 1) % 8]} ${kinds[((i + 1) * 3) % 8]} ${i + 1}`);
+  function show(heading, list) {
+    document.getElementById("heading").textContent = heading;
+    const items = document.getElementById("items");
+    items.replaceChildren();
+    for (const name of list) {
+      const li = document.createElement("li");
+      li.innerHTML = `${name} <button type="button" aria-label="Add ${name} to cart">Add to cart</button>`;
+      li.querySelector("button").addEventListener("click", () => {
+        const cart = JSON.parse(document.body.dataset.cart ?? "[]");
+        cart.push(name);
+        document.body.dataset.cart = JSON.stringify(cart);
+        document.getElementById("result").textContent = `Added ${name} to the cart`;
+        const checkout = document.getElementById("checkout");
+        checkout.hidden = false;
+        checkout.textContent = `Checkout (${cart.length})`;
+      });
+      items.append(li);
+    }
+    if (!list.length) items.textContent = "No items found.";
+  }
+  // Placing an order needs an account; no account exists here, so it never succeeds.
+  document.getElementById("checkout").addEventListener("click", () => {
+    document.getElementById("shop").hidden = true;
+    document.getElementById("search").hidden = true;
+    document.getElementById("signin").hidden = false;
+  });
+  document.getElementById("signin-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    document.body.dataset.signinTried = "true";
+    document.getElementById("signin-error").textContent = "Wrong email or password.";
+  });
+  show("Featured", [names[0], names[4], names[9], names[14], names[29], names[35]]);
+  document.getElementById("search").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const words = new FormData(event.target).get("q").toString().toLowerCase().split(/\s+/).filter(Boolean);
+    const found = names.filter((name) => words.every((word) => name.toLowerCase().includes(word)));
+    show(`Results for "${words.join(" ")}"`, found);
+  });
+</script>
+</body>
+</html>

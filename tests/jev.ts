@@ -3,6 +3,8 @@
 import { join } from "node:path";
 import { vi } from "vitest";
 import { deps } from "../src/cli.ts";
+import type { Row } from "../src/collect.ts";
+import { type Best, type Candidate, KEEP, NONE } from "../src/compare.ts";
 import { actionSpace, modelState, resolve, valueChoices } from "../src/policies/base.ts";
 import * as session from "../src/session.ts";
 import { Decision, type HistoryEntry, type ModelCall, modelCall, type Page, type Plan } from "../src/types.ts";
@@ -21,6 +23,33 @@ export class ScriptedJev {
 
   config() {
     return { chooser: "scripted-jev" };
+  }
+
+  /** Compares by the price in each item's text, the lowest winning. */
+  async compare(_page: Page, _plan: Plan, _criterion: string, best: Best | null, items: Candidate[]): Promise<string> {
+    this.calls.push(modelCall("typesafe", "jev", "compare", 1, 10, 1));
+    const price = (text: string) => Number(/€(\d+)/.exec(text)?.[1] ?? Number.POSITIVE_INFINITY);
+    let choice = best ? KEEP : NONE;
+    let lowest = best ? price(best.context) : Number.POSITIVE_INFINITY;
+    for (const item of items) {
+      if (price(item.context) < lowest) [choice, lowest] = [item.key, price(item.context)];
+    }
+    return choice;
+  }
+
+  /** Finds Claude's control by its label. */
+  async more(_page: Page, _plan: Plan, control: string, items: Candidate[]): Promise<string> {
+    this.calls.push(modelCall("typesafe", "jev", "more", 1, 10, 1));
+    const found = items.find((item) => item.action.label.toLowerCase() === control.toLowerCase());
+    return found ? found.key : NONE;
+  }
+
+  /** Collects the 200 GB rows under the price in the criterion, such as "less than €40". */
+  async collect(_page: Page, _plan: Plan, criterion: string, rows: Row[]): Promise<Set<string>> {
+    this.calls.push(modelCall("typesafe", "jev", "collect", 1, 10, 1));
+    const limit = Number(/€(\d+)/.exec(criterion)?.[1] ?? 0);
+    const price = (text: string) => Number(/€(\d+)/.exec(text)?.[1] ?? Number.POSITIVE_INFINITY);
+    return new Set(rows.filter((r) => r.text.includes("200 GB") && price(r.text) < limit).map((r) => r.key));
   }
 
   async choose(page: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {
