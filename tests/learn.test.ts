@@ -114,6 +114,38 @@ test("forged events are ignored", async () => {
   expect(actions().steps.some((s) => s.label === "Continue")).toBe(false);
 });
 
+test("a new tab is recorded as a tab event, and what is done in it as actions", async () => {
+  writeFileSync(join(dir, "form.html"), "<title>Start</title><a href='next.html' target='_blank'>Open next</a>");
+  let opened: PlaywrightPage | undefined;
+  await play([
+    (p) => p.getByRole("link").click(),
+    async () => {
+      opened = browser.context.pages().find((page) => page.url().endsWith("next.html"));
+      await opened?.getByRole("link", { name: "Back" }).click();
+    },
+    async () => {
+      await opened?.close();
+    },
+  ]);
+  const { steps, events } = actions();
+  expect(events.filter((e) => e.type === "unsupported")).toEqual([]);
+  expect(events.filter((e) => e.type === "tab").map((e) => [e.change, e.count])).toEqual([
+    ["opened", 2],
+    ["closed", 1],
+  ]);
+  expect(steps.map((s) => s.label)).toEqual(["Open next", "Back"]);
+});
+
+test("a page can only report that its tab came to the front", async () => {
+  await play([
+    (p) =>
+      p.evaluate(
+        "window.__browserLabRecord?.({kind:'tab', change:'opened', count: 9}) ?? dispatchEvent(new Event('x'))",
+      ),
+  ]);
+  expect(actions().events.filter((e) => e.type === "tab")).toEqual([]);
+});
+
 const SHADOW = `<title>Shadow</title><div id="host"></div><script>
 const root=document.getElementById('host').attachShadow({mode:'open'});
 root.innerHTML='<form action="next.html"><label>City <input name="city"></label>'+

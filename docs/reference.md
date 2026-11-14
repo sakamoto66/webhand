@@ -150,7 +150,8 @@ How recordings are handled:
 - Keystrokes are not recorded. Values of password, one-time code, card number, and similar fields become `<redacted>`. Detection relies on field attributes and names, so values of fields it cannot recognize remain in the `runs/` log
 - All URL query values are masked
 - Recordings are saved under the user folder's `runs/` (`~/.webhand/runs/` by default). They contain page text, so do not share them
-- Actions inside iframes, file pickers, and new tabs cannot be reproduced and are kept as `unsupported`
+- Actions inside iframes and file pickers cannot be reproduced and are kept as `unsupported`
+- A new tab is recorded as a `tab` event (`opened` or `closed`, with how many tabs are open; `switched` when a tab comes to the front), and what you do in it is recorded as usual, with its own URL. The runbook then has a step that switches to the tab (see [Tabs](#tabs)). `switched` comes from the page, so a page can only report that its own tab came to the front; it is not seen in headless Chrome
 - Page scripts can forge recordings, so recordings are not trusted; you approve the runbook
 
 ## Page regions

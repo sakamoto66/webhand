@@ -1051,6 +1051,7 @@ v2 の効果が完了に出るかは、引き続き v1 が `NOT_VISIBLE` で行�
 - Jev（`jev-1.14.0`、`--chrome linux`、`--session new`、`--max-attempts 1`）では1回実行し、`CLICK`、`TAB_2`、`TYPE_TEXT`、`CLICK` の4手で `verify()` が成功しました（`runs/20261115T013405/tab_form.jsonl`）。
 - 各1回の動作確認で、結論の根拠にはなりません。「タブ切替なし」との比較は未実施です。タブが1枚のページは出力が変わらず、golden も変わりません。
 - 未対応: タブを閉じる操作、クリックで開いたタブへの自動切替。
+- 学習モードでは、新しいタブを `unsupported` にせず `tab` イベント（`opened`、`closed`、`switched`）として記録し、その中の操作は通常どおり記録します。`opened` と `closed` はテストで確認しましたが、`switched` はヘッドレスの Chrome で起きないため、自動テストはなく、有人の Chrome で未確認です。
 
 ## 次の手順
 
