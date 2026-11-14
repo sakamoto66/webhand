@@ -6,7 +6,10 @@ export default defineConfig({
     setupFiles: ["tests/setup.ts"],
     // Real Chrome processes and one session file per test: run files one at a time.
     pool: "forks",
-    fileParallelism: false,
+    fileParallelism: true,
+    maxWorkers: 6,
+    // Fixtures settle fast; the tests of settling itself set the real 150 ms back.
+    env: { WEBHAND_SETTLE_QUIET_MS: "40" },
     testTimeout: 60_000,
     hookTimeout: 60_000,
     coverage: {

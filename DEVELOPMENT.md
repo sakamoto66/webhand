@@ -118,6 +118,8 @@ npm run smoke -- --task hotel_filter   # model-free run of a task's SCRIPT
 ```
 
 - The husky pre-commit hook and GitHub Actions run `npm run check` and `npm test`. Never bypass them with `--no-verify`.
+- Test files run in parallel (6 workers; more is slower on a busy machine). Keep a test file to one theme and under about 40 s, so the files balance across workers. `npm test` takes about 70 s.
+- `vitest.config.ts` sets `WEBHAND_SETTLE_QUIET_MS=40` so the fixtures' per-observation wait is short (the product default is 150 ms; people never set this). A test that depends on real settling, such as content rendered after a load or a scroll, sets `vi.stubEnv("WEBHAND_SETTLE_QUIET_MS", "150")` itself.
 - Coverage thresholds are 70% for lines, statements, functions, and branches (`vitest.config.ts`). Below that, CI fails. CI writes test results and the coverage table to the job summary.
 
 ### Code style

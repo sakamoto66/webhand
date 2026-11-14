@@ -174,6 +174,7 @@ function fixture(name: string, html: string): string {
 }
 
 test("observe waits for content rendered after load", async () => {
+  vi.stubEnv("WEBHAND_SETTLE_QUIET_MS", "150");
   const url = fixture(
     "late.html",
     "<!doctype html><meta charset='utf-8'><body><h1>Shell</h1><script>" +
@@ -505,6 +506,7 @@ test("SCROLL_TO on a removed element changes nothing", async () => {
 });
 
 test("in a list that loads as it is scrolled, SCROLL_TO its last element loads more", async () => {
+  vi.stubEnv("WEBHAND_SETTLE_QUIET_MS", "150");
   const plans = await loadTask("plan_more");
   await browser.close();
   await open(plans.startUrl(ROOT), { read: ["table"] });
