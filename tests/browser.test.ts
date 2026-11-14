@@ -9,6 +9,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { loadTask } from "../research/tasks.ts";
 import { Budget, runAgent } from "../src/agent.ts";
 import { Browser, SETTLE_CAP_MS, type ViewChoice } from "../src/browser.ts";
+import { scroll } from "../src/compare.ts";
 import { toJson } from "../src/format.ts";
 import { Recorder } from "../src/metrics.ts";
 import { actionSpace, modelState, valueChoices } from "../src/policies/base.ts";
@@ -719,4 +720,19 @@ test("v2 never refuses a scroll or a wait for staleness; v1 does when the page's
       else expect(parts).toContain("text");
     }
   }
+});
+
+test("a scan's own scroll is never refused for staleness, in v1 too; Jev's scroll is", async () => {
+  const signup = await loadTask("signup_ticker");
+  await browser.close();
+  await open(signup.startUrl(ROOT));
+  const page = await browser.observe();
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  expect(await browser.staleParts(page, scroll(200))).toEqual([]);
+  expect(
+    await browser.staleParts(
+      page,
+      find(page, (a) => a.id === "wait"),
+    ),
+  ).toContain("text");
 });

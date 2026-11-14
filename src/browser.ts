@@ -361,6 +361,8 @@ export class Browser {
 
   /** What differs from the observation: nothing when fresh. The parts are named for the run log only. */
   async staleParts(page: Page, action: Action | null = null): Promise<string[]> {
+    // A compare or collect scan's own scroll: no decision to be stale (round gv1: 8 scans ended on "Page changed").
+    if (action?.scan) return [];
     const parts = await this.differingParts(page, action);
     if (!this.view?.whole) return parts;
     // Scrolling and waiting change nothing on the page, and waiting is for the page to change: v2 never refuses

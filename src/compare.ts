@@ -12,7 +12,9 @@ import type { Actor } from "./agent.ts";
 import type { Recorder } from "./metrics.ts";
 import { type Action, type ModelCall, type Page, type Plan, PolicyError } from "./types.ts";
 
-export const MAX_SCROLLS = 20;
+// Screens a scan goes through. 20 cut long lists short in BU Bench (round gv1: a list of 200 rows, read to
+// about 105, three times); 100 screens still stop an endless feed.
+export const MAX_SCROLLS = 100;
 /** How many times a scan may press Claude's control for more items (--more). */
 export const MAX_PAGES = 10;
 /** How long the bottom of the page is watched for more items to load. */
@@ -81,8 +83,9 @@ export async function candidates(browser: Reader, page: Page): Promise<Candidate
   return clicks.map((action, i) => ({ key: String(i + 1), action, context: texts[String(action.node)] ?? "" }));
 }
 
+/** A scan's own scroll. It is not a decision by Jev, so it is not checked for staleness (scan: true). */
 export function scroll(delta: number): Action {
-  return { id: "scroll", kind: "scroll", label: "Scroll", delta };
+  return { id: "scroll", kind: "scroll", label: "Scroll", delta, scan: true };
 }
 
 const bottom = (page: Page) => page.scroll.y + page.h >= page.scroll.height - 2;

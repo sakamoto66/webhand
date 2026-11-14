@@ -15,7 +15,7 @@ afterEach(async () => {
   browser = null;
 });
 
-const LIMITS: Record<string, number> = { collect_more: 40, collect_virtual: 25, collect_cards: 40 };
+const LIMITS: Record<string, number> = { collect_more: 40, collect_virtual: 25, collect_cards: 40, collect_long: 30 };
 /** Items read beyond the plans: the link lists under the cards (two columns whole, the third link by link). */
 const EXTRA: Record<string, number> = { collect_cards: 6 };
 

@@ -56,7 +56,8 @@ export function loadMore(
     const chosen = items.find((item) => item.key === choice);
     if (!chosen && choice !== NONE) throw new PolicyError(`Choice ${choice} is not offered; nothing was pressed.`);
     if (!chosen) {
-      recorder.event("more", { attempt, url: page.url, pressed: null });
+      // How many elements were offered tells "no such control in view" (0) from "Jev found none of them" (>0).
+      recorder.event("more", { attempt, url: page.url, pressed: null, offered: items.length });
       return null;
     }
     await browser.act(chosen.action, page);
