@@ -118,6 +118,8 @@ npm run smoke -- --task hotel_filter   # タスクの SCRIPT をモデルなし�
 ```
 
 - husky の pre-commit フックと GitHub Actions で `npm run check` と `npm test` が必ず走る。`--no-verify` で回避しない。
+- テストファイルは並列（ワーカー6）で走る。ワーカーを増やすと負荷の高いマシンでは逆に遅い。ファイルは1テーマ・約40秒以内にして、ワーカーに均等に載せる。`npm test` は約70秒。
+- `vitest.config.ts` は `WEBHAND_SETTLE_QUIET_MS=40` を設定し、fixture での観測ごとの待ちを短くする（製品の既定は150ms。人は設定しない）。ロード後やスクロール後に描画される内容のように実際の静止待ちに依存するテストは、自分で `vi.stubEnv("WEBHAND_SETTLE_QUIET_MS", "150")` を呼ぶ。
 - カバレッジの合格ラインは lines・statements・functions・branches とも 70%（`vitest.config.ts`）。下回ると CI が失敗する。CI はテスト結果とカバレッジ表をジョブサマリーに書く。
 
 ### コードスタイル
