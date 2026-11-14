@@ -81,3 +81,22 @@ test("an attached browser disconnects without closing Chrome or its page", async
     await session.stopChrome(chrome);
   }
 });
+
+test("a session id names its own files; the default keeps the old names", () => {
+  session.use();
+  expect(session.id()).toBe("default");
+  const base = session.tabPath();
+  session.use("work-1");
+  expect(session.tabPath()).not.toBe(base);
+  expect(session.tabPath()).toMatch(/tab-work-1$/);
+  session.use();
+  expect(session.tabPath()).toMatch(/\/tab$/);
+});
+
+test("an id is letters, digits, - and _, and is found in the arguments", () => {
+  for (const bad of ["", "../x", "a b", "x".repeat(41), "a/b"]) expect(() => session.use(bad)).toThrow(/--id/);
+  session.use();
+  expect(session.idFrom(["finish", "--id", "b", "--status", "done"])).toBe("b");
+  expect(session.idFrom(["finish", "--id=c"])).toBe("c");
+  expect(session.idFrom(["finish"])).toBe("default");
+});

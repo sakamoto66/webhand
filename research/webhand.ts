@@ -54,6 +54,7 @@ export async function run(argv: string[], io?: IO): Promise<number> {
     return main(argv2, io, { task: name });
   }
   if (command === "finish") {
+    session.use(session.idFrom(args));
     const name = session.load()?.task;
     const hooks: Hooks = name ? { verify: async (browser) => (await loadTask(name)).verify(browser) } : {};
     return main(argv, io, hooks);

@@ -1,7 +1,6 @@
 /** Playwright launches an isolated Chrome or attaches to the session Chrome; observation and input go through one CDP session. */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import {
   type BrowserContext,
@@ -11,7 +10,7 @@ import {
   type Page as PlaywrightPage,
 } from "playwright-core";
 import { sleep } from "./format.ts";
-import { home as sessionHome } from "./session.ts";
+import { home as sessionHome, tabPath } from "./session.ts";
 import { type Action, MutationUncertain, type Page, StalePage } from "./types.ts";
 
 export function asset(name: string): string {
@@ -265,11 +264,6 @@ function tabTitle(title: string): string {
   return title.replace(/\s+/g, " ").trim().slice(0, MAX_TAB_TITLE);
 }
 
-/** Which tab the run is on, kept for the next command: each command attaches to the session Chrome anew. */
-function tabFile(): string {
-  return join(sessionHome(), "tab");
-}
-
 export interface OpenOptions {
   headless?: boolean;
   /** Attach to the session Chrome on this port instead of launching a throwaway one. */
@@ -346,7 +340,7 @@ export class Browser {
   /** The tab the last command left the run on; the first tab when none was kept or it is gone. */
   private async rememberedTab(): Promise<PlaywrightPage> {
     const pages = this.openTabs();
-    const file = tabFile();
+    const file = tabPath();
     if (pages.length > 1 && existsSync(file)) {
       const wanted = readFileSync(file, "utf8").trim();
       for (const page of pages) if ((await this.tabId(page)) === wanted) return page;
@@ -359,7 +353,7 @@ export class Browser {
     const id = await this.tabId(this.page);
     if (id === null) return;
     mkdirSync(sessionHome(), { recursive: true });
-    writeFileSync(tabFile(), id, { encoding: "utf8", mode: 0o600 });
+    writeFileSync(tabPath(), id, { encoding: "utf8", mode: 0o600 });
   }
 
   /** The other tabs, as controls Jev can choose by number. Offered only when more than one tab is open. */

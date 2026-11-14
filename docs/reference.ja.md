@@ -62,6 +62,23 @@ webhand profile delete work
 
 普段使いの Chrome プロファイルには接続しません。Chrome 136 以降は、既定のプロファイルへのデバッグ接続ができないためです。保存プロファイルは、Linux では `~/.webhand/state/profiles/`、Windows では `%LOCALAPPDATA%\webhand\profiles\` に置かれます。
 
+### 複数のセッションを同時に使う
+
+セッションごとに、Chrome、プロファイル、計画、履歴が別になります。`start` に `--id NAME`（英数字、`-`、`_`、40文字まで）を付けて名前を決め、そのセッションの以降のコマンド（`run`、`replan`、`act`、`observe`、`finish`）にも同じ `--id` を付けます。`--id` がなければ、これまでどおり `default` です。
+
+```bash
+webhand start --id a --goal "..." --url ...
+webhand start --id b --goal "..." --url ...    # 2つ目の Chrome。状態は a と別
+webhand run --id a
+webhand finish --id a --status done
+```
+
+- id が `default` でないときは、出力が Claude に次に実行させるコマンドにも `--id` が付きます。`webhand catalog` は、開いているセッションを目標つきで一覧します。
+- 1つのセッションで同時に動くコマンドは1つだけです。2つ目は「Session is busy」で止まります（1つの Chrome で `run` が2つ動くと、二重に操作するため）。コマンドが落ちて残ったロックは引き継ぎます。別の id のコマンドどうしは待ち合いません。
+- すでに開いている id では `start` できません。同じ保存プロファイルを2つのセッションで使うことはできず（2つ目の Chrome が終了します）、`profile login` は、開いているセッションが使うプロファイルを断ります。
+- 実行記録はセッションごとに別です。状態は `state/session-ID.json`、`state/tab-ID`、`state/session-ID.lock` です（default は `session.json`、`tab`、`session.lock`）。
+- 未対応: 複数の人やマシンで共有するセッション、1回の `run` で複数のセッションを動かすこと。
+
 **ログイン後のページの内容は Jev（TypeSafe の API）に送られます。** 個人情報を含む画面を扱うかどうかは、実行前に判断してください。
 
 ## WSL で Windows 側の Chrome を使う
