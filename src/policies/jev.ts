@@ -38,6 +38,7 @@ import {
   planText,
   READ_RULES,
   resolve,
+  TAB_RULES,
   TARGET,
   type Targets,
   TERMINAL_HELP,
@@ -215,10 +216,12 @@ export function buildQuestions(
   controls: Controls,
   values: Map<string, Value>,
   reading = false,
+  tabbed = false,
 ): [Record<string, unknown>, Record<string, string>] {
   const brief = taskBrief(plan);
   const next = plan.flow === "v2" ? NEXT_ACTION_WHOLE : NEXT_ACTION;
   let rules = reading ? `${next}\n${READ_RULES}` : next;
+  if (tabbed) rules = `${rules}\n${TAB_RULES}`;
   if (plan.compared) rules = `${rules}\n${COMPARED_RULES}`;
   const operations: Record<string, string> = {};
   for (const key of targets.keys()) operations[key] = OPERATION_HELP[key];
@@ -402,7 +405,14 @@ export class JevPolicy implements Policy {
     const values = valueChoices(plan);
     const build = (page: Page) => {
       const [, targets, controls] = actionSpace(page.actions);
-      const [questions, operations] = buildQuestions(plan, targets, controls, values, Boolean(page.read));
+      const [questions, operations] = buildQuestions(
+        plan,
+        targets,
+        controls,
+        values,
+        Boolean(page.read),
+        Boolean(page.tabs),
+      );
       return {
         targets,
         questions,

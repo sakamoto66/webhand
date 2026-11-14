@@ -169,7 +169,7 @@ export async function execute(
   recorder.event("step", logged(step, action.region, options.values ?? []));
   onChange(page);
   const newPage = await browser.observe();
-  step.page_changed = !sameMarker(newPage.marker, page.marker);
+  step.page_changed = !samePage(newPage, page);
   recorder.event("step_result", { step: step.step, page_changed: step.page_changed });
   if (step.page_changed) recorder.event("page", pageEvent(newPage, options.attempt));
   await captureScreenshot(browser, recorder, step.step, options.attempt, "action", newPage.url);
@@ -205,6 +205,11 @@ async function intoView(
 /** Markers are JSON values from the page; equal content means the same page. */
 function sameMarker(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** The same page in the same tab setup: a new or closed tab, or a switch, is a change even when the page is not. */
+function samePage(a: Page, b: Page): boolean {
+  return sameMarker(a.marker, b.marker) && sameMarker(a.tabs ?? null, b.tabs ?? null);
 }
 
 export interface AgentResult {
@@ -324,7 +329,7 @@ export async function runAgent(
             text: null,
             url: observed.url,
             // Unchanged: the same choice would be refused again, so it counts toward STUCK.
-            page_changed: !sameMarker(page.marker, observed.marker),
+            page_changed: !samePage(page, observed),
           };
           history.push(entry);
           recorder.event("stale", {

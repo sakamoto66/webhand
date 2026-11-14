@@ -313,6 +313,51 @@ test.each([null, { focus: ["form:Booking"], skip: ["header"] }])(
   },
 );
 
+test("a link that opens a new tab is offered as a tab to switch to, and the form in it can be filled", async () => {
+  const tabTask = await loadTask("tab_form");
+  await browser.close();
+  const instance = await open(tabTask.startUrl(ROOT));
+  expect((await instance.observe()).tabs).toBeUndefined();
+  expect((await tabTask.verify(instance)).success).toBe(false);
+  const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
+  const plan = { goal: tabTask.GOAL, steps: [], values: [] };
+  const result = await runAgent(instance, new ScriptedPolicy(tabTask.SCRIPT), plan, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect(result.page.tabs).toEqual({ count: 2, current: 2 });
+  expect((await tabTask.verify(instance)).success).toBe(true);
+});
+
+test("tab controls name the other tabs; a switch checks that the tabs are still the ones observed", async () => {
+  const tabTask = await loadTask("tab_form");
+  await browser.close();
+  const instance = await open(tabTask.startUrl(ROOT));
+  const first = await instance.observe();
+  await instance.act(
+    find(first, (a) => a.label === "Open guest form"),
+    first,
+  );
+  let page = await instance.observe();
+  expect(page.tabs).toEqual({ count: 2, current: 1 });
+  const control = find(page, (a) => a.kind === "tab");
+  expect(control).toMatchObject({ id: "tab_2", tab: 2, label: "Switch to tab 2: Guest registration" });
+  expect(page.actions.at(-1).id).toBe("wait");
+  expect(actionSpace(page.actions)[2].has("TAB_2")).toBe(true);
+  // A third tab makes the observed numbering wrong: nothing is switched.
+  await instance.context.newPage();
+  await expect(instance.act(control, page)).rejects.toThrow(StalePage);
+  expect((await instance.observe()).url).toContain("tab_start.html");
+  // A tab that closes itself leaves the run on the last tab still open.
+  page = await instance.observe();
+  await instance.context.pages()[2].close();
+  await instance.act(
+    find(page, (a) => a.kind === "tab" && a.tab === 2),
+    await instance.observe(),
+  );
+  await instance.context.pages()[1].close();
+  expect((await instance.observe()).url).toContain("tab_start.html");
+});
+
 test("a screenshot is a PNG of the page", async () => {
   const png = await browser.screenshot();
   expect(png.subarray(1, 4).toString("latin1")).toBe("PNG");
