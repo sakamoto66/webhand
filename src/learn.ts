@@ -9,8 +9,8 @@ import type { Recorder } from "./metrics.ts";
 
 // A function replacer: the snapshot holds "$" sequences that a string replacement would expand.
 const RECORDER = asset("recorder.js").replaceAll("__SNAPSHOT__", () => READ_STATE.trim());
-const FIELDS = ["operation", "role", "label", "value", "checked", "reason", "url", "title", "text", "region"];
-const KINDS = new Set(["action", "page", "unsupported"]);
+const FIELDS = ["change", "operation", "role", "label", "value", "checked", "reason", "url", "title", "text", "region"];
+const KINDS = new Set(["action", "page", "unsupported", "tab"]);
 const MAX_REGIONS = 60;
 export const REGION_FIELDS: Record<string, "str" | "int"> = {
   key: "str",
@@ -60,6 +60,8 @@ export async function record(
     if (event === null || typeof event !== "object" || Array.isArray(event)) return;
     const data = event as Record<string, unknown>;
     if (typeof data.kind !== "string" || !KINDS.has(data.kind)) return;
+    // A page can only say that its tab came to the front; opened and closed tabs are seen from outside.
+    if (data.kind === "tab" && data.change !== "switched") return;
     const fields: Record<string, unknown> = {};
     for (const key of FIELDS) if (key in data) fields[key] = clip(data[key]);
     if (data.kind === "page") fields.regions = outline(data.regions);
@@ -69,7 +71,11 @@ export async function record(
   const context = browser.context;
   await context.exposeBinding("__browserLabRecord", receive);
   await context.addInitScript({ content: RECORDER });
-  context.on("page", () => write("unsupported", { reason: "new_tab" }));
+  // A tab is a change the agent can follow (TAB_n), so it is recorded as an event, not as unsupported.
+  context.on("page", (page) => {
+    write("tab", { change: "opened", count: context.pages().length });
+    page.on("close", () => write("tab", { change: "closed", count: context.pages().length }));
+  });
   await browser.page.goto(url, { waitUntil: "load" });
   while (browser.browser.isConnected() && context.pages().length && !(await until())) {
     try {

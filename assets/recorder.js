@@ -110,4 +110,8 @@
     if (found) action({operation: 'press_enter', role: found.role, label: found.label, region: found.region});
   }, true);
   addEventListener('load', sendPage);
+  // The tab came to the front: the person switched to it. Not sent for the tab's first view.
+  addEventListener('visibilitychange', () => {
+    if (!inFrame && document.visibilityState === 'visible') send({kind: 'tab', change: 'switched', title: document.title});
+  });
 })();

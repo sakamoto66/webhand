@@ -150,7 +150,8 @@ How recordings are handled:
 - Keystrokes are not recorded. Values of password, one-time code, card number, and similar fields become `<redacted>`. Detection relies on field attributes and names, so values of fields it cannot recognize remain in the `runs/` log
 - All URL query values are masked
 - Recordings are saved under the user folder's `runs/` (`~/.webhand/runs/` by default). They contain page text, so do not share them
-- Actions inside iframes, file pickers, and new tabs cannot be reproduced and are kept as `unsupported`
+- Actions inside iframes and file pickers cannot be reproduced and are kept as `unsupported`
+- A new tab is recorded as a `tab` event (`opened` or `closed`, with how many tabs are open; `switched` when a tab comes to the front), and what you do in it is recorded as usual, with its own URL. The runbook then has a step that switches to the tab (see [Tabs](#tabs)). `switched` comes from the page, so a page can only report that its own tab came to the front; it is not seen in headless Chrome
 - Page scripts can forge recordings, so recordings are not trusted; you approve the runbook
 
 ## Page regions
@@ -241,6 +242,18 @@ With `--compare` or `--collect`, `--more CONTROL` on `start` or `replan` (such a
 3. The control is pressed at most 10 times per scan.
 
 Pressing is an action: it is never repeated, and an interrupted press stops the run as `UNCERTAIN`. With `--compare`, when the best item was on an earlier page, that page is opened again (it was already visited) before scrolling to the item; a list that was grown by a button is not grown again there. With `--collect`, the page ends at its top when the scan ended on a later page. The output adds `loaded more N times`, and the log keeps a `more` event per press with what changed. `replan --more none` turns it off; `--more` without `--compare` or `--collect` is refused.
+
+## Tabs
+
+A click can open a new tab (`target="_blank"`, `window.open`). webhand keeps the run on one tab at a time; the new tab is not observed until the run switches to it.
+
+- With two or more tabs open, the observation shows `TABS: N open, this is tab K`, and each other tab is offered as a control `TAB_n` ("Switch to tab n: title"). Jev chooses by number, like `SCROLL_DOWN` or `WAIT`; with one tab nothing changes. `webhand act TAB_2` does the same by hand.
+- A switch runs only when the number of tabs, their order, and the target's title are still what was observed. Otherwise nothing runs and the result is `STALE`. A switch changes nothing on any page.
+- A new, closed, or switched tab counts as a page change, so it does not add to `STUCK`.
+- A tab that closes itself leaves the run on the last tab still open.
+- The tab the run is on is kept between commands in `state/tab`, because each command attaches to Chrome anew.
+- The titles of the other tabs go to Jev with the observation (page text, so treat them as untrusted). With a saved profile, that includes tabs you are logged in to.
+- Not supported yet: closing a tab, and switching automatically to a tab a click opened.
 
 ## Logs
 

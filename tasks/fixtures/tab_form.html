@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Guest registration</title></head>
+<body>
+<h1>Guest registration</h1>
+<form onsubmit="register(event)">
+  <label>Guest <input name="guest" type="text"></label>
+  <button type="submit">Register</button>
+</form>
+<p id="result"></p>
+<script>
+  // What was submitted, for the task's verify().
+  function register(event) {
+    event.preventDefault();
+    document.body.dataset.registration = JSON.stringify({guest: event.target.guest.value});
+    document.getElementById('result').textContent = 'Registration received';
+  }
+</script>
+</body>
+</html>

@@ -50,6 +50,11 @@ for SCROLL_TO only, with where they are. When the element the next step needs is
 it comes into view, and the next operation can act on it. When a list loads more items as it is scrolled,
 SCROLL_TO its last offered element to load more. Do not scroll back and forth looking for an element.`;
 
+/** Added to NEXT_ACTION when more than one tab is open. */
+export const TAB_RULES = `page.tabs says how many tabs are open and which one this page is. A click can open a new
+tab; the page shown stays the current tab until a TAB_n operation switches to tab n. Switch only when the next
+step is on another tab, for example the page a click just opened. Do not switch back and forth.`;
+
 /** Added to NEXT_ACTION when a comparison found the best item in this attempt. */
 export const COMPARED_RULES = `plan.compared names the item that best meets Claude's criterion, found by scrolling
 through the whole list before this question; best is null when none fit. The page is scrolled to that item.
@@ -233,6 +238,7 @@ export function modelState(page: Page, history: HistoryEntry[], plan: Plan | nul
   const shown: Record<string, unknown> = { url: page.url, title: page.title, text: page.text };
   shown.offscreen = offscreen(page);
   if (page.status) shown.status = page.status;
+  if (page.tabs) shown.tabs = page.tabs;
   if (page.regions?.length) shown.regions = page.regions;
   if (page.read) shown.read = { text: page.read.text, chars: page.read.chars };
   state.page = shown;

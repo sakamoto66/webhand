@@ -234,7 +234,7 @@ Opens Chrome and records what a person does. Closing the window ends it; it prin
 
 - Keystrokes are not recorded. Values of password and similar fields become `<redacted>`, and URL query values are masked. Values of fields it cannot recognize remain in the record.
 - Records contain page text, so do not share them.
-- Actions inside iframes, file pickers, and new tabs are kept as `unsupported`.
+- Actions inside iframes and file pickers are kept as `unsupported`. A new tab is recorded as a `tab` event, and the runbook gets a step that switches to it.
 
 ### `profile`
 

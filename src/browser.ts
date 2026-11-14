@@ -1,6 +1,7 @@
 /** Playwright launches an isolated Chrome or attaches to the session Chrome; observation and input go through one CDP session. */
 
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import {
   type BrowserContext,
@@ -10,6 +11,7 @@ import {
   type Page as PlaywrightPage,
 } from "playwright-core";
 import { sleep } from "./format.ts";
+import { home as sessionHome } from "./session.ts";
 import { type Action, MutationUncertain, type Page, StalePage } from "./types.ts";
 
 export function asset(name: string): string {
@@ -256,6 +258,18 @@ const SELECT_OPTION = `(action => {
   return true;
 })`;
 
+const MAX_TAB_TITLE = 60;
+
+/** A tab's title as the model sees it: one line, clipped. Page text, so never instructions. */
+function tabTitle(title: string): string {
+  return title.replace(/\s+/g, " ").trim().slice(0, MAX_TAB_TITLE);
+}
+
+/** Which tab the run is on, kept for the next command: each command attaches to the session Chrome anew. */
+function tabFile(): string {
+  return join(sessionHome(), "tab");
+}
+
 export interface OpenOptions {
   headless?: boolean;
   /** Attach to the session Chrome on this port instead of launching a throwaway one. */
@@ -292,9 +306,10 @@ export class Browser {
           for (const page of stale) await page.close();
           await instance.page.goto(url, { waitUntil: "load" });
         } else {
-          instance.page = instance.context.pages()[0];
+          instance.page = await instance.rememberedTab();
         }
         instance.cdp = await instance.context.newCDPSession(instance.page);
+        await instance.rememberTab();
         return instance;
       }
       // launch() uses a throwaway profile. Never point this at a signed-in profile.
@@ -308,6 +323,81 @@ export class Browser {
       await instance.close();
       throw error;
     }
+  }
+
+  private openTabs(): PlaywrightPage[] {
+    return this.context.pages().filter((page) => !page.isClosed());
+  }
+
+  private async tabId(page: PlaywrightPage): Promise<string | null> {
+    try {
+      const session = await this.context.newCDPSession(page);
+      try {
+        const { targetInfo } = await session.send("Target.getTargetInfo");
+        return targetInfo.targetId;
+      } finally {
+        await session.detach().catch(() => {});
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  /** The tab the last command left the run on; the first tab when none was kept or it is gone. */
+  private async rememberedTab(): Promise<PlaywrightPage> {
+    const pages = this.openTabs();
+    const file = tabFile();
+    if (pages.length > 1 && existsSync(file)) {
+      const wanted = readFileSync(file, "utf8").trim();
+      for (const page of pages) if ((await this.tabId(page)) === wanted) return page;
+    }
+    return pages[0];
+  }
+
+  private async rememberTab(): Promise<void> {
+    if (!this.attached) return;
+    const id = await this.tabId(this.page);
+    if (id === null) return;
+    mkdirSync(sessionHome(), { recursive: true });
+    writeFileSync(tabFile(), id, { encoding: "utf8", mode: 0o600 });
+  }
+
+  /** The other tabs, as controls Jev can choose by number. Offered only when more than one tab is open. */
+  private async offerTabs(state: Page): Promise<void> {
+    const open = this.openTabs();
+    if (open.length < 2) return;
+    const current = open.indexOf(this.page);
+    const titles = await Promise.all(open.map((page) => page.title().catch(() => "")));
+    state.tabs = { count: open.length, current: current + 1 };
+    open.forEach((_, i) => {
+      if (i === current) return;
+      const title = tabTitle(titles[i]);
+      const control = { id: `tab_${i + 1}`, kind: "tab", label: `Switch to tab ${i + 1}: ${title}`, tab: i + 1, title };
+      state.actions.splice(state.actions.length - 1, 0, control); // Before "wait", which stays last.
+    });
+  }
+
+  /** Makes another open tab the one the run observes and acts on. Nothing on any page changes. */
+  private async switchTab(action: Action, page: Page): Promise<void> {
+    const open = this.openTabs();
+    const tabs = page.tabs;
+    if (!tabs || open.length !== tabs.count || open[tabs.current - 1] !== this.page) {
+      throw new StalePage("Tabs changed since this decision", ["tabs"]);
+    }
+    const target = open[action.tab - 1];
+    if (!target || target === this.page) throw new StalePage("Tab is gone", ["tab_gone"]);
+    const title = tabTitle(await target.title().catch(() => ""));
+    if (title !== action.title) throw new StalePage("Tab changed since this decision", ["tab_title"]);
+    try {
+      const next = await this.context.newCDPSession(target);
+      await target.bringToFront();
+      await this.cdp?.detach().catch(() => {});
+      this.page = target;
+      this.cdp = next;
+    } catch {
+      throw new StalePage("Tab could not be switched to", ["tab_gone"]);
+    }
+    await this.rememberTab();
   }
 
   get version(): string {
@@ -337,7 +427,18 @@ export class Browser {
     return response.result?.value ?? null;
   }
 
+  /** A tab that closed itself (a popup done with its work) leaves the run on the last tab still open. */
+  private async leaveClosedTab(): Promise<void> {
+    if (!this.page.isClosed()) return;
+    const open = this.openTabs();
+    if (open.length === 0) throw new StalePage("Every tab is closed");
+    this.page = open[open.length - 1];
+    this.cdp = await this.context.newCDPSession(this.page);
+    await this.rememberTab();
+  }
+
   async observe(): Promise<Page> {
+    await this.leaveClosedTab();
     for (let i = 0; i < 10; i++) {
       let state: Page | null;
       try {
@@ -345,6 +446,7 @@ export class Browser {
         state = await this.evaluate(readState(this.view));
         // v2: what kind of page this is, for Jev and Claude.
         if (state !== null && this.view?.whole) state.status = await this.evaluate(STATUS);
+        if (state !== null) await this.offerTabs(state);
       } catch (error) {
         if (!(error instanceof StalePage)) throw error;
         state = null;
@@ -446,6 +548,7 @@ export class Browser {
       await sleep(100);
       return;
     }
+    if (kind === "tab") return await this.switchTab(action, page);
     if (kind === "reveal") {
       const found = await this.evaluate(`${REVEAL}(${JSON.stringify(action.node)})`);
       if (!found) throw new StalePage("Target changed", ["target_gone"]);

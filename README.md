@@ -65,7 +65,7 @@ Claude makes the judgment calls (the plan, the values, the check, the replan), a
 
 ## Safety and privacy
 
-- **What leaves your machine**: The text and actions of the page being operated go to Jev (the TypeSafe API). With a saved profile, that includes pages you are logged in to. Decide before each run whether that is acceptable.
+- **What leaves your machine**: The text and actions of the page being operated, and the titles of its other open tabs, go to Jev (the TypeSafe API). With a saved profile, that includes pages you are logged in to. Decide before each run whether that is acceptable.
 - **Profiles**: Runs use a temporary profile by default, deleted when the run ends. Login state lives only in profiles dedicated to webhand (`--session profile:NAME`), which you choose per run. webhand never connects to your everyday Chrome profile.
 - **Credentials**: You type passwords and codes into Chrome yourself. Claude does not receive them, and webhand does not read the values of password fields.
 - **No guessed input**: The only values entered are the ones Claude wrote in the plan and the ones you gave. If something is missing, it asks.
