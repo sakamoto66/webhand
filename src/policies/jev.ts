@@ -153,6 +153,16 @@ export function estimateTokens(text: string): number {
   return Math.ceil(ascii / 3 + (text.length - ascii) * 1.5);
 }
 
+/** The number of choices over all questions of a request. */
+function choiceCount(questions: Record<string, unknown>): number {
+  let total = 0;
+  for (const question of Object.values(questions)) {
+    const criteria = (question as { criteria: Map<string, unknown> | Record<string, unknown> }).criteria;
+    total += criteria instanceof Map ? criteria.size : Object.keys(criteria).length;
+  }
+  return total;
+}
+
 function fits(body: unknown, questions: Record<string, unknown>, budget: number): boolean {
   for (const question of Object.values(questions)) {
     const criteria = (question as { criteria: Map<string, unknown> | Record<string, unknown> }).criteria;
@@ -430,15 +440,28 @@ export class JevPolicy implements Policy {
     };
     let fitted = fitChoose(whole, build, this.budget);
     let result: Json;
+    const refused: NonNullable<ModelCall["refused"]> = [];
     for (let tries = 1; ; tries++) {
       const extra: Partial<ModelCall> = fitted.dropped ? { dropped_elements: fitted.dropped } : {};
       if (this.budget !== TOKEN_BUDGET) extra.token_budget = this.budget;
+      if (refused.length) extra.refused = refused;
       try {
         result = await this.post(fitted.body, "choose", extra);
         break;
       } catch (error) {
         const over = error instanceof PolicyError && String(error.diagnostic?.error ?? "").includes(OVER_LIMIT);
-        if (!over || tries >= FIT_TRIES) throw error;
+        if (!over) throw error;
+        // What Jev refused is kept in the log (counts only, no page text): its limit is not known.
+        refused.push({
+          estimated_tokens: estimateTokens(toJson(fitted.body)),
+          request_chars: toJson(fitted.body).length,
+          choices: choiceCount(fitted.questions),
+          elements: fitted.targets ? [...fitted.targets.values()].reduce((n, m) => n + m.size, 0) : 0,
+          budget: this.budget,
+        });
+        if (tries >= FIT_TRIES) {
+          throw new PolicyError(error.message, { ...error.diagnostic, refused });
+        }
         this.budget = Math.floor(estimateTokens(toJson(fitted.body)) * SHRINK);
         fitted = fitChoose(whole, build, this.budget);
       }

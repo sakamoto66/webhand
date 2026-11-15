@@ -197,14 +197,26 @@ test("refused over its limit, the request is fitted again to a lower budget, whi
   const sizes = sent.map((s) => estimateTokens(JSON.stringify(s.body)));
   expect(sizes[1]).toBeLessThanOrEqual(Math.floor(sizes[0] * 0.6));
   expect(policy.calls[0].token_budget).toBe(Math.floor(sizes[0] * 0.6));
+  // What was refused is logged as counts only.
+  expect(policy.calls[0].refused).toEqual([
+    {
+      estimated_tokens: sizes[0],
+      request_chars: JSON.stringify(sent[0].body).length,
+      choices: expect.any(Number),
+      elements: 205,
+      budget: 40_000,
+    },
+  ]);
   await policy.choose(bigPage(5, 200), PLAN, []);
   expect(estimateTokens(JSON.stringify(sent[2].body))).toBeLessThanOrEqual(sizes[1]);
 });
 
 test("refused over its limit three times, Jev's refusal stands and nothing is chosen", async () => {
   const { policy, sent } = jevPolicy(() => overLimit);
-  await expect(policy.choose(bigPage(5, 200), PLAN, [])).rejects.toThrow(/HTTP 400/);
+  const error = (await policy.choose(bigPage(5, 200), PLAN, []).catch((e: unknown) => e)) as PolicyError;
+  expect(error.message).toMatch(/HTTP 400/);
   expect(sent).toHaveLength(3);
+  expect(error.diagnostic?.refused).toHaveLength(3);
 });
 
 test("another HTTP 400 is not fitted again", async () => {
