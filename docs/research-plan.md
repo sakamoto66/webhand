@@ -1551,6 +1551,13 @@ pb1 と pb2 が最後まで走らなかったので、同じ条件（pb、`a0d29
 - テスト: 別オリジン frame での一覧・入力・クリック・鮮度、`tasks/frame_checkout`（frame の中のフォーム。verify() は frame 自身の状態を読む）、`whole` なしでは frame を出さないこと。301 件が通る。
 - 実サイトでの効果は未測定（次: pa / pb の A/B と、型 1 の bu2-024、bu2-072 の BU Bench）。
 
+### 27回目: frame の観測の A/B（`frame_checkout`、各5回）
+
+- 条件: pa = 53cf37a（frame なし）、pb = 236b198（frame あり）。`src` の差は `src/browser.ts` だけ。flow v2、スキルは同じ。成功は `verify()`（frame 自身の状態）だけ。
+- 結果: **pa 0/5、pb 5/5**。pa は 5回とも、一覧が wait だけで、`BLOCKED`（「frame の中で webhand からは見えない」と Claude が報告、操作は 0〜6回の WAIT など）。pb は 5回とも注文が通り、3〜1.2分で完了。拒否は両条件で 0。
+- pb の `STUCK`: 5回とも 1回ずつ出た（`three actions without a page change`）。frame の中の入力や押下は、親ページの本文・要素の記録に出ないため、「ページが変わっていない」と数えられる。そのあとの再試行で、入力済みの値のまま完了した。対処の候補: frame の本文や page_key の変化も「ページの変化」に含める（次の変数）。
+- 限界: タスクは frame の中にフォームがあるだけの単純なもの。実サイトでの効果（型 1 の bu2-024、bu2-072）は未測定。
+
 ## 次の手順
 
 1. GOAL 単位の設計で `hotel_filter` と `hotel_reserve` を実行し、変更後の基準値を取る。
