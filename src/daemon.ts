@@ -91,6 +91,10 @@ async function run(socketPath: string, engine: string, executable: string, port:
           return { id: request.id, result: (await browser.screenshot()).toString("base64") };
         case "evaluate":
           return { id: request.id, result: await browser.evaluate(a, b) };
+        case "storageState":
+          return { id: request.id, result: await browser.storageState() };
+        case "restore":
+          return { id: request.id, result: await browser.restore(a, b) };
         default:
           setImmediate(stop);
           return { id: request.id, result: null };

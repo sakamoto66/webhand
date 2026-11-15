@@ -41,7 +41,9 @@ Ask the user with AskUserQuestion, unless the request already says:
 - **new**: a temporary profile, signed out, deleted at the end. The default.
 - **profile:NAME**: a saved webhand profile that keeps its sign-in. List the saved profiles from the catalog. If the service needs a login and no profile has it, offer to create one: run `webhand profile login NAME --url LOGIN_URL` as a background job, tell the user to sign in directly in the Chrome window and close it, and wait for the job to end.
 
-Before using a signed-in profile, tell the user that the signed-in pages are sent to Jev (TypeSafe). This is never the user's everyday Chrome profile.
+- **--auth NAME**: start a new session already signed in with a login saved by `webhand auth save NAME`. Use it with `--session new` only: never with `--id` or `profile:NAME` (the CLI refuses). To make one, sign in during a `--headed` session (a `[person]` step), then run `webhand auth save NAME` before `finish`. `webhand auth list` shows the saved names. Unlike a profile, it works on every engine.
+
+Before using a signed-in profile or `--auth`, tell the user that the signed-in pages are sent to Jev (TypeSafe). This is never the user's everyday Chrome profile. A saved login file is the sign-in itself: never print, paste or commit it.
 
 On WSL, `--chrome auto` uses the Windows Chrome when it is reachable. If `start` prints a `NOTE` about falling back to Linux, pass it on once.
 

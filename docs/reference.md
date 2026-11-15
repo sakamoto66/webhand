@@ -62,6 +62,23 @@ webhand profile delete work
 
 webhand never connects to your everyday Chrome profile, because Chrome 136 and later refuse debugging connections to the default profile. Saved profiles live in `~/.webhand/state/profiles/` on Linux and `%LOCALAPPDATA%\webhand\profiles\` on Windows.
 
+### Saved logins (`--auth`)
+
+A saved login keeps the cookies and localStorage of a session, so a later new session can start signed in. Unlike a saved profile it is not tied to Chrome: any engine (Chrome, headless shell, Lightpanda, Obscura) can start with it.
+
+```bash
+webhand start --headed --goal ... --url https://example.com/login --step "[person] Sign in"   # a person signs in
+webhand auth save work                       # keep that session's sign-in (--id NAME picks the session)
+webhand start --auth work --goal ... --url https://example.com/   # a new session, already signed in
+webhand auth list
+webhand auth delete work
+```
+
+- `--auth` is for a new session only: it cannot be given with `--id` or with `--session profile:NAME`.
+- Only the sites of the tabs open when you save are kept (their cookies, and their localStorage). On `start`, localStorage is restored for the site of the start URL; a saved site of another origin gets its cookies only, and `start` says so.
+- The file is `~/.webhand/state/auth/NAME.json`, readable by you alone. It is the sign-in itself: treat it like a password, never commit it, and do not paste it. webhand never prints its contents.
+- Pages opened signed in are sent to Jev (TypeSafe), as with a saved profile. Saved sign-ins expire like any other.
+
 ### Several sessions at once
 
 Each session has its own Chrome, profile, plan, and history. Give a session a name with `--id NAME` (letters, digits, `-`, `_`; up to 40) on `start`, and the same `--id` on every later command of it (`run`, `replan`, `act`, `observe`, `finish`). Without `--id` the session is called `default`, as before.
@@ -142,6 +159,7 @@ If the CLI is not installed globally, read `webhand` in the table below as `npx 
 | `webhand finish --status STATUS` | Claude | Runs independent verification, writes the log, and closes Chrome |
 | `webhand learn --name NAME --url URL [--scope project\|user]` | Person | Records a demonstration |
 | `webhand profile login/list/delete` | Person | Manages saved profiles |
+| `webhand auth save/list/delete NAME` | Claude | Saves the sign-in of a session, to start a new session with `--auth NAME` |
 
 Prefix a step with `[person]` to make it a step a human performs (requires `--headed`). `--focus REGION` / `--skip REGION` on `start` and `replan` choose which regions are observed (see [Page regions](#page-regions)), and `--read KIND` adds content from beyond the viewport (see [Reading beyond the viewport](#reading-beyond-the-viewport)). With `--runbook NAME --param k=v`, the runbook's GOAL, start URL, and steps become the defaults, and the params are passed to Jev as input values.
 

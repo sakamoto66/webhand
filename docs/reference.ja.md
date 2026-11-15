@@ -62,6 +62,23 @@ webhand profile delete work
 
 普段使いの Chrome プロファイルには接続しません。Chrome 136 以降は、既定のプロファイルへのデバッグ接続ができないためです。保存プロファイルは、Linux では `~/.webhand/state/profiles/`、Windows では `%LOCALAPPDATA%\webhand\profiles\` に置かれます。
 
+### 保存したログイン（`--auth`）
+
+保存したログインは、セッションの Cookie と localStorage を残し、あとの新しいセッションをログイン済みで始められるようにします。保存プロファイルと違い、Chrome に限りません。どのエンジン（Chrome、headless shell、Lightpanda、Obscura）でも、このログインで始められます。
+
+```bash
+webhand start --headed --goal ... --url https://example.com/login --step "[person] ログインする"   # 人がログインする
+webhand auth save work                       # そのセッションのログインを保存する（--id NAME でセッションを選ぶ）
+webhand start --auth work --goal ... --url https://example.com/   # ログイン済みの新しいセッション
+webhand auth list
+webhand auth delete work
+```
+
+- `--auth` は新しいセッション専用です。`--id` や `--session profile:NAME` とは同時に指定できません。
+- 保存されるのは、保存したときに開いているタブのサイトだけです（その Cookie と localStorage）。`start` では、開始 URL のサイトの localStorage を戻します。別の origin の localStorage は戻らず、Cookie だけが入ります。その場合は `start` が知らせます。
+- ファイルは `~/.webhand/state/auth/NAME.json` で、自分だけが読めます。ログインそのものなので、パスワードと同じに扱い、コミットも貼り付けもしないでください。webhand は中身を表示しません。
+- ログイン済みで開いたページは、保存プロファイルと同じく Jev（TypeSafe）に送られます。保存したログインも、ほかのログインと同じく期限が切れます。
+
 ### 複数のセッションを同時に使う
 
 セッションごとに、Chrome、プロファイル、計画、履歴が別になります。`start` に `--id NAME`（英数字、`-`、`_`、40文字まで）を付けて名前を決め、そのセッションの以降のコマンド（`run`、`replan`、`act`、`observe`、`finish`）にも同じ `--id` を付けます。`--id` がなければ、これまでどおり `default` です。
@@ -142,6 +159,7 @@ networkingMode=mirrored
 | `webhand finish --status STATUS` | Claude | 独立検証、ログ記録、Chrome の終了 |
 | `webhand learn --name NAME --url URL [--scope project\|user]` | 人 | 操作を記録する |
 | `webhand profile login/list/delete` | 人 | 保存プロファイルを管理する |
+| `webhand auth save/list/delete NAME` | Claude | セッションのログインを保存し、`--auth NAME` で新しいセッションを始められるようにする |
 
 手順の先頭に `[person]` を付けると、人が行う手順になります（`--headed` が必須です）。`start` と `replan` の `--focus REGION` / `--skip REGION` で、観測する領域を選べます（下の「ページの領域」）。`--read KIND` で、画面の外の内容を足せます（下の「画面の外を読む」）。`--runbook NAME --param k=v` を指定すると、手順書の GOAL、開始 URL、手順が既定値になり、params は入力値として Jev に渡されます。
 

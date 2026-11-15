@@ -1236,6 +1236,50 @@ Chrome、Obscura、Lightpanda で、フォームと DOM まわりの 40 項目�
 - 直したこと（研究用のラッパー `research/webhand.ts`。配布物には入らない）: `context` を持たないブラウザには、常駐側で評価する1ページだけを `context.pages()` として見せる変換を足した。検証の中身は変えていない。取り直した 3 回は、この変換を足した後の結果。
 - 結論: `tab_form` は、Obscura でも、Jev が同じタブで進めて完了できる。タスクが前提にする「新しいタブ」は使えないが、目的（フォームの登録）は達成できる。
 
+## 共有ブラウザの Phase 0（2026-11-15）
+
+変えた変数は「N 個の headless shell（各 1 セッション）」と「1 つの shell に N 個のコンテキスト」の違いだけ。`research/shared.ts`、N = 2, 4, 8, 16、各 2 回、1 ラウンド = 全セッションが同時に fixture を開いて `snapshot.js` を実行、5 ラウンド。有料の呼び出しなし。メモリは PSS をプロセスグループ全体で合計。コンテキストは生の CDP の `Target.createBrowserContext {disposeOnDetach:false}` で作り、接続し直した後に各ページの `browserContextId` で自分のセッションのページを探した。
+
+| N | 方式 | メモリ (MB) | 準備 (秒) | 1 ラウンド (秒, 中央値) |
+|---|---|---|---|---|
+| 2 | separate | 385 / 382 | 0.18 / 0.14 | 0.03 / 0.04 |
+| 2 | shared | 281 / 281 | 0.15 / 0.16 | 0.04 / 0.03 |
+| 4 | separate | 619 / 620 | 0.24 / 0.22 | 0.05 / 0.06 |
+| 4 | shared | 321 / 321 | 0.19 / 0.19 | 0.05 / 0.06 |
+| 8 | separate | 1087 / 1087 | 0.37 / 0.37 | 0.09 / 0.09 |
+| 8 | shared | 414 / 414 | 0.29 / 0.26 | 0.09 / 0.09 |
+| 16 | separate | 2001 / 2001 | 1.97 / 0.70 | 0.29 / 0.18 |
+| 16 | shared | 586 / 588 | 0.63 / 0.40 | 0.18 / 0.17 |
+
+- 16 条件すべてで失敗なし（ページが見つからない、ラウンドの失敗ともになし）。`browserContextId` による対応づけは N = 16 まで成立した。
+- メモリ: shared は separate の 73%（N=2）、52%（4）、38%（8）、29%（16）。1 セッション増えるごとの増分は、separate が約 120 MB、shared が約 20 MB。
+- 時間: N ≤ 8 は差がほぼない。N = 16 の separate は 1 回目の準備が 1.97 秒（2 回目 0.70 秒）でぶれる。ラウンドは shared が 0.17〜0.18 秒、separate が 0.18〜0.29 秒。
+- 限界: fixture は軽い静的ページで、実サイトより小さい。ブラウザの本体スレッドを共有する CPU 競合は、このページ量では見えない。Chrome（`--headless=new`）のコンテキスト、ログイン状態の分離、`--id` 並列での実動作は未測定。
+
+## storageState をエンジン間で使う（2026-11-15）
+
+変えた変数は読み込み先のエンジンだけ。ローカルの模擬サイトで、`/login` が Cookie（`sid`、HttpOnly）と localStorage（`token`）の両方を設定する。`/cookie` は Cookie だけ、`/ls` は localStorage だけでログイン判定する。Chrome（`--headless=new`）でログインして `context.storageState()` を書き出し、新しい各エンジンに `addCookies` と、同じ origin を開いての `localStorage.setItem` で読み込んだ。無料、Jev なし、スクリプトは scratchpad の `ss.mjs`（リポジトリには入れていない）。
+
+| 読み込み先 | Cookie だけのサイト | localStorage だけのサイト |
+|---|---|---|
+| chrome（new headless） | LOGGED-IN | LOGGED-IN |
+| headless-shell | LOGGED-IN | LOGGED-IN |
+| Obscura | LOGGED-IN | LOGGED-IN |
+| Lightpanda | LOGGED-IN | LOGGED-IN |
+
+- 最初の 2 回の実行は、実験側の問題で正しい結果にならなかった（記録に残す）。1 回目: Lightpanda でタイムアウト（原因は、最初のタブの再利用か `newContext` か、切り分けていない）、Chrome は最初の `about:blank` タブを再利用して、ナビゲーションが中断した。2 回目の途中: Obscura は 404 ページで localStorage が使えず（`Storage is unavailable`）、`ANONYMOUS`。修正は、毎回 `newPage` を使い、localStorage を入れる origin に 200 を返す `/blank` ページを用意し、各操作に 8 秒のタイムアウトを付けたこと。3 回目で上の表になった。
+- 対照（状態なしで匿名になるか）は、専用には取っていない。ただし、Obscura の 2 回目の途中で localStorage の読み込みに失敗したとき、`/ls` は `ANONYMOUS` を返したので、判定が常に LOGGED-IN になる実装ではない。
+- 限界: 1 つの接続の中で読み込みと確認をした。Obscura と Lightpanda は、接続が切れるとページが消える。Cookie と localStorage が常駐プロセスに残るか、webhand の常駐の構成（daemon）の下で読み込めるかは未確認。IndexedDB、実サイトのログイン、期限切れ、複数 origin も未確認。
+
+## 保存したログイン（`auth save` と `start --auth`）の実装（2026-11-15）
+
+前の実験の結果を機能にした。`webhand auth save NAME` が、動いているセッションの Cookie と localStorage を `~/.webhand/state/auth/NAME.json`（0600）に保存し、`webhand start --auth NAME` が、新しいセッションをそのログインで始める。`--auth` は `--id` と `profile:NAME` と同時に指定できない（CLI が断る）。
+
+- 実機の結果（`tests/auth.test.ts`、Chrome でログインして保存、各エンジンで `--auth` つきに開始）: headless-shell、Obscura、Lightpanda のどれでも、Cookie だけのサイトと localStorage だけのサイトの両方が `SIGNED-IN`、`--auth` なしの新しいセッションは `ANONYMOUS`。
+- 前の実験にはなかった問題が 1 つ出た。最初の実装（Playwright の `context.storageState()` だけ）では、localStorage が保存されなかった（`1 cookies, 0 localStorage`、テストは 3 エンジンとも失敗）。CLI の命令ごとに接続し直すため、Playwright は「その接続でページが読み込まれた origin」しか localStorage を知らない。前の実験は同じ接続の中でログインしたので、これが見えなかった。直したこと: 開いているタブの origin について、`localStorage` をページから直接読んで足した。その結果、保存されるのは「保存したときに開いているタブのサイト」だけになった（訪れて離れたサイトの localStorage は残らない）。
+- 戻すときの制約: localStorage は、そのサイトのページからしか書けない。そこで、開始 URL のサイトの分だけを書いて、もう一度読み込む。別の origin の localStorage は戻らず（Cookie は戻る）、`start` がその origin を知らせる。
+- 未確認: IndexedDB、実サイトのログイン、期限切れ、複数タブのサイト。
+
 ## 次の手順
 
 1. GOAL 単位の設計で `hotel_filter` と `hotel_reserve` を実行し、変更後の基準値を取る。

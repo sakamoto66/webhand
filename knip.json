@@ -5,6 +5,7 @@
     "src/daemon.ts",
     "research/webhand.ts",
     "research/engines.ts",
+    "research/shared.ts",
     "tasks/*.ts",
     "scripts/*.ts",
     "tests/**/*.test.ts"

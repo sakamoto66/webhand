@@ -9,6 +9,7 @@ import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import * as agent from "./agent.ts";
 import { Budget, execute, runAgent } from "./agent.ts";
+import * as auth from "./auth.ts";
 import { Browser, type ViewChoice } from "./browser.ts";
 import { type Collected, type Collector, collectScan, MAX_COLLECTED } from "./collect.ts";
 import { type Compared, type Comparer, compareScan, MAX_PAGES, MAX_SCROLLS, type Reader } from "./compare.ts";
@@ -409,6 +410,7 @@ async function commandStart(args: Args): Promise<number> {
   let chrome: string;
   let engine: string;
   let note: string | null;
+  let login: auth.SavedLogin | null = null;
   try {
     if (args.runbook) {
       book = runbook.load(args.runbook, runbook.parseValues(args.param));
@@ -419,6 +421,17 @@ async function commandStart(args: Args): Promise<number> {
     serviceName = args.service || (book ? book.service : null);
     service = serviceName ? runbook.loadService(serviceName) : null;
     profile = session.parseSession(args.session);
+    if (args.auth) {
+      if (profile) throw new CliExit("--auth is for a new session: a saved profile already keeps its own sign-in");
+      auth.checkName(args.auth);
+      if (!auth.exists(args.auth)) {
+        const known = auth.names();
+        throw new CliExit(
+          `No saved login ${args.auth}. Saved: ${known.length ? known.join(", ") : "(none)"}. Save one with: webhand auth save NAME`,
+        );
+      }
+      login = auth.load(args.auth);
+    }
     engine = session.chooseEngine(args.engine, { headed: args.headed, profile, chrome: args.chrome });
     // --chrome says where Chrome runs; the other engines have no such choice.
     [chrome, note] = engine === "chrome" ? chooseChrome(args.chrome) : ["linux", null];
@@ -494,8 +507,14 @@ async function commandStart(args: Args): Promise<number> {
   context.log = state.log;
   const recorder = new Recorder(state.log);
   let browser: Driver | null = null;
+  let skipped: string[] = [];
   try {
-    browser = await attach(chromeState, state.start_url, browserView(state));
+    if (login) {
+      browser = await attach(chromeState, null, browserView(state));
+      skipped = await browser.restore(login.state, state.start_url);
+    } else {
+      browser = await attach(chromeState, state.start_url, browserView(state));
+    }
     state.page = await browser.observe();
     recorder.event("run_start", {
       task,
@@ -504,6 +523,7 @@ async function commandStart(args: Args): Promise<number> {
       chrome_host: chrome,
       ...(engine !== "chrome" ? { engine } : {}),
       session: profile ? "profile" : "new",
+      ...(args.auth ? { auth: args.auth } : {}),
       git: gitState(),
       runbook: state.runbook,
       service: serviceName,
@@ -543,6 +563,10 @@ async function commandStart(args: Args): Promise<number> {
   }
   session.save(state);
   if (note) print(`NOTE: ${note}`);
+  if (args.auth) {
+    print(`SIGNED IN with saved login ${args.auth}. Pages opened signed in are sent to Jev`);
+    if (skipped.length) print(`NOTE: localStorage of other sites was not restored: ${skipped.join(", ")}`);
+  }
   print(
     `${describePlan(plan, state.view)}\nSESSION: ${args.session} (${session.hostName(engine, chrome)})\n${headline(state.page)}`,
   );
@@ -1149,6 +1173,44 @@ async function commandProfile(args: Args): Promise<number> {
   return OK;
 }
 
+/** Saved logins. `save` takes the sign-in of a running session; `start --auth NAME` begins a new session with it. */
+async function commandAuth(args: Args): Promise<number> {
+  try {
+    if (args.action === "list") {
+      const names = auth.names();
+      print(`SAVED LOGINS: ${names.length ? names.join(", ") : "(none)"}`);
+      return OK;
+    }
+    if (!args.name) throw new CliExit(`auth ${args.action} needs a NAME`);
+    auth.checkName(args.name);
+    if (args.action === "delete") {
+      if (!auth.remove(args.name)) {
+        print(`No saved login ${args.name}`);
+        return FAILED;
+      }
+      print(`DELETED login ${args.name}`);
+      return OK;
+    }
+    const state = requireSession();
+    const replaced = auth.exists(args.name);
+    const browser = await attach(state, null, browserView(state));
+    let storage: auth.StorageState;
+    try {
+      storage = await browser.storageState();
+    } finally {
+      await browser.close();
+    }
+    auth.save(args.name, storage);
+    print(
+      `${replaced ? "REPLACED" : "SAVED"} login ${args.name} (${auth.summary(auth.load(args.name))}). Use it with: start --auth ${args.name}`,
+    );
+    return OK;
+  } catch (error) {
+    if (error instanceof session.SessionError) throw new CliExit(error.message);
+    throw error;
+  }
+}
+
 // --- Parser --------------------------------------------------------------------------------
 
 interface OptionSpec {
@@ -1174,6 +1236,8 @@ interface CommandSpec {
   options: OptionSpec[];
   positionals?: PositionalSpec[];
   run: (args: Args) => Promise<number>;
+  /** Options that cannot be given together. */
+  conflicts?: [string, string][];
 }
 
 const FLOWS = ["v1", "v2"];
@@ -1266,6 +1330,12 @@ function commands(): Record<string, CommandSpec> {
           help: "v2: offer Jev the whole page (research). Default: WEBHAND_FLOW, else v1",
         },
         { name: "session", type: "string", default: "new", help: "new (temporary) or profile:NAME (saved sign-in)" },
+        {
+          name: "auth",
+          type: "string",
+          metavar: "NAME",
+          help: "Start signed in with a login saved by `auth save`. For a new session only: not with --id or profile:NAME",
+        },
         chromeOption,
         engineOption,
         { name: "headed", type: "boolean" },
@@ -1273,6 +1343,7 @@ function commands(): Record<string, CommandSpec> {
         { name: "max-actions", type: "int", default: Budget.MAX_ACTIONS, help: "Per attempt" },
         { name: "max-decisions", type: "int", default: Budget.MAX_DECISIONS, help: "Per attempt" },
       ],
+      conflicts: [["auth", "id"]],
       run: commandStart,
     },
     run: {
@@ -1339,6 +1410,15 @@ function commands(): Record<string, CommandSpec> {
         { name: "headless", type: "boolean", hidden: true },
       ],
       run: commandLearn,
+    },
+    auth: {
+      help: "Saved logins: list, save NAME (from a session), delete NAME",
+      options: [idOption],
+      positionals: [
+        { name: "action", choices: ["list", "save", "delete"] },
+        { name: "name", optional: true },
+      ],
+      run: commandAuth,
     },
     profile: {
       help: "Saved profiles: list, login NAME --url URL, delete NAME",
@@ -1497,6 +1577,9 @@ export function parse(argv: string[]): Parsed | { help: string } {
     }
     args[positional.name] = value;
   });
+  for (const [a, b] of spec.conflicts ?? []) {
+    if (seen.has(a) && seen.has(b)) throw fail(`argument --${a}: not allowed with argument --${b}`);
+  }
   const required = spec.options.filter((option) => option.required && !seen.has(option.name));
   if (required.length) {
     throw fail(`the following arguments are required: ${required.map((option) => `--${option.name}`).join(", ")}`);
@@ -1526,7 +1609,7 @@ const SESSION_COMMANDS = ["start", "run", "replan", "act", "observe", "finish"];
 
 /** Picks the session a command works on and holds its lock until the command ends. Returns the release function. */
 function takeSession(command: string, args: Args): () => void {
-  if (!SESSION_COMMANDS.includes(command)) {
+  if (!SESSION_COMMANDS.includes(command) && !(command === "auth" && args.action === "save")) {
     session.use();
     return () => {};
   }

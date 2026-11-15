@@ -9,6 +9,7 @@
  */
 
 import { connect, type Socket } from "node:net";
+import type { StorageState } from "./auth.ts";
 import type { PageCheck, ViewChoice } from "./browser.ts";
 import type { RowReader } from "./collect.ts";
 import type { Reader } from "./compare.ts";
@@ -22,6 +23,8 @@ export interface Driver extends Reader, RowReader {
   check(): Promise<PageCheck>;
   unseen(): Promise<Record<string, number>>;
   ignoredWindows(): Promise<string[]>;
+  storageState(): Promise<StorageState>;
+  restore(state: StorageState, url: string): Promise<string[]>;
   close(): Promise<void>;
 }
 
@@ -40,6 +43,8 @@ export const METHODS = [
   "ignoredWindows",
   "screenshot",
   "evaluate",
+  "storageState",
+  "restore",
   "shutdown",
 ] as const;
 
@@ -196,6 +201,14 @@ export class RemoteBrowser implements Driver {
   /** Read-only evaluation, for a research task's independent verification. */
   evaluate(expression: string, options: { awaitPromise?: boolean } = {}): Promise<unknown> {
     return this.call("evaluate", expression, options);
+  }
+
+  storageState(): Promise<StorageState> {
+    return this.call("storageState");
+  }
+
+  restore(state: StorageState, url: string): Promise<string[]> {
+    return this.call("restore", state, url);
   }
 
   /** Ends this connection only. The daemon, its browser and the page stay until the session is stopped. */
