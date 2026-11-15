@@ -28,6 +28,7 @@ import {
   type Controls,
   ESCALATE,
   ESCALATE_HELP,
+  ESCALATE_RULES,
   INSTRUCTION_RULES,
   jevGoal,
   MORE_RULES,
@@ -228,6 +229,7 @@ export function buildQuestions(
   if (tabbed) rules = `${rules}\n${TAB_RULES}`;
   if (plan.compared) rules = `${rules}\n${COMPARED_RULES}`;
   if (plan.instructions?.length) rules = `${rules}\n${INSTRUCTION_RULES}`;
+  if (plan.flow === "v2") rules = `${rules}\n${ESCALATE_RULES}`;
   const operations: Record<string, string> = {};
   for (const key of targets.keys()) operations[key] = OPERATION_HELP[key];
   for (const [key, value] of controls) operations[key] = value.label;

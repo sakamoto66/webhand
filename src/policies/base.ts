@@ -93,7 +93,13 @@ element as a stand-in for one that is not listed.`;
 /** v2: Jev hands the decision to Claude. The attempt is not over: Claude answers and the run continues. */
 export const ESCALATE = "ESCALATE";
 export const ESCALATE_HELP =
-  "You cannot decide: the page is not one the plan expects, nothing offered fits, you are not confident, or the next operation cannot be undone and Claude has not allowed it. Claude answers, then you continue.";
+  "Hand the decision to Claude, who answers, and then you continue. Choose it instead of an operation when the next step is one the goal and the plan do not ask for and it deletes, pays, sends, or cannot be undone, or when the page is not one the plan expects and nothing offered fits.";
+
+/** v2: when to ESCALATE. Added to the rules of the operation question. */
+export const ESCALATE_RULES = `Before you choose an operation, read what it does on this page. If the page says it deletes, pays, sends,
+or cannot be undone, and neither the goal nor the plan asks for that, choose ESCALATE and do not choose the operation.
+A page that is not in the plan, with nothing offered that fits, is also ESCALATE. An ordinary step the plan expects
+is never ESCALATE.`;
 
 /** Added to NEXT_ACTION when Claude has answered an earlier ESCALATE or a stop. */
 export const INSTRUCTION_RULES = `plan.claude_instructions are Claude's answers to your earlier questions, oldest first.
