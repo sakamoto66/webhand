@@ -63,6 +63,7 @@ Add `--headed` when there are `[person]` steps, when the goal may stop at someth
 | `GOAL_REPORTED` | Check the printed page against every requirement of the goal. If it is met, finish `done`. If not, replan |
 | `NEEDS_VALUE` | `run --value "LABEL=VALUE"` with a value the goal or the user gave. Ask the user if you do not have it |
 | `NEEDS_HUMAN` | Ask the user to do it in the Chrome window, wait for them, then `run --human-done` |
+| `ESCALATE` (v2) | Jev handed the decision to you. Read `WHY:`, then answer (section 4b) so the same attempt goes on. It is not the end of the goal: do not finish while parts of the goal are still undone |
 | `BLOCKED`, `STUCK`, `ATTEMPT_BUDGET` | Replan (section 4), or `act` once and `run` again. If the page is out of reach, section 5 |
 | `JEV_FAILED` | Nothing ran. `run` again once; if it repeats, replan or `act` |
 | `UNCERTAIN` | The action may have happened. Never repeat it or replan. Finish `error` |
@@ -87,6 +88,8 @@ webhand answer --note "The cookie banner is closed; search for Lisbon first" [--
 ```
 
 The note is short and says what to do next on this page: a corrected goal, a value, a permission, or a page to go to. Jev sees it, and the history and the budget are kept. Use `replan` only when the whole plan is wrong. When `WHY:` says the page has canvas, frame, or plugin parts webhand cannot see (the element may be inside one), or that Jev scrolled up and down and chose nothing, an `answer` cannot reveal the element: find another way (a list or text version, another page by `--url`, a keyboard route), or ask the person. If the page cannot be reached or the goal cannot hold on this page after answers, do not keep answering: ask the person with AskUserQuestion, giving the page state, what is done, why it stopped, and the choices (continue, another way, stop).
+
+A stop on one part of the goal is not a reason to leave the other parts undone. When the goal has several parts (several items, pages, or places), go on to the next part before you report, with `replan --step` for it, and say in the final report which parts were done and which were not. Finish `blocked` only when no part can go on, and say what is left.
 
 ## 5. When the page is out of reach
 
