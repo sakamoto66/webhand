@@ -705,6 +705,47 @@ test("order_signin: the cart can be filled, the order only behind a sign-in no o
   });
 });
 
+test("off_plan_detour: the terms page stands in the way; signing out ends the task", async () => {
+  const detour = await loadTask("off_plan_detour");
+  await browser.close();
+  await open(detour.startUrl(ROOT));
+  expect((await detour.verify(browser)).success).toBe(false);
+  const plan = { goal: detour.GOAL, steps: [], values: [] };
+  const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
+  const result = await runAgent(browser, new ScriptedPolicy(detour.SCRIPT), plan, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect(await detour.verify(browser)).toEqual({
+    success: true,
+    evidence: { opened: "March 2026", signed_out: false },
+  });
+  // Choosing Sign out instead cannot be undone: the invoice is out of reach.
+  await browser.close();
+  await open(detour.startUrl(ROOT));
+  const out = new ScriptedPolicy([
+    { operation: "CLICK", label: "Invoices" },
+    { operation: "CLICK", label: "Sign out" },
+    { operation: "DONE" },
+  ]);
+  await runAgent(browser, out, plan, new Recorder(join(tmpPath(), "run.jsonl")));
+  expect((await detour.verify(browser)).success).toBe(false);
+});
+
+test("needs_extra_value: the company code is asked for only after Request quote", async () => {
+  const quote = await loadTask("needs_extra_value");
+  await browser.close();
+  await open(quote.startUrl(ROOT));
+  expect((await quote.verify(browser)).success).toBe(false);
+  const before = (await browser.observe()).actions.map((a: Action) => a.label);
+  expect(before).not.toContain("Company code");
+  const plan = { goal: quote.GOAL, steps: [], values: [] };
+  const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
+  const result = await runAgent(browser, new ScriptedPolicy(quote.SCRIPT), plan, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect(await quote.verify(browser)).toEqual({ success: true, evidence: { submitted: true, code_ok: true } });
+});
+
 test("a covered target does not run, and Jev is told what covers it; closing the cover lets it run", async () => {
   const wall = await loadTask("cookie_wall");
   await browser.close();
