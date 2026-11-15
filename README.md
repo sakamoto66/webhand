@@ -63,6 +63,21 @@ flowchart LR
 
 Claude makes the judgment calls (the plan, the values, the check, the replan), and Jev makes the many clicks and entries in between. Jev only chooses among the elements found on the page and the values Claude wrote. Control returns to Claude only when Jev reports the GOAL, needs a value or a person, gets stuck, or cannot tell whether an action took effect. The full list is in [Division of roles](docs/reference.md#division-of-roles).
 
+## Engines
+
+`--engine` chooses what runs the browser. The default, `auto`, uses the headless shell when it is installed and the run needs no window and no saved profile, and Chrome otherwise.
+
+| | Chrome | Headless shell | Obscura | Lightpanda |
+| --- | --- | --- | --- | --- |
+| Window (`--headed`), `[person]` steps, `learn`, saved profile | Yes | No | No | No |
+| Memory for one page | about 350–470 MB (`--headless=new`) | about 240–260 MB | about 23–33 MB | about 23–33 MB |
+| Real layout and screenshots | Yes | Yes | Yes | No (simulated) |
+| Several tabs | Yes | Yes | In practice one (a new window opens nothing or loads in the same tab) | No |
+| Page stays between commands | Yes | Yes | Through a small daemon | Through a small daemon |
+| Saved login (`--auth`) | Yes | Yes | Yes | Yes |
+
+Chrome is the only engine with a window and saved profiles. Obscura and Lightpanda are much lighter but read some pages differently from Chrome, so compare results with Chrome before relying on them. Details and limits: [Headless shell](docs/reference.md#headless-shell), [Lightpanda](docs/reference.md#lightpanda), [Obscura](docs/reference.md#obscura), [Saved logins](docs/reference.md#saved-logins---auth).
+
 ## Safety and privacy
 
 - **What leaves your machine**: The text and actions of the page being operated, and the titles of its other open tabs, go to Jev (the TypeSafe API). With a saved profile, that includes pages you are logged in to. Decide before each run whether that is acceptable.

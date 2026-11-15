@@ -6,6 +6,8 @@
  * `finish` then runs the task's verify() on the final page. Every other command is passed through.
  */
 
+import { pathToFileURL } from "node:url";
+import type { Browser } from "../src/browser.ts";
 import { CliExit, type Hooks, type IO, main, UsageError } from "../src/cli.ts";
 import * as session from "../src/session.ts";
 import { loadTask, TaskError } from "./tasks.ts";
@@ -37,6 +39,29 @@ async function load(name: string) {
   }
 }
 
+/**
+ * A browser that cannot open file: URLs (Lightpanda) needs the fixtures over http. WEBHAND_RESEARCH_BASE_URL serves the
+ * repository root; the page is the same, only its address differs, so both browsers can run from one address.
+ */
+function startUrl(url: string): string {
+  const base = process.env.WEBHAND_RESEARCH_BASE_URL;
+  if (!base) return url;
+  const root = pathToFileURL(`${process.cwd()}/`).href;
+  return url.startsWith(root) ? `${base.replace(/\/$/, "")}/${url.slice(root.length)}` : url;
+}
+
+/**
+ * A task's verify() may read the tabs through browser.context.pages(). An engine behind a daemon (Lightpanda, Obscura)
+ * is reached through RemoteBrowser, which has no context: its one page is shown as the only page, evaluated through
+ * the daemon. Chrome's Browser is passed as it is.
+ */
+function withContext(browser: Browser): Browser {
+  if ("context" in browser && browser.context) return browser;
+  const remote = browser as unknown as { evaluate(expression: string): Promise<unknown> };
+  const page = { evaluate: (expression: string) => remote.evaluate(expression) };
+  return Object.assign(Object.create(browser), { context: { pages: () => [page] } });
+}
+
 /** Runs one command with research tasks and returns its exit code, as main() does. */
 export async function run(argv: string[], io?: IO): Promise<number> {
   const [command, ...args] = argv;
@@ -50,13 +75,13 @@ export async function run(argv: string[], io?: IO): Promise<number> {
     // An A/B of the flow sets it for the session, so Claude's instructions are the same in both conditions.
     const flow = process.env.WEBHAND_RESEARCH_FLOW;
     const forced = flow && !rest.some((arg) => /^--flow(=|$)/.test(arg)) ? ["--flow", flow] : [];
-    const argv2 = ["start", "--goal", task.GOAL, "--url", task.startUrl(process.cwd()), ...forced, ...rest];
+    const argv2 = ["start", "--goal", task.GOAL, "--url", startUrl(task.startUrl(process.cwd())), ...forced, ...rest];
     return main(argv2, io, { task: name });
   }
   if (command === "finish") {
     session.use(session.idFrom(args));
     const name = session.load()?.task;
-    const hooks: Hooks = name ? { verify: async (browser) => (await loadTask(name)).verify(browser) } : {};
+    const hooks: Hooks = name ? { verify: async (browser) => (await loadTask(name)).verify(withContext(browser)) } : {};
     return main(argv, io, hooks);
   }
   return main(argv, io);

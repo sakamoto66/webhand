@@ -1,5 +1,15 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/bin.ts", "research/webhand.ts", "tasks/*.ts", "scripts/*.ts", "tests/**/*.test.ts"],
-  "project": ["src/**/*.ts", "tests/**/*.ts", "tasks/**/*.ts", "research/**/*.ts", "scripts/**/*.ts"]
+  "entry": [
+    "src/bin.ts",
+    "src/daemon.ts",
+    "research/webhand.ts",
+    "research/engines.ts",
+    "research/shared.ts",
+    "tasks/*.ts",
+    "scripts/*.ts",
+    "tests/**/*.test.ts"
+  ],
+  "project": ["src/**/*.ts", "tests/**/*.ts", "tasks/**/*.ts", "research/**/*.ts", "scripts/**/*.ts"],
+  "ignoreBinaries": ["pgrep"]
 }

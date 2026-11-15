@@ -22,15 +22,33 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { type AddressInfo, connect, createServer } from "node:net";
+import { homedir, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { quote, sleep } from "./format.ts";
 import * as workspace from "./workspace.ts";
 
 const STARTUP_MS = 15_000;
 const PROFILE_NAME = /^[\p{L}\p{N}_-]+$/u;
+/** Where Chrome runs (--chrome). */
 export const CHROMES = ["auto", "linux", "windows"];
+/** Engines that run as `serve` behind a daemon: no window, no saved profile, and pages that end with a CDP connection. */
+const ENGINES = ["lightpanda", "obscura"];
+/** What runs the browser (--engine). auto is the default: see chooseEngine. */
+export const ENGINE_CHOICES = ["auto", "chrome", "headless-shell", ...ENGINES];
+
+const ENGINE_NAMES: Record<string, string> = {
+  "headless-shell": "Chrome headless shell",
+  lightpanda: "Lightpanda",
+  obscura: "Obscura",
+};
+
+/** How a session's browser reads in output: "Lightpanda", or "linux Chrome". */
+export function hostName(engine: string, chrome: string): string {
+  return ENGINE_NAMES[engine] ?? `${chrome} Chrome`;
+}
 const WINDOWS_CHROME = [
   "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
   "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe",
@@ -178,6 +196,9 @@ export const probes = {
   windowsChrome(): string | null {
     return WINDOWS_CHROME.find(isFile) ?? null;
   },
+  headlessShell(): string | null {
+    return shellBinary();
+  },
   networkingMode(): string | null {
     try {
       return run("wslinfo", ["--networking-mode"], { timeout: 5000 }) || null;
@@ -189,6 +210,22 @@ export const probes = {
     return run("wslpath", ["-w", path]);
   },
 };
+
+/**
+ * What auto means. A run that needs no window and no saved profile uses the headless shell when one is installed:
+ * half the memory, the same results (see docs/research-plan.md). A window or a profile keeps Chrome, and so does
+ * asking for the Windows Chrome (--chrome windows; --chrome auto only says "use it if you can", and a headless run
+ * gains nothing from it). A missing shell falls back to Chrome quietly: that is what the run used before. A named
+ * engine is taken as asked. `chrome` is what --chrome asked for, not where it resolved to.
+ */
+export function chooseEngine(
+  engine: string,
+  options: { headed: boolean; profile: string | null; chrome: string },
+): string {
+  if (engine !== "auto") return engine;
+  if (options.headed || options.profile || options.chrome === "windows") return "chrome";
+  return probes.headlessShell() ? "headless-shell" : "chrome";
+}
 
 function windowsLocalAppData(): string {
   let folder = "";
@@ -250,7 +287,11 @@ export function browserUrl(url: string, chrome: string): string {
 
 // --- Start and stop ------------------------------------------------------------------------
 
-export function chromeArgs(executable: string, userDataDir: string, options: { headed: boolean }): string[] {
+export function chromeArgs(
+  executable: string,
+  userDataDir: string,
+  options: { headed: boolean; shell?: boolean },
+): string[] {
   const args = [
     executable,
     "--remote-debugging-port=0",
@@ -258,10 +299,12 @@ export function chromeArgs(executable: string, userDataDir: string, options: { h
     "--no-first-run",
     "--no-default-browser-check",
     "--hide-crash-restore-bubble",
-    "--window-size=1120,867", // The browser UI takes 87px; the page viewport is 1120x780.
+    // Chrome's window includes 87px of browser UI, so 1120x867 shows a 1120x780 page. The headless shell has no UI:
+    // its window is the page, so it takes the page size. The same viewport, or the two read different elements.
+    options.shell ? "--window-size=1120,780" : "--window-size=1120,867",
     "about:blank",
   ];
-  if (!options.headed) args.splice(1, 0, "--headless=new");
+  if (!options.headed && !options.shell) args.splice(1, 0, "--headless=new");
   return args;
 }
 
@@ -273,6 +316,30 @@ async function reachable(port: number): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** chrome-headless-shell: WEBHAND_HEADLESS_SHELL, PATH, or the newest one in Playwright's browser cache. */
+function shellBinary(): string | null {
+  const given = process.env.WEBHAND_HEADLESS_SHELL;
+  if (given && isFile(given)) return given;
+  const onPath = which("chrome-headless-shell");
+  if (onPath) return onPath;
+  const cache = process.env.PLAYWRIGHT_BROWSERS_PATH ?? join(homedir(), ".cache", "ms-playwright");
+  let builds: string[] = [];
+  try {
+    builds = readdirSync(cache).filter((name) => name.startsWith("chromium_headless_shell-"));
+  } catch {
+    return null;
+  }
+  builds.sort((a, b) => Number.parseInt(b.split("-")[1], 10) - Number.parseInt(a.split("-")[1], 10));
+  for (const build of builds) {
+    const folder = join(cache, build);
+    for (const inner of readdirSync(folder).filter((name) => name.startsWith("chrome-headless-shell"))) {
+      const binary = join(folder, inner, "chrome-headless-shell");
+      if (isFile(binary)) return binary;
+    }
+  }
+  return null;
 }
 
 function which(command: string): string | null {
@@ -292,15 +359,94 @@ function childExited(pid: number): boolean | null {
   return child.exitCode !== null || child.signalCode !== null;
 }
 
+async function freePort(): Promise<number> {
+  return await new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address() as AddressInfo;
+      server.close(() => resolve(port));
+    });
+  });
+}
+
+/** Whether something accepts connections on this unix socket. */
+async function listening(path: string): Promise<boolean> {
+  return await new Promise((resolve) => {
+    const probe = connect(path);
+    probe.once("connect", () => {
+      probe.destroy();
+      resolve(true);
+    });
+    probe.once("error", () => resolve(false));
+  });
+}
+
+/** daemon.ts, or daemon.js once built. */
+function daemonScript(): string {
+  const ts = import.meta.url.endsWith(".ts");
+  return fileURLToPath(new URL(ts ? "./daemon.ts" : "./daemon.js", import.meta.url));
+}
+
+/** Where an engine's binary is: PATH, or WEBHAND_OBSCURA for Obscura (its release archive is not installed anywhere). */
+function engineBinary(engine: string): string | null {
+  const given = engine === "obscura" ? process.env.WEBHAND_OBSCURA : undefined;
+  return given && isFile(given) ? given : which(engine);
+}
+
+/**
+ * An engine (Lightpanda, Obscura) has no window and no profile, and drops its pages when a CDP connection ends. A
+ * daemon runs it and holds the connection for the session; commands reach the page through state.socket (see
+ * daemon.ts, remote.ts). Asks for a saved profile or a window fail here rather than being quietly dropped.
+ */
+async function startEngine(engine: string, options: { headed: boolean; profile: string | null }): Promise<State> {
+  const name = hostName(engine, "linux");
+  if (options.profile) throw new SessionError(`${name} has no saved profile. Use --session new`);
+  if (options.headed) throw new SessionError(`${name} has no window, so --headed is not available`);
+  const executable = engineBinary(engine);
+  if (!executable) throw new SessionError(`${engine} was not found on PATH`);
+  const port = await freePort();
+  const folder = mkdtempSync(join(tmpdir(), "webhand-")); // Holds the socket; removed when the session stops.
+  const socket = join(folder, "rpc.sock");
+  const child = spawn(process.execPath, [daemonScript(), socket, engine, executable, String(port)], {
+    detached: true, // its own process group, so it outlives this CLI call and stops as a group with the engine
+    stdio: "ignore",
+  });
+  child.on("error", () => {});
+  child.unref();
+  const pid = child.pid as number;
+  children.set(pid, child);
+  const state: State = { pid, profile: folder, saved_profile: null, chrome: "linux", engine, headed: false, socket };
+  const deadline = performance.now() + STARTUP_MS;
+  while (performance.now() < deadline) {
+    if (childExited(pid)) break;
+    if (await listening(socket)) return state;
+    await sleep(50);
+  }
+  await stopChrome(state);
+  throw new SessionError(`${name} did not start`);
+}
+
 /** profile=null makes a new temporary folder. A saved profile is kept when the run ends. */
 export async function startChrome(
-  options: { headed?: boolean; profile?: string | null; chrome?: string } = {},
+  options: { headed?: boolean; profile?: string | null; chrome?: string; engine?: string } = {},
 ): Promise<State> {
   const headed = options.headed ?? false;
   const profile = options.profile ?? null;
   const chrome = options.chrome ?? "linux";
+  if (options.engine && ENGINES.includes(options.engine)) return startEngine(options.engine, { headed, profile });
+  const shell = options.engine === "headless-shell";
+  if (shell) {
+    // No window to sign in in, and a profile made by Chrome may be newer than this build.
+    if (headed) throw new SessionError("The headless shell has no window, so --headed is not available");
+    if (profile) throw new SessionError("The headless shell has no saved profile. Use --session new");
+    if (chrome === "windows") throw new SessionError("The headless shell runs on Linux only");
+  }
   let executable: string | null;
-  if (chrome === "windows") {
+  if (shell) {
+    executable = shellBinary();
+    if (!executable) throw new SessionError("chrome-headless-shell was not found (set WEBHAND_HEADLESS_SHELL)");
+  } else if (chrome === "windows") {
     executable = probes.windowsChrome();
     if (!executable) throw new SessionError("chrome.exe was not found on Windows");
   } else {
@@ -320,7 +466,7 @@ export async function startChrome(
     folder = mkdtempSync(join(tmpdir(), "webhand-"));
   }
   const userDataDir = chrome === "windows" ? probes.toWindows(folder) : folder;
-  const [command, ...args] = chromeArgs(executable, userDataDir, { headed });
+  const [command, ...args] = chromeArgs(executable, userDataDir, { headed, shell });
   const child = spawn(command, args, {
     detached: true, // its own process group, so it outlives this CLI call and stops as a group
     stdio: "ignore",
@@ -330,7 +476,14 @@ export async function startChrome(
   child.unref();
   const pid = child.pid as number;
   children.set(pid, child);
-  const state: State = { pid, profile: folder, saved_profile: profile, chrome, headed };
+  const state: State = {
+    pid,
+    profile: folder,
+    saved_profile: profile,
+    chrome,
+    headed,
+    ...(shell ? { engine: "headless-shell" } : {}),
+  };
   const portFile = join(folder, "DevToolsActivePort");
   const deadline = performance.now() + STARTUP_MS;
   while (performance.now() < deadline) {

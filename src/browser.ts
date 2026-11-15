@@ -9,6 +9,7 @@ import {
   type Browser as PlaywrightBrowser,
   type Page as PlaywrightPage,
 } from "playwright-core";
+import type { StorageState } from "./auth.ts";
 import { sleep } from "./format.ts";
 import { home as sessionHome, tabPath } from "./session.ts";
 import { type Action, MutationUncertain, type Page, StalePage } from "./types.ts";
@@ -86,6 +87,95 @@ const UNSEEN = `(() => {
   const count = selector => [...document.querySelectorAll(selector)].filter(shown).length;
   return {frames: count('iframe,frame'), canvases: count('canvas'), objects: count('object,embed')};
 })()`;
+/**
+ * Notes what asks for a new window: window.open and a click on a link with target=_blank. Nothing is stopped or
+ * changed; the browser does what it does. Installed once per document, and read with TAKE_WINDOWS.
+ */
+const TRACK_WINDOWS = `(() => {
+  if (window.__webhandWindows) return;
+  const asked = [];
+  window.__webhandWindows = asked;
+  const open = window.open;
+  window.open = function (url, ...rest) {
+    let where = String(url ?? '');
+    try { where = new URL(where, document.baseURI).href; } catch (e) {}
+    asked.push(where);
+    return open.call(this, url, ...rest);
+  };
+  document.addEventListener('click', event => {
+    const link = event.target instanceof Element ? event.target.closest('a[target],area[target]') : null;
+    if (link && link.target === '_blank') asked.push(link.href);
+  }, true);
+})()`;
+/**
+ * What Obscura lacks that snapshot.js reads or a page's own script uses. Added to the page, so snapshot.js stays the
+ * same for every engine. Installed once per document.
+ *  - select.selectedOptions that can be spread (snapshot.js)
+ *  - isContentEditable (snapshot.js: an editable div is a textbox)
+ *  - a form's controls by name: form.guest, and a form by id: document.forms.id (page scripts; without it a handler that reads
+ *    form.guest.value throws and the form is never submitted)
+ * Not covered: a cursor set by a stylesheet rule reads as 'auto' (only an inline style gives 'pointer'), so an element
+ * that is clickable only through a CSS cursor is not offered.
+ */
+const COMPAT = `(() => {
+  if (window.__webhandCompat) return;
+  window.__webhandCompat = true;
+  const define = (proto, name, descriptor) => {
+    try { if (!(name in proto)) Object.defineProperty(proto, name, { configurable: true, ...descriptor }); } catch (e) {}
+  };
+  try {
+    Object.defineProperty(HTMLSelectElement.prototype, 'selectedOptions', {
+      configurable: true,
+      get() { return [...this.options].filter(option => option.selected); },
+    });
+  } catch (e) {}
+  define(HTMLElement.prototype, 'isContentEditable', {
+    get() {
+      for (let node = this; node instanceof Element; node = node.parentElement) {
+        const value = node.getAttribute('contenteditable');
+        if (value !== null) return value !== 'false';
+      }
+      return false;
+    },
+  });
+  // A name that is not a property is looked up among the controls (or, for a collection, its named items).
+  const named = (proto, lookup) => {
+    try {
+      const parent = Object.getPrototypeOf(proto);
+      Object.setPrototypeOf(proto, new Proxy(parent, {
+        get(target, prop, receiver) {
+          if (typeof prop === 'string' && !(prop in target)) {
+            try { const hit = lookup(receiver, prop); if (hit) return hit; } catch (e) {}
+          }
+          return Reflect.get(target, prop, receiver);
+        },
+      }));
+    } catch (e) {}
+  };
+  {
+    named(HTMLFormElement.prototype, (form, name) => form.elements && form.elements[name]);
+    // document.forms is a NodeList here, which has no named items: wrap it so document.forms.id finds the form.
+    const forms = Object.getOwnPropertyDescriptor(Document.prototype, 'forms');
+    if (forms && forms.get) {
+      Object.defineProperty(Document.prototype, 'forms', {
+        configurable: true,
+        get() {
+          const list = forms.get.call(this);
+          return new Proxy(list, {
+            get(target, prop) {
+              if (typeof prop === 'string' && !(prop in target)) {
+                for (const form of target) if (form.id === prop || form.name === prop) return form;
+              }
+              const value = Reflect.get(target, prop, target);
+              return typeof value === 'function' ? value.bind(target) : value;
+            },
+          });
+        },
+      });
+    }
+  }
+})()`;
+const TAKE_WINDOWS = "(() => (window.__webhandWindows ?? []).splice(0))()";
 const MARKER = `(() => { const state=${READ_STATE}; return state?.marker ?? null; })()`;
 
 // The parts of the freshness keys in assets/snapshot.js (viewportKey, pageKey, guard, marker), by position.
@@ -272,11 +362,20 @@ export interface OpenOptions {
   port?: number | null;
   /** Claude's choice of regions to focus on or skip when observing. */
   view?: ViewChoice | null;
+  /** Keep the current tab in the session's tab file so later commands return to it. Off for a browser that is never re-attached. */
+  rememberTab?: boolean;
+  /** Note the pages that ask for a new window. For an engine that opens none (Lightpanda, Obscura), so the log shows it. */
+  trackWindows?: boolean;
+  /** Fill in what the engine lacks (Obscura: iterable select.selectedOptions) so snapshot.js reads the page as in Chrome. */
+  compat?: boolean;
 }
 
 export class Browser {
   view: ViewChoice | null;
   readonly attached: boolean;
+  private keepsTab = true;
+  private tracksWindows = false;
+  private compat = false;
   browser!: PlaywrightBrowser;
   context!: BrowserContext;
   page!: PlaywrightPage;
@@ -291,13 +390,17 @@ export class Browser {
   static async open(url: string | null = null, options: OpenOptions = {}): Promise<Browser> {
     const port = options.port ?? null;
     const instance = new Browser(port !== null, options.view ?? null);
+    instance.keepsTab = options.rememberTab ?? true;
+    instance.tracksWindows = options.trackWindows ?? false;
+    instance.compat = options.compat ?? false;
     try {
       if (port !== null) {
         instance.browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
         instance.context = instance.browser.contexts()[0];
+        await instance.findPlaceholder();
         if (url) {
           // A saved profile may restore old tabs. The run owns exactly one fresh tab.
-          const stale = [...instance.context.pages()];
+          const stale = instance.openTabs();
           instance.page = await instance.context.newPage();
           for (const page of stale) await page.close();
           await instance.page.goto(url, { waitUntil: "load" });
@@ -321,8 +424,17 @@ export class Browser {
     }
   }
 
+  /** Lightpanda lists a placeholder tab that is no page: nothing can attach to it and it hangs on close. It is never a tab. */
+  private placeholder: PlaywrightPage | null = null;
+
+  private async findPlaceholder(): Promise<void> {
+    for (const page of this.context.pages()) {
+      if ((await this.tabId(page)) === null) this.placeholder = page;
+    }
+  }
+
   private openTabs(): PlaywrightPage[] {
-    return this.context.pages().filter((page) => !page.isClosed());
+    return this.context.pages().filter((page) => !page.isClosed() && page !== this.placeholder);
   }
 
   private async tabId(page: PlaywrightPage): Promise<string | null> {
@@ -351,7 +463,7 @@ export class Browser {
   }
 
   private async rememberTab(): Promise<void> {
-    if (!this.attached) return;
+    if (!this.attached || !this.keepsTab) return;
     const id = await this.tabId(this.page);
     if (id === null) return;
     mkdirSync(sessionHome(), { recursive: true });
@@ -386,7 +498,10 @@ export class Browser {
     if (title !== action.title) throw new StalePage("Tab changed since this decision", ["tab_title"]);
     try {
       const next = await this.context.newCDPSession(target);
-      await target.bringToFront();
+      // Bringing a tab to the front only matters with a window. An engine without the method (Obscura) still switches.
+      await target.bringToFront().catch((error: Error) => {
+        if (!/Unknown .*method|not (implemented|supported)|wasn't found/i.test(error.message)) throw error;
+      });
       await this.cdp?.detach().catch(() => {});
       this.page = target;
       this.cdp = next;
@@ -394,6 +509,52 @@ export class Browser {
       throw new StalePage("Tab could not be switched to", ["tab_gone"]);
     }
     await this.rememberTab();
+  }
+
+  /**
+   * The session's cookies and localStorage, to be saved as a login. Nothing on any page changes. Playwright only knows
+   * the localStorage of pages it saw load, and each command is a new connection, so the sites of the open tabs are read
+   * directly. A site the session visited and left is not in it.
+   */
+  async storageState(): Promise<StorageState> {
+    const state = await this.context.storageState();
+    for (const page of this.openTabs()) {
+      let origin: string;
+      try {
+        origin = new URL(page.url()).origin;
+      } catch {
+        continue;
+      }
+      if (!/^https?:/.test(origin) || state.origins.some((known) => known.origin === origin)) continue;
+      try {
+        const items: { name: string; value: string }[] = await page.evaluate(() =>
+          Object.entries(localStorage).map(([name, value]) => ({ name, value: String(value) })),
+        );
+        if (items.length) state.origins.push({ origin, localStorage: items });
+      } catch {
+        // A page that refuses storage (an opaque origin) has none to keep.
+      }
+    }
+    return state;
+  }
+
+  /**
+   * Signs this browser in with a saved state and opens url. Cookies go in before the page loads. localStorage can only
+   * be written from a page of its own site, so it is set for the site of url and the page is loaded once more.
+   * Returns the sites whose localStorage could not be restored.
+   */
+  async restore(state: StorageState, url: string): Promise<string[]> {
+    if (state.cookies.length) await this.context.addCookies(state.cookies);
+    await this.page.goto(url, { waitUntil: "load" });
+    const here = new URL(this.page.url()).origin;
+    const items = state.origins.find((origin) => origin.origin === here)?.localStorage ?? [];
+    if (items.length) {
+      await this.evaluate(
+        `(() => { for (const [k, v] of ${JSON.stringify(items.map((item) => [item.name, item.value]))}) localStorage.setItem(k, v); })()`,
+      );
+      await this.page.goto(url, { waitUntil: "load" });
+    }
+    return state.origins.filter((origin) => origin.origin !== here && origin.localStorage.length).map((o) => o.origin);
   }
 
   get version(): string {
@@ -439,6 +600,8 @@ export class Browser {
       let state: Page | null;
       try {
         await this.evaluate(settleScript(), { awaitPromise: true });
+        if (this.compat) await this.evaluate(COMPAT);
+        if (this.tracksWindows) await this.evaluate(TRACK_WINDOWS);
         state = await this.evaluate(readState(this.view));
         // v2: what kind of page this is, for Jev and Claude.
         if (state !== null && this.view?.whole) state.status = await this.evaluate(STATUS);
@@ -605,6 +768,11 @@ export class Browser {
   /** Frames, canvases, and plugin objects in the page: parts whose content webhand does not observe. */
   async unseen(): Promise<Record<string, number>> {
     return (await this.evaluate(UNSEEN)) ?? {};
+  }
+
+  /** The new windows pages asked for since the last call (URLs). Only when trackWindows is on. */
+  async ignoredWindows(): Promise<string[]> {
+    return this.tracksWindows ? ((await this.evaluate(TAKE_WINDOWS)) ?? []) : [];
   }
 
   /** A PNG of the viewport. Read-only; typed values show in it. */

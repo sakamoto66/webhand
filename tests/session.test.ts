@@ -100,3 +100,67 @@ test("an id is letters, digits, - and _, and is found in the arguments", () => {
   expect(session.idFrom(["finish", "--id=c"])).toBe("c");
   expect(session.idFrom(["finish"])).toBe("default");
 });
+
+test.each(["lightpanda", "obscura"])("%s has no saved profile and no window", async (engine) => {
+  await expect(session.startChrome({ engine, profile: "work" })).rejects.toThrow(/no saved profile/);
+  await expect(session.startChrome({ engine, headed: true })).rejects.toThrow(/no window/);
+});
+
+test.each(["lightpanda", "obscura"])("a missing %s is an error, not a crash", async (engine) => {
+  vi.stubEnv("PATH", tmpPath());
+  vi.stubEnv("WEBHAND_OBSCURA", "");
+  await expect(session.startChrome({ engine })).rejects.toThrow(new RegExp(`${engine} was not found`));
+  vi.unstubAllEnvs();
+});
+
+test("hostName reads as the engine or as Chrome", () => {
+  expect(session.hostName("obscura", "linux")).toBe("Obscura");
+  expect(session.hostName("chrome", "linux")).toBe("linux Chrome");
+  expect(session.hostName("chrome", "windows")).toBe("windows Chrome");
+});
+
+test("an engine is never a --chrome choice", () => {
+  expect(session.CHROMES).toEqual(["auto", "linux", "windows"]);
+  expect(session.ENGINE_CHOICES).toEqual(["auto", "chrome", "headless-shell", "lightpanda", "obscura"]);
+  expect(() => session.chooseChrome("obscura")).toThrow(session.SessionError);
+});
+
+test("the headless shell has no window and no saved profile, and is not --chrome windows", async () => {
+  const engine = "headless-shell";
+  await expect(session.startChrome({ engine, headed: true })).rejects.toThrow(/no window/);
+  await expect(session.startChrome({ engine, profile: "work" })).rejects.toThrow(/no saved profile/);
+  await expect(session.startChrome({ engine, chrome: "windows" })).rejects.toThrow(/Linux only/);
+});
+
+test("a missing headless shell is an error, not a crash", async () => {
+  vi.stubEnv("PATH", tmpPath());
+  vi.stubEnv("WEBHAND_HEADLESS_SHELL", "");
+  vi.stubEnv("PLAYWRIGHT_BROWSERS_PATH", tmpPath());
+  await expect(session.startChrome({ engine: "headless-shell" })).rejects.toThrow(
+    /chrome-headless-shell was not found/,
+  );
+  vi.unstubAllEnvs();
+});
+
+test("the headless shell gets the page size and no --headless flag; Chrome keeps its window size", () => {
+  const shell = session.chromeArgs("shell", "p", { headed: false, shell: true });
+  expect(shell).toContain("--window-size=1120,780");
+  expect(shell).not.toContain("--headless=new");
+  const chrome = session.chromeArgs("chrome", "p", { headed: false });
+  expect(chrome).toContain("--window-size=1120,867");
+  expect(chrome).toContain("--headless=new");
+});
+
+test("auto uses the headless shell for a run that needs no window or profile, and Chrome otherwise", () => {
+  const shell = vi.spyOn(session.probes, "headlessShell").mockReturnValue("/x/chrome-headless-shell");
+  const plain = { headed: false, profile: null, chrome: "auto" };
+  expect(session.chooseEngine("auto", plain)).toBe("headless-shell");
+  expect(session.chooseEngine("auto", { ...plain, chrome: "linux" })).toBe("headless-shell");
+  expect(session.chooseEngine("auto", { ...plain, headed: true })).toBe("chrome");
+  expect(session.chooseEngine("auto", { ...plain, profile: "work" })).toBe("chrome");
+  expect(session.chooseEngine("auto", { ...plain, chrome: "windows" })).toBe("chrome"); // asked for, not just reachable
+  shell.mockReturnValue(null);
+  expect(session.chooseEngine("auto", plain)).toBe("chrome"); // no shell installed: what the run used before
+  shell.mockReturnValue("/x/chrome-headless-shell");
+  for (const named of ["chrome", "lightpanda", "obscura"]) expect(session.chooseEngine(named, plain)).toBe(named);
+});

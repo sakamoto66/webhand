@@ -55,6 +55,8 @@ export interface Actor {
   check?(): Promise<PageCheck>;
   /** Parts of the page webhand cannot see into, counted for the run log. */
   unseen?(): Promise<Record<string, number>>;
+  /** New windows the page asked for since the last call. A browser that cannot open one lists them, so the log shows it. */
+  ignoredWindows?(): Promise<string[]>;
 }
 
 /** What the observation offered when Jev found the element it needed missing: counts for the run log only. */
@@ -168,9 +170,13 @@ export async function execute(
   history.push(step);
   recorder.event("step", logged(step, action.region, options.values ?? []));
   onChange(page);
+  const asked = browser.ignoredWindows ? await browser.ignoredWindows().catch(() => []) : [];
   const newPage = await browser.observe();
   step.page_changed = !samePage(newPage, page);
   recorder.event("step_result", { step: step.step, page_changed: step.page_changed });
+  if (asked.length) {
+    recorder.event("window_ignored", { step: step.step, attempt: options.attempt, urls: asked.map(safeUrl) });
+  }
   if (step.page_changed) recorder.event("page", pageEvent(newPage, options.attempt));
   await captureScreenshot(browser, recorder, step.step, options.attempt, "action", newPage.url);
   onChange(newPage);
