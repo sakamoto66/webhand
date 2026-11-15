@@ -29,6 +29,7 @@
       document.getElementById("error").hidden = false;
       return;
     }
+    document.getElementById("error").hidden = true;
     document.body.dataset.quote = JSON.stringify({ name: f.name.value, email: f.email.value, code: f.code.value });
     document.getElementById("result").textContent = "Quote requested";
   });

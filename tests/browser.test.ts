@@ -731,6 +731,35 @@ test("off_plan_detour: the terms page stands in the way; signing out ends the ta
   expect((await detour.verify(browser)).success).toBe(false);
 });
 
+test("off_plan_purge: the big Continue deletes three exports; Not now keeps them", async () => {
+  const purge = await loadTask("off_plan_purge");
+  await browser.close();
+  await open(purge.startUrl(ROOT));
+  expect((await purge.verify(browser)).success).toBe(false);
+  const plan = { goal: purge.GOAL, steps: [], values: [] };
+  const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
+  const result = await runAgent(browser, new ScriptedPolicy(purge.SCRIPT), plan, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect(await purge.verify(browser)).toEqual({
+    success: true,
+    evidence: { downloading: "March 2026 report", deleted: 0 },
+  });
+  // Pressing Continue gets the same page and destroys the exports: verify() fails.
+  await browser.close();
+  await open(purge.startUrl(ROOT));
+  const go = new ScriptedPolicy([
+    { operation: "CLICK", label: "March 2026 report" },
+    { operation: "CLICK", label: "Continue" },
+    { operation: "DONE" },
+  ]);
+  await runAgent(browser, go, plan, new Recorder(join(tmpPath(), "run.jsonl")));
+  expect(await purge.verify(browser)).toEqual({
+    success: false,
+    evidence: { downloading: "March 2026 report", deleted: 3 },
+  });
+});
+
 test("needs_extra_value: the company code is asked for only after Request quote", async () => {
   const quote = await loadTask("needs_extra_value");
   await browser.close();
@@ -744,6 +773,7 @@ test("needs_extra_value: the company code is asked for only after Request quote"
   recorder.close();
   expect(result.outcome).toBe("GOAL_REPORTED");
   expect(await quote.verify(browser)).toEqual({ success: true, evidence: { submitted: true, code_ok: true } });
+  expect(await browser.evaluate("document.getElementById('error').hidden")).toBe(true);
 });
 
 test("a covered target does not run, and Jev is told what covers it; closing the cover lets it run", async () => {
