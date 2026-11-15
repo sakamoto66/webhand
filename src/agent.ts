@@ -335,6 +335,7 @@ export async function runAgent(
           confidence: decision.confidence,
           offered: offered(page),
           ...(browser.unseen ? { unseen: await browser.unseen().catch(() => null) } : {}),
+          ...(page.frames_log ? { frames: page.frames_log } : {}),
         });
         onChange(page);
         continue;

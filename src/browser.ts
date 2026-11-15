@@ -661,15 +661,28 @@ export class Browser {
     const frames = this.page.frames().filter((f) => f !== main && !f.isDetached());
     const added: Action[] = [];
     const keys: Record<string, unknown> = {};
+    const skipped: Record<string, number> = {};
+    const skip = (reason: string) => {
+      skipped[reason] = (skipped[reason] ?? 0) + 1;
+    };
     let direct = 0;
     for (const frame of frames) {
-      if (Object.keys(keys).length >= MAX_FRAMES) break;
+      if (Object.keys(keys).length >= MAX_FRAMES) {
+        skip("over_limit");
+        continue;
+      }
       try {
-        if (!(await this.frameOffset(frame))) continue;
+        if (!(await this.frameOffset(frame))) {
+          skip("no_size");
+          continue;
+        }
         const no = this.frameNo(frame);
         await frame.evaluate(seedFrame(no));
         const inner = (await frame.evaluate(readState(this.view))) as Page | null;
-        if (!inner) continue;
+        if (!inner) {
+          skip("no_page");
+          continue;
+        }
         keys[String(no)] = inner.page_key;
         Object.assign(state.guards, inner.guards);
         for (const action of inner.actions) {
@@ -683,7 +696,12 @@ export class Browser {
         if (frame.parentFrame() === main) direct++;
       } catch {
         // A frame that changes or goes while it is read is left out; the page's own elements stand.
+        skip("error");
       }
+    }
+    // For the run log (counts only): the frames read and why the others were not.
+    if (frames.length) {
+      state.frames_log = { found: frames.length, read: Object.keys(keys).length, elements: added.length, skipped };
     }
     if (!added.length && !Object.keys(keys).length) return;
     state.frame_keys = keys;

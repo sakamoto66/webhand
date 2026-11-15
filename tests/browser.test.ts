@@ -912,6 +912,7 @@ test("v2: elements inside a cross-origin frame are offered, typed into and click
     expect(find(page, (a) => a.label === "Top")?.frame).toBeUndefined();
     expect(page.actions.at(-1).id).toBe("wait");
     expect(page.status.unseen.frames).toBe(0);
+    expect(page.frames_log).toEqual({ found: 1, read: 1, elements: 3, skipped: {} });
     expect(await browser.fresh(page, card)).toBe(true);
     await browser.act(card, page, "4242");
     page = await browser.observe();
@@ -944,4 +945,5 @@ test("without whole, the frame's elements are not offered", async () => {
   await browser.close();
   const page = await (await open(checkout.startUrl(ROOT))).observe();
   expect(find(page, (a) => a.label === "Place order")).toBeUndefined();
+  expect(page.frames_log).toBeUndefined();
 });

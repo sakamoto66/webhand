@@ -132,5 +132,6 @@ export function pageEvent(page: Record<string, any>, attempt: number): Record<st
     }),
     omitted_regions: page.omitted_regions ?? 0,
     ...(page.read ? { read: page.read.chars } : {}),
+    ...(page.frames_log ? { frames: page.frames_log } : {}),
   };
 }
