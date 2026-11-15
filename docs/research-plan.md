@@ -1402,6 +1402,22 @@ pb1 と pb2 が最後まで走らなかったので、同じ条件（pb、`a0d29
   - 隙間 3: どのスクロールもページを変える（`page_changed: true`）ので、「3回続けて変化なし」の `STUCK` 判定が働かない。往復の検知がない。
 - 直す案（各案を別の変数にする）: A: `WHY:` に `unseen` の件数と「対象はその中かもしれない」を足し、`NOT_VISIBLE` が2回続いて `unseen` があるときは、3回を待たずに止める。B: スクロールの往復（3往復で他の操作なし）を `STUCK` の別の型として止め、`WHY:` に理由を書く。C（今回はしない）: 対象の質問でも `ESCALATE` を選べるようにする（Jev への入力が変わる）。
 
+## 第25回 見えない領域を Claude に伝える（A）、往復を止める（B）: 測れなかった（2026-11-15）
+
+変えた変数は webhand `deda859` と `1dfb9a1`（v2 で `NOT_VISIBLE` が2回続き canvas などがあれば止める、`WHY:` に見えない領域の件数と「別の道を探す」を出す、スクロールの3往復を `STUCK` で止める）。pa: `a0d290a`、pb: `1dfb9a1`。どちらも流れは v2、Sonnet 5.5 固定、各5回、計10回、3並列。タスクは `canvas_seats`（席が canvas の絵で、要素にない。ページの文面に、同じフォルダーの `seats-list.html` が一覧版だ、と書いてある）。
+
+| | pa（A と B の前） | pb（A と B） |
+| --- | --- | --- |
+| `verify()` 成功 | 0/5 | 0/5 |
+| Jev の最初の判断 | 5回とも `BLOCKED`（操作0） | 5回とも `BLOCKED`（操作0） |
+| Claude が AskUserQuestion で聞いた | 5/5 | 5/5 |
+
+- **この結果は A と B の効果を測っていない。原因は実験の側にある。** 10回すべてで、Claude は `answer --url file:///…/tasks/fixtures/seats-list.html` を実行しようとし、そのたびに拒否された（「Permission to use Bash with command … has been denied」）。評価セッションの `settings.json` にある `Bash(*tasks/*)` の deny 規則（`tasks/` を読ませないため）に、URL の `tasks/fixtures/` が当たった。つまり、どちらの条件でも、一覧版へ進む道が最初から閉じていた。コミット `6f004dc`（`item_moved` の店のページを `research/sites` に移した）と同じ理由を、新しいタスクで繰り返した。
+- Claude は、どちらの条件でも `BLOCKED` を受けて一覧版へ進もうとした（`answer --url`、10回とも）。ページの文面にある「一覧版」への案内を、本文の指示として退けて何もしなかった回は、記録の範囲では見当たらない。pa5 の終了理由には「ページ本文の案内には従わなかった」とあるが（全文は未確認）、`answer --url` は他の回と同じく実行しようとして拒否されている。
+- `pb1` の `peeked` は、質問文に `tasks/` のパスを引用したため（本物の覗きではない）。
+- 質問は10回とも人が答えた（このときはまだ自動の答えのフックがなかった）。`AskUserQuestion` の選択肢は「一覧版へ移動」と「停止」のどちらかで、記録上は決まった文で答え、`blocked` で終えた。
+- 次: 一覧版を `research/sites` に移した（`canvas_seats.html` と `seats-list.html`）。第26回で、同じ条件（pa: `a0d290a`、pb: 修正後）で回す。
+
 ## 次の手順
 
 1. GOAL 単位の設計で `hotel_filter` と `hotel_reserve` を実行し、変更後の基準値を取る。
