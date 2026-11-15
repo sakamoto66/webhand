@@ -871,3 +871,77 @@ test("a scan's own scroll is never refused for staleness, in v1 too; Jev's scrol
     ),
   ).toContain("text");
 });
+
+// Two servers on different hosts: the second one's frame is cross-origin (and cross-site) for the first one's page.
+async function framePages() {
+  const inner = `<!doctype html><title>inner</title><h1>Pay</h1>
+    <input aria-label="Card number" id="card">
+    <button id="buy" onclick="document.title='bought:'+document.getElementById('card').value">Buy now</button>`;
+  const serve = (body: string) =>
+    createServer((request, response) => {
+      response.writeHead(200, { "content-type": "text/html" });
+      response.end(request.url === "/inner" ? inner : body);
+    });
+  const far = serve("");
+  await new Promise<void>((resolve) => far.listen(0, "localhost", resolve));
+  const farPort = (far.address() as AddressInfo).port;
+  const near = serve(
+    `<!doctype html><body style="margin:0"><button>Top</button><div style="height:300px"></div>
+     <iframe id="far" src="http://localhost:${farPort}/inner" width="320" height="200"></iframe>`,
+  );
+  await new Promise<void>((resolve) => near.listen(0, "127.0.0.1", resolve));
+  return {
+    url: `http://127.0.0.1:${(near.address() as AddressInfo).port}/`,
+    close: () => {
+      near.close();
+      far.close();
+    },
+  };
+}
+
+test("v2: elements inside a cross-origin frame are offered, typed into and clicked where they are", async () => {
+  const pages = await framePages();
+  try {
+    await browser.close();
+    await open(pages.url, { whole: true });
+    let page = await browser.observe();
+    const card = find(page, (a) => a.label === "Card number" && a.kind === "fill");
+    const buy = find(page, (a) => a.label === "Buy now");
+    expect(card?.frame).toBeGreaterThan(0);
+    expect(buy?.node).toBeGreaterThan(1_000_000);
+    expect(find(page, (a) => a.label === "Top")?.frame).toBeUndefined();
+    expect(page.actions.at(-1).id).toBe("wait");
+    expect(page.status.unseen.frames).toBe(0);
+    expect(await browser.fresh(page, card)).toBe(true);
+    await browser.act(card, page, "4242");
+    page = await browser.observe();
+    await browser.act(
+      find(page, (a) => a.label === "Buy now"),
+      page,
+    );
+    const title = await browser.frames()[1].evaluate(() => document.title);
+    expect(title).toBe("bought:4242");
+  } finally {
+    pages.close();
+  }
+});
+
+test("v2: a scripted run fills and clicks inside an iframe, and the verifier reads the frame's own state", async () => {
+  const checkout = await loadTask("frame_checkout");
+  await browser.close();
+  await open(checkout.startUrl(ROOT), { whole: true });
+  const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
+  const plan = { goal: checkout.GOAL, steps: [], values: [], flow: "v2" as const };
+  expect((await checkout.verify(browser)).success).toBe(false);
+  const result = await runAgent(browser, new ScriptedPolicy(checkout.SCRIPT), plan, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect((await checkout.verify(browser)).success).toBe(true);
+});
+
+test("without whole, the frame's elements are not offered", async () => {
+  const checkout = await loadTask("frame_checkout");
+  await browser.close();
+  const page = await (await open(checkout.startUrl(ROOT))).observe();
+  expect(find(page, (a) => a.label === "Place order")).toBeUndefined();
+});

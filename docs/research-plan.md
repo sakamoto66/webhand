@@ -1543,6 +1543,14 @@ pb1 と pb2 が最後まで走らなかったので、同じ条件（pb、`a0d29
 - 読み方: sb の `NOT_VISIBLE` は、型 1・2・8 のように、操作で直らない型が多く、sa は直る型が多かった。タスクの揺れも大きい（11タスクに偏る）。
 - 観測側で直せる可能性があるもの: **frame の中の要素**（型 1 の一部。frame は、canvas と違い、ブラウザの機能で中の要素を読める）、**役割のない入力欄**（型 2）。canvas は、設計どおり読まない。設計書は「iframe、closed shadow DOM は、技術的に取れないのでいったん諦める」だったが、frame は取れる可能性がある（調べていない）。
 
+### frame の中の要素を読む（実装と試し）
+
+- 試し（ローカルのページ、Playwright）: 同一オリジンの iframe、別オリジン（別ホスト名）の iframe とも、`frame.evaluate` で `assets/snapshot.js` がそのまま動き、要素が一覧に出る。親ページからの `contentDocument` は別オリジンでは読めない。クリックは、frame の枠の位置（`frameElement().boundingBox()`）を足した座標で押せ、入力も別オリジンの frame の中の欄に入った。
+- 実装（v2 のみ、変える変数は 1 つ: frame の観測）: `src/browser.ts` の `observe()` が、見えている frame ごとに snapshot を動かし、要素を一覧の scroll・wait の前に足す。番号は「frame 番号 × 1,000,000 + frame 内の番号」で frame をまたいで一意にし、鮮度確認・操作・`select`・`reveal`・`contexts` はその番号の frame で行う。`status.unseen.frames` は、読めた frame の分を引く。frame の本文は先頭 1,500 文字を `[frame N]` として足す。frame は最大 8、一辺 20px 未満は読まない。
+- 限界（実装時に承知のもの）: frame を覆う親ページ側の要素は、押す直前の当たり判定に出ない（frame 内の当たり判定のみ）。frame の鮮度は、押す要素の guard と frame の page_key だけを見て、frame の本文の変化は見ない。canvas と第三者の決済部品（クリックを受け付けないもの）は読めても動かない可能性がある。
+- テスト: 別オリジン frame での一覧・入力・クリック・鮮度、`tasks/frame_checkout`（frame の中のフォーム。verify() は frame 自身の状態を読む）、`whole` なしでは frame を出さないこと。301 件が通る。
+- 実サイトでの効果は未測定（次: pa / pb の A/B と、型 1 の bu2-024、bu2-072 の BU Bench）。
+
 ## 次の手順
 
 1. GOAL 単位の設計で `hotel_filter` と `hotel_reserve` を実行し、変更後の基準値を取る。
