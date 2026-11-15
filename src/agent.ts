@@ -132,6 +132,28 @@ function stuck(history: HistoryEntry[], attempt = 1): boolean {
   return recent.length === 3 && recent.every((s) => s.page_changed === false && s.kind !== "wait");
 }
 
+/** v2: back and forth scrolling (three round trips) with nothing else done between. Each scroll changes the page, so stuck() never sees it. */
+export function looping(history: HistoryEntry[], attempt = 1): boolean {
+  const recent = history.filter((h) => (h.attempt ?? 1) === attempt && !["human", "answer"].includes(h.kind)).slice(-6);
+  const scrolls = recent.map((h) => h.operation);
+  return (
+    recent.length === 6 &&
+    scrolls.every((op, i) => (op === "SCROLL_DOWN" || op === "SCROLL_UP") && (i === 0 || op !== scrolls[i - 1]))
+  );
+}
+
+/** How many frames, canvases, and plugin objects the page has: parts webhand cannot see into. */
+export function unseenParts(page: Page): number {
+  const unseen = (page.status?.unseen ?? {}) as Record<string, number>;
+  return (unseen.frames ?? 0) + (unseen.canvases ?? 0) + (unseen.objects ?? 0);
+}
+
+/** v2: the needed element was not offered twice in a row, on a page with parts webhand cannot see into. */
+function missingInUnseen(history: HistoryEntry[], page: Page, attempt = 1): boolean {
+  const recent = history.filter((h) => (h.attempt ?? 1) === attempt && !["human", "answer"].includes(h.kind)).slice(-2);
+  return recent.length === 2 && recent.every((h) => h.kind === MISSING) && unseenParts(page) > 0;
+}
+
 type OnChange = (page: Page) => void;
 
 /** A step for the run log: the value's label instead of the typed text, and the URL without query values. */
@@ -271,6 +293,12 @@ export async function runAgent(
 
   while (true) {
     if (stuck(history, attempt)) return finish(STUCK, "three actions without a page change");
+    if (plan.flow === "v2" && looping(history, attempt)) {
+      return finish(STUCK, "scrolled up and down three times with nothing else done");
+    }
+    if (plan.flow === "v2" && missingInUnseen(history, page, attempt)) {
+      return finish(STUCK, "the needed element was not offered twice, and the page has parts webhand cannot see");
+    }
     if (actionsIn(history, attempt).length >= budget.maxActions || decisions >= budget.maxDecisions) {
       return finish(ATTEMPT_BUDGET, `${actionsIn(history, attempt).length} actions, ${decisions} decisions`);
     }

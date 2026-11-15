@@ -604,3 +604,46 @@ test("answer is for v2 only", async () => {
   expect(code).toBe(FAILED);
   expect(out).toContain("REJECTED: answer is for --flow v2");
 });
+
+test("v2: a STUCK run on a page with a canvas tells Claude the element may be inside it", async () => {
+  await begin("--flow", "v2");
+  const state = session.load() as session.State;
+  state.history = [1, 2, 3].map((step) => ({
+    step,
+    attempt: 1,
+    kind: "missing",
+    operation: "NOT_VISIBLE",
+    action: "Wanted to CLICK, but the needed element was not listed. Nothing ran",
+    text: null,
+    url: "u",
+    page_changed: false,
+  }));
+  state.page = { ...state.page, status: { kind: "ready", unseen: { frames: 0, canvases: 2, objects: 0 } } };
+  session.save(state);
+  const { out } = await cli("run");
+  expect(out).toContain("OUTCOME STUCK");
+  expect(out).toContain("WHY: Jev could not find the element it needs");
+  expect(out).toContain("2 canvas, 0 frame, and 0 plugin parts");
+  expect(out).toContain("Answering cannot reveal it");
+});
+
+test("v2: a scroll loop is named in WHY", async () => {
+  await begin("--flow", "v2");
+  const state = session.load() as session.State;
+  state.history = ["SCROLL_DOWN", "SCROLL_UP", "SCROLL_DOWN", "SCROLL_UP", "SCROLL_DOWN", "SCROLL_UP"].map(
+    (operation, i) => ({
+      step: i + 1,
+      attempt: 1,
+      kind: "scroll",
+      operation,
+      action: operation,
+      text: null,
+      url: "u",
+      page_changed: true,
+    }),
+  );
+  session.save(state);
+  const { out } = await cli("run");
+  expect(out).toContain("OUTCOME STUCK");
+  expect(out).toContain("WHY: Jev scrolled up and down three times");
+});

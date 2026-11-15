@@ -339,3 +339,78 @@ test("Claude's answer is not an action: it does not count against the budget or 
   const result = await run(new FakeBrowser(), [new Decision("DONE")], new Budget(3, 10), history);
   expect(result.outcome).toBe("GOAL_REPORTED"); // Two of three actions used; the answer is not a third.
 });
+
+const entry = (operation: string, kind: string, changed: boolean): HistoryEntry => ({
+  step: 1,
+  attempt: 1,
+  kind,
+  operation,
+  action: operation,
+  text: null,
+  url: "u",
+  page_changed: changed,
+});
+
+test("v2: three round trips of scrolling stop the run as STUCK, though every scroll changed the page", async () => {
+  const history = ["SCROLL_DOWN", "SCROLL_UP", "SCROLL_DOWN", "SCROLL_UP", "SCROLL_DOWN", "SCROLL_UP"].map((op) =>
+    entry(op, "scroll", true),
+  );
+  const policy = new FakePolicy([]);
+  const v2 = await runAgent(new FakeBrowser(), policy, { ...PLAN, flow: "v2" }, recorder, new Budget(), { history });
+  expect(v2.outcome).toBe("STUCK");
+  expect(v2.detail).toContain("scrolled up and down");
+  expect(policy.calls).toHaveLength(0); // Jev was not asked again.
+  // v1 is unchanged: the same history is not a stop.
+  const v1 = await run(new FakeBrowser(), [new Decision("DONE")], new Budget(), [...history]);
+  expect(v1.outcome).toBe("GOAL_REPORTED");
+});
+
+test("v2: scrolling that is not a back and forth, or has another action between, is not a loop", async () => {
+  const down = ["SCROLL_DOWN", "SCROLL_DOWN", "SCROLL_UP", "SCROLL_DOWN", "SCROLL_UP", "SCROLL_DOWN"].map((op) =>
+    entry(op, "scroll", true),
+  );
+  const result = await runAgent(
+    new FakeBrowser(),
+    new FakePolicy([new Decision("DONE")]),
+    { ...PLAN, flow: "v2" },
+    recorder,
+    new Budget(),
+    { history: down },
+  );
+  expect(result.outcome).toBe("GOAL_REPORTED");
+});
+
+test("v2: two missing targets stop early on a page with a canvas, but not on a page without parts it cannot see", async () => {
+  const missing = () => [entry("NOT_VISIBLE", "missing", false), entry("NOT_VISIBLE", "missing", false)];
+  const withCanvas: Page = {
+    ...page(),
+    status: { kind: "ready", unseen: { frames: 0, canvases: 1, objects: 0 } },
+  };
+  class CanvasBrowser extends FakeBrowser {
+    override async observe(): Promise<Page> {
+      return withCanvas;
+    }
+  }
+  const stopped = await runAgent(
+    new CanvasBrowser(),
+    new FakePolicy([]),
+    { ...PLAN, flow: "v2" },
+    recorder,
+    new Budget(),
+    {
+      history: missing(),
+      page: withCanvas,
+    },
+  );
+  expect(stopped.outcome).toBe("STUCK");
+  expect(stopped.detail).toContain("parts webhand cannot see");
+  const plain = await runAgent(
+    new FakeBrowser(),
+    new FakePolicy([new Decision("DONE")]),
+    { ...PLAN, flow: "v2" },
+    recorder,
+    new Budget(),
+    { history: missing() },
+  );
+  expect(plain.outcome).toBe("GOAL_REPORTED"); // Without unseen parts, it takes three, as before.
+});

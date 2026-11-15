@@ -86,7 +86,7 @@ When the outcome is `ESCALATE`, `STUCK`, `BLOCKED`, `GOAL_REPORTED`, or `JEV_FAI
 webhand answer --note "The cookie banner is closed; search for Lisbon first" [--value "LABEL=VALUE"] [--url URL]
 ```
 
-The note is short and says what to do next on this page: a corrected goal, a value, a permission, or a page to go to. Jev sees it, and the history and the budget are kept. Use `replan` only when the whole plan is wrong. If the page cannot be reached or the goal cannot hold on this page after answers, do not keep answering: ask the person with AskUserQuestion, giving the page state, what is done, why it stopped, and the choices (continue, another way, stop).
+The note is short and says what to do next on this page: a corrected goal, a value, a permission, or a page to go to. Jev sees it, and the history and the budget are kept. Use `replan` only when the whole plan is wrong. When `WHY:` says the page has canvas, frame, or plugin parts webhand cannot see (the element may be inside one), or that Jev scrolled up and down and chose nothing, an `answer` cannot reveal the element: find another way (a list or text version, another page by `--url`, a keyboard route), or ask the person. If the page cannot be reached or the goal cannot hold on this page after answers, do not keep answering: ask the person with AskUserQuestion, giving the page state, what is done, why it stopped, and the choices (continue, another way, stop).
 
 ## 5. When the page is out of reach
 
