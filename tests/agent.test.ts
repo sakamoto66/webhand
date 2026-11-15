@@ -414,3 +414,61 @@ test("v2: two missing targets stop early on a page with a canvas, but not on a p
   );
   expect(plain.outcome).toBe("GOAL_REPORTED"); // Without unseen parts, it takes three, as before.
 });
+
+test("v2: after Claude's answer, the scroll loop and the missing target are counted again from that point", async () => {
+  const answer = (): HistoryEntry => ({ ...entry("ANSWER", "answer", true), operation: "ANSWER" });
+  const loop = ["SCROLL_DOWN", "SCROLL_UP", "SCROLL_DOWN", "SCROLL_UP", "SCROLL_DOWN", "SCROLL_UP"].map((op) =>
+    entry(op, "scroll", true),
+  );
+  // The six scrolls came before the answer: Jev is asked.
+  const result = await runAgent(
+    new FakeBrowser(),
+    new FakePolicy([new Decision("DONE")]),
+    { ...PLAN, flow: "v2" },
+    recorder,
+    new Budget(),
+    {
+      history: [...loop, answer()],
+    },
+  );
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect(result.decisions).toBe(1); // Jev was asked once.
+  // Three round trips after the answer stop again.
+  const again = await runAgent(new FakeBrowser(), new FakePolicy([]), { ...PLAN, flow: "v2" }, recorder, new Budget(), {
+    history: [answer(), ...loop],
+  });
+  expect(again.outcome).toBe("STUCK");
+
+  const withCanvas: Page = { ...page(), status: { kind: "ready", unseen: { frames: 0, canvases: 1, objects: 0 } } };
+  class CanvasBrowser extends FakeBrowser {
+    override async observe(): Promise<Page> {
+      return withCanvas;
+    }
+  }
+  const missing = () => [entry("NOT_VISIBLE", "missing", false), entry("NOT_VISIBLE", "missing", false)];
+  const asked2 = await runAgent(
+    new CanvasBrowser(),
+    new FakePolicy([new Decision("DONE")]),
+    { ...PLAN, flow: "v2" },
+    recorder,
+    new Budget(),
+    {
+      history: [...missing(), answer()],
+      page: withCanvas,
+    },
+  );
+  expect(asked2.outcome).toBe("GOAL_REPORTED"); // Two missing targets before the answer do not stop it.
+  expect(asked2.decisions).toBe(1);
+  const stopped = await runAgent(
+    new CanvasBrowser(),
+    new FakePolicy([]),
+    { ...PLAN, flow: "v2" },
+    recorder,
+    new Budget(),
+    {
+      history: [answer(), ...missing()],
+      page: withCanvas,
+    },
+  );
+  expect(stopped.outcome).toBe("STUCK"); // Two new ones after it do.
+});

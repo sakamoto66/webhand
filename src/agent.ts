@@ -132,9 +132,16 @@ function stuck(history: HistoryEntry[], attempt = 1): boolean {
   return recent.length === 3 && recent.every((s) => s.page_changed === false && s.kind !== "wait");
 }
 
+/** Entries of this attempt after Claude's last answer: an answer starts the count again, so Jev is asked before any stop. */
+function sinceAnswer(history: HistoryEntry[], attempt: number): HistoryEntry[] {
+  const own = history.filter((h) => (h.attempt ?? 1) === attempt && h.kind !== "human");
+  const last = own.map((h) => h.kind).lastIndexOf("answer");
+  return own.slice(last + 1);
+}
+
 /** v2: back and forth scrolling (three round trips) with nothing else done between. Each scroll changes the page, so stuck() never sees it. */
 export function looping(history: HistoryEntry[], attempt = 1): boolean {
-  const recent = history.filter((h) => (h.attempt ?? 1) === attempt && !["human", "answer"].includes(h.kind)).slice(-6);
+  const recent = sinceAnswer(history, attempt).slice(-6);
   const scrolls = recent.map((h) => h.operation);
   return (
     recent.length === 6 &&
@@ -150,7 +157,7 @@ export function unseenParts(page: Page): number {
 
 /** v2: the needed element was not offered twice in a row, on a page with parts webhand cannot see into. */
 function missingInUnseen(history: HistoryEntry[], page: Page, attempt = 1): boolean {
-  const recent = history.filter((h) => (h.attempt ?? 1) === attempt && !["human", "answer"].includes(h.kind)).slice(-2);
+  const recent = sinceAnswer(history, attempt).slice(-2);
   return recent.length === 2 && recent.every((h) => h.kind === MISSING) && unseenParts(page) > 0;
 }
 
