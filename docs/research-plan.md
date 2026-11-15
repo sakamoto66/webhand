@@ -1280,6 +1280,26 @@ Chrome、Obscura、Lightpanda で、フォームと DOM まわりの 40 項目�
 - 戻すときの制約: localStorage は、そのサイトのページからしか書けない。そこで、開始 URL のサイトの分だけを書いて、もう一度読み込む。別の origin の localStorage は戻らず（Cookie は戻る）、`start` がその origin を知らせる。
 - 未確認: IndexedDB、実サイトのログイン、期限切れ、複数タブのサイト。
 
+## 第23回 ESCALATE と `answer`（段階2、2026-11-15）
+
+変えた変数は webhand `690d7f1`（v2 で Jev が `ESCALATE` を選べる、`webhand answer` で同じ試行を続ける、スキルの 4b 節）だけ。pa: `7931f3a`、pb: `87ad69c`（`690d7f1` とタスクのコミット）。どちらも流れは v2、Sonnet 5.5 固定（`--model claude-sonnet-5-5`）。新しいタスクは `off_plan_detour`（請求書の前に、計画にない利用規約ページ。Sign out を選ぶと戻れない）と `needs_extra_value`（Request quote を押すまで出ない必須の会社コード）。各タスク・各条件5回、計20回。tmux で3並列（`r23/run_parallel.sh`）。質問には決まった文で答える手順だったが、AskUserQuestion は全回で0回。
+
+| タスク | pa（段階2の前） | pb（ESCALATE + answer） |
+| --- | --- | --- |
+| `off_plan_detour` | verify 5/5、操作 15、replan 2 | verify 5/5、操作 15、replan 3 |
+| `needs_extra_value` | verify 5/5、操作 56、replan 4 | verify 5/5、操作 37、replan 2 |
+
+- 成功は `verify()` だけで数えた。失敗した回も除いていない（失敗は0回）。`tasks/` を読んだ回は0回（`peeked` は全回 False）。
+- **この実験は段階2の効果を測れていない。** pb で Jev が `ESCALATE` を選んだ回は、20回中0回（`escalation` のログに `ESCALATE` が1件もない）。`answer` を使ったのは `pb4-value` の1回だけ（STUCK のあと、119文字）。pa と pb の成功率の差は0。
+- `off_plan_detour`: 規約ページで、Jev は迷わず「Accept and continue」を押した。Claude の完了報告に「Jev も Accept を押した」と書かれた回は、pa で3回、pb で3回（計6回）。つまりこのタスクは Jev の判断で解けてしまい、v1 でも成功する。計画にないページに行き当たったときに Jev が相談するかを測るには、押し間違いが取り返せない形にする必要がある。ただし、タスクを v2 に有利に変えてはならない。v1 が失敗することを先に確かめる。
+- `needs_extra_value`: どの回でも、最終的に会社コードが入力されて `verify()` は True だった。pb の操作数 37 は pa の 56 より少ないが、5回ずつなので偶然の範囲かもしれない（STUCK で止まった件数は pa が4件（2回の回）、pb が1件（1回の回）、`JEV_FAILED` は pb で1件）。
+- **タスクの欠陥（記録のみ、直していない）。** `needs_extra_value` は、会社コードを入れて送信に成功しても、「Company code is required」の赤い文が画面に残る（成功時に隠さない）。3回（`pa3-value`、`pa4-value`、`pb4-value`）で、Claude はこの文と「Quote requested」が同時に見えて成否を判断できず、`finish --status blocked` で終えた。この3回も `verify()` は True（実際には成功していた）。報告と達成の食い違いは、この文のせいで起きた可能性が高い。直すとタスクを変えることになるので、直すなら新しい回の変数として扱う。
+- `pa3-value` では1つのセッションに `start` が2回あった（最初は `finish --status error`、理由は「restart to pass steps」）。集計は最後の run の `verified` を使う。
+- 条件の外の事情: この回の途中まで、`~/.claude/settings.json` に `CLAUDE_CODE_SPAWN_BACKEND=tmux`（公式ドキュメントに記載なし）が入っていた。評価セッションはサブエージェントもチームも使わないので影響は低いと見ているが、未確認。この設定は回のあとで削除した。
+- 並列実行（3並列）の影響: `minutes` は 0.7〜1.1 分で、並列の負荷の影響は見えていない。Jev の `JEV_FAILED` が pb で1回出た（`pb3-value`）。並列の影響かは切り分けていない。
+
+次: 段階2は、Jev が実際に行き詰まる場面で測り直す。候補は、押し間違いが取り返せない `off_plan_detour` の作り直し（先に v1 の失敗を確かめる）、成功時にエラー文を隠す `needs_extra_value` の修正（別の変数）、BU Bench での `ESCALATE` の出方。
+
 ## 次の手順
 
 1. GOAL 単位の設計で `hotel_filter` と `hotel_reserve` を実行し、変更後の基準値を取る。
