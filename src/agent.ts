@@ -27,6 +27,7 @@ export const STUCK = "STUCK"; // Three actions in a row did not change the page.
 export const ATTEMPT_BUDGET = "ATTEMPT_BUDGET";
 export const NEEDS_HUMAN = "NEEDS_HUMAN"; // A person acts in the window: sign-in, codes, CAPTCHA, [person] steps.
 export const NEEDS_VALUE = "NEEDS_VALUE"; // A field needs text and none of Claude's values fits.
+export const ESCALATE = "ESCALATE"; // v2: Jev handed the decision to Claude. `answer` continues the same attempt.
 export const JEV_FAILED = "JEV_FAILED"; // No usable decision. Nothing was executed.
 export const UNCERTAIN = "UNCERTAIN"; // A mutation may have happened. Never retried, never replanned.
 
@@ -117,7 +118,7 @@ export async function captureScreenshot(
 
 /** Executed actions only, in every attempt: not a person's step, a NOT_VISIBLE choice, or a refused stale one. */
 export function executed(history: HistoryEntry[]): HistoryEntry[] {
-  return history.filter((h) => !["human", MISSING, STALE].includes(h.kind));
+  return history.filter((h) => !["human", "answer", MISSING, STALE].includes(h.kind));
 }
 
 /** Executed actions of one attempt; they count against the budget. */
@@ -305,7 +306,8 @@ export async function runAgent(
       }
       if (decision.action === null) {
         if (!(await browser.fresh(page))) continue;
-        const outcome = ({ DONE: GOAL_REPORTED, NEEDS_HUMAN } as Record<string, string>)[decision.operation] ?? BLOCKED;
+        const outcome =
+          ({ DONE: GOAL_REPORTED, NEEDS_HUMAN, ESCALATE } as Record<string, string>)[decision.operation] ?? BLOCKED;
         return finish(outcome, `Jev chose ${decision.operation}`);
       }
       if (decision.action.kind === "fill" && decision.text === null) {

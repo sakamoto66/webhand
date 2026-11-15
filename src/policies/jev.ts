@@ -26,6 +26,9 @@ import {
   COMPARE_RULES,
   COMPARED_RULES,
   type Controls,
+  ESCALATE,
+  ESCALATE_HELP,
+  INSTRUCTION_RULES,
   jevGoal,
   MORE_RULES,
   modelState,
@@ -196,6 +199,7 @@ function taskBrief(plan: Plan): Record<string, unknown> {
   const brief: Record<string, unknown> = { goal: jevGoal(plan) };
   if (plan.steps?.length) brief.plan = planText(plan);
   if (plan.notes?.length) brief.notes_from_earlier_attempts = plan.notes;
+  if (plan.instructions?.length) brief.claude_instructions = plan.instructions;
   return brief;
 }
 
@@ -223,10 +227,12 @@ export function buildQuestions(
   let rules = reading ? `${next}\n${READ_RULES}` : next;
   if (tabbed) rules = `${rules}\n${TAB_RULES}`;
   if (plan.compared) rules = `${rules}\n${COMPARED_RULES}`;
+  if (plan.instructions?.length) rules = `${rules}\n${INSTRUCTION_RULES}`;
   const operations: Record<string, string> = {};
   for (const key of targets.keys()) operations[key] = OPERATION_HELP[key];
   for (const [key, value] of controls) operations[key] = value.label;
   Object.assign(operations, TERMINAL_HELP);
+  if (plan.flow === "v2") operations[ESCALATE] = ESCALATE_HELP;
   const questions: Record<string, unknown> = {
     operation: { type: "choice", criteria: operations, instructions: { ...brief, rules } },
   };

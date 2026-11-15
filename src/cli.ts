@@ -574,6 +574,28 @@ async function commandStart(args: Args): Promise<number> {
   return OK;
 }
 
+/** Outcomes after which `answer` continues the same attempt (v2). */
+const ANSWERABLE: string[] = [agent.ESCALATE, agent.STUCK, agent.BLOCKED, agent.GOAL_REPORTED, agent.JEV_FAILED];
+
+/** Why the run came back, from the log of this attempt only. No page text. */
+function diagnose(state: session.State, outcome: string): string {
+  const status = state.page?.status as { kind?: string } | undefined;
+  if (status?.kind === "check") return "the page is a bot check or CAPTCHA; a person must pass it";
+  if (status?.kind === "sign_in") return "the page asks for a sign-in; a person must sign in";
+  if (status?.kind === "error") return "the page is an error page";
+  if (status?.kind === "dialog") return "a dialog covers the page";
+  const rows = (state.history as HistoryEntry[]).filter((h) => (h.attempt ?? 1) === state.plan.attempt).slice(-3);
+  const count = (kind: string) => rows.filter((h) => h.kind === kind).length;
+  if (outcome === agent.STUCK) {
+    if (count("stale")) return "the last choices were refused as stale: the page keeps changing under the target";
+    if (count("missing")) return "Jev could not find the element it needs in what was offered";
+    return "the last three actions did not change the page";
+  }
+  if (outcome === agent.GOAL_REPORTED) return "Jev thinks the goal is met and asks Claude to check the page";
+  if (outcome === agent.JEV_FAILED) return "Jev gave no usable decision; nothing was executed";
+  return "Jev handed the decision to Claude: the page is not what the plan expects, nothing offered fits, or the operation cannot be undone";
+}
+
 /** What Claude needs for this outcome, and nothing more. */
 export function report(state: session.State, result: agent.AgentResult): number {
   const outcome = result.outcome;
@@ -592,6 +614,14 @@ export function report(state: session.State, result: agent.AgentResult): number 
     return OK;
   }
   print(`${recentActions(state)}\n${render(state.page)}`);
+  if (state.plan.flow === "v2" && ANSWERABLE.includes(outcome)) {
+    print(`WHY: ${diagnose(state, outcome)}`);
+    print(
+      "NEXT: answer --note '...' [--value 'LABEL=VALUE'] [--url URL] continues this attempt; replan changes the plan; " +
+        "if it cannot be done, ask the person with AskUserQuestion; finish",
+    );
+    return OK;
+  }
   if (outcome === agent.GOAL_REPORTED) {
     print("Check the page against the goal. If it is met: finish --status done. Otherwise: replan");
   } else if (outcome === agent.JEV_FAILED) {
@@ -618,8 +648,10 @@ async function commandRun(args: Args): Promise<number> {
     print("REJECTED: this field needs run --value 'LABEL=VALUE'");
     return FAILED;
   }
-  if ([agent.GOAL_REPORTED, agent.BLOCKED, agent.STUCK, agent.ATTEMPT_BUDGET].includes(outcome)) {
-    print(`REJECTED: the attempt ended with ${outcome}. Run replan, act, or finish`);
+  if ([agent.GOAL_REPORTED, agent.BLOCKED, agent.STUCK, agent.ATTEMPT_BUDGET, agent.ESCALATE].includes(outcome)) {
+    print(
+      `REJECTED: the attempt ended with ${outcome}. Run ${state.plan.flow === "v2" ? "answer, " : ""}replan, act, or finish`,
+    );
     return FAILED;
   }
   if (args.value.length) {
@@ -762,6 +794,61 @@ async function commandRun(args: Args): Promise<number> {
     await policy.close?.();
   }
   return report(state, result);
+}
+
+/** v2: Claude answers Jev's question. The same attempt continues: history and budget are kept. */
+async function commandAnswer(args: Args): Promise<number> {
+  const state = requireSession();
+  const plan = state.plan;
+  if (plan.flow !== "v2") {
+    print("REJECTED: answer is for --flow v2. Use replan");
+    return FAILED;
+  }
+  if (!ANSWERABLE.includes(state.outcome)) {
+    print(
+      `REJECTED: nothing is waiting for an answer (${state.outcome ?? "the run is not stopped"}). Run: webhand run`,
+    );
+    return FAILED;
+  }
+  if (args.url) {
+    let url: string;
+    try {
+      url = runbook.resolveUrl(args.url);
+    } catch (error) {
+      if (!(error instanceof runbook.RunbookError)) throw error;
+      print(`REJECTED: ${error.message.replace("start_url", "--url")}`);
+      return FAILED;
+    }
+    if (!openableUrl(url)) {
+      print("REJECTED: --url needs an http, https, or file URL, or a local file path");
+      return FAILED;
+    }
+    await openPage(state, session.browserUrl(url, state.chrome ?? "linux"), true);
+  }
+  const values = parseValues(args.value);
+  if (values.length) plan.values = mergeValues(plan.values, values);
+  plan.instructions = [...(plan.instructions ?? []), args.note];
+  // Not an action: it neither counts against the budget nor hides that the page did not change.
+  state.history.push({
+    step: state.history.length + 1,
+    attempt: plan.attempt,
+    kind: "answer",
+    operation: "ANSWER",
+    action: "Claude answered",
+    text: null,
+    url: state.page.url,
+    page_changed: true,
+  });
+  logOnce(state.log, "answer", {
+    attempt: plan.attempt,
+    after: state.outcome,
+    chars: [...args.note].length,
+    values: values.map((v) => v.label),
+    ...(args.url ? { url: safeUrl(args.url) } : {}),
+  });
+  state.outcome = null;
+  session.save(state);
+  return commandRun({ ...args, value: [], human_done: false });
 }
 
 /** Claude revises the plan after an attempt fell short, and starts the next attempt. */
@@ -1355,6 +1442,16 @@ function commands(): Record<string, CommandSpec> {
       ],
       run: commandRun,
     },
+    answer: {
+      help: "Claude (v2): answer Jev's question and continue the same attempt",
+      options: [
+        idOption,
+        { name: "note", type: "string", required: true, help: "A short instruction for Jev; it sees it" },
+        { name: "value", type: "string", multiple: true, metavar: "LABEL=VALUE", help: "Add or replace a value" },
+        { name: "url", type: "string", help: "Open this page first (the same attempt continues)" },
+      ],
+      run: commandAnswer,
+    },
     replan: {
       help: "Claude: revise the plan and start the next attempt",
       options: [
@@ -1605,7 +1702,7 @@ const processIO: IO = {
  * Runs one command and returns its exit code. A CliExit or UsageError is thrown after the output is written,
  * so the caller prints its message and exits with 1 or 2.
  */
-const SESSION_COMMANDS = ["start", "run", "replan", "act", "observe", "finish"];
+const SESSION_COMMANDS = ["start", "run", "answer", "replan", "act", "observe", "finish"];
 
 /** Picks the session a command works on and holds its lock until the command ends. Returns the release function. */
 function takeSession(command: string, args: Args): () => void {

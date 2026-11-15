@@ -310,3 +310,32 @@ test("maskUrls hides query values in any URL inside a message", async () => {
     'navigating to "https://a.example/p?id=%3Credacted%3E&k=%3Credacted%3E", waiting',
   );
 });
+
+test("ESCALATE returns to Claude as its own outcome, with the attempt still open", async () => {
+  const result = await run(new FakeBrowser(), [new Decision("ESCALATE")]);
+  expect(result.outcome).toBe("ESCALATE");
+  expect(result.actions).toBe(0);
+});
+
+test("Claude's answer is not an action: it does not count against the budget or hide a stuck run", async () => {
+  const history: HistoryEntry[] = [1, 2].map((step) => ({
+    step,
+    attempt: 1,
+    kind: "click",
+    operation: "CLICK",
+    action: "x",
+    text: null,
+    url: "u",
+    page_changed: false,
+  }));
+  history.push({
+    step: 3,
+    attempt: 1,
+    kind: "answer",
+    operation: "ANSWER",
+    action: "Claude answered",
+    page_changed: true,
+  });
+  const result = await run(new FakeBrowser(), [new Decision("DONE")], new Budget(3, 10), history);
+  expect(result.outcome).toBe("GOAL_REPORTED"); // Two of three actions used; the answer is not a third.
+});

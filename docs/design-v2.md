@@ -83,6 +83,8 @@ CLAUDE.md の役割分担（GOAL・計画・値・完了確認・見直し・最
 - 覆われた対象（`4c8f2c9`）: 中央へスクロールし直し、何が覆っているかを Jev に伝える。21回目で、`cookie_wall` の断られた操作は 11 → 2、STUCK は 3 → 0（完了は 5/5 で同じ）。
 - 段階5の1つ目: 一覧を最後まで読む（読む画面数の上限 20 → 100、読み取り用のスクロールに鮮度の確認をかけない、`a20de6a`）。22回目で、`collect_long` の成功は 0/5 → 5/5。
 
+- 段階2の1つ目（実装とテストまで、A/B は未実施）: Jev の選択肢に `ESCALATE` を足し（v2 のみ）、`webhand answer --note [--value] [--url]` で同じ試行を続ける。履歴と予算は引き継ぎ、答えは `plan.instructions` として Jev の state（`claude_instructions`）に載る。`ESCALATE`・`STUCK`・`BLOCKED`・`GOAL_REPORTED`・`JEV_FAILED` のあとに `WHY:` の診断を出す。run のログには答えの文字数だけを残す（本文は残さない）。golden は v2 の質問に `ESCALATE` が1行増えただけで、v1 は変わらない。スキルに 4b 節を足した。残り：計画にないページ・低い確信度の判断を Jev がどこまで `ESCALATE` に使うかは A/B で確かめる。`--allow`（取り消せない操作の許可）と、A/B 用タスク（`off_plan_detour`、`needs_extra_value`）は未作成。
+
 ## 進め方（段階ごとに A/B）
 
 並べて作るので、v2 は `src/v2/`（新しいモジュール）と `start --flow v2` で切り替えます。今の流れが既定のままです。段階ごとにローカルのタスクで新旧を5回ずつ回し、`verify()` の成功で比べます。評価のスクリプトには `--model claude-sonnet-5-5` を必ず入れます。

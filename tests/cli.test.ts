@@ -565,3 +565,42 @@ test("replan --url gives the Windows Chrome a local file by its Windows path, as
   await cli("replan", "--reason", "Another way in", "--url", "tasks/fixtures/dense.html").catch(() => {});
   expect(opened.mock.calls[0]?.[0]).toMatch(/^file:\/\/wsl\.localhost\/Ubuntu\/.+\/tasks\/fixtures\/dense\.html$/);
 });
+
+test("v2: ESCALATE stops with a diagnosis, and answer continues the same attempt", async () => {
+  await begin("--flow", "v2");
+  ScriptedJev.moves = [
+    ["TYPE_TEXT", "Destination", "Destination"],
+    ["ESCALATE", null, null],
+    ["ESCALATE", null, null], // Asked again when the typed field made the page stale.
+  ];
+  const first = await cli("run");
+  expect(first.code).toBe(OK);
+  expect(first.out).toContain("OUTCOME ESCALATE (attempt 1/3)");
+  expect(first.out).toContain("WHY: Jev handed the decision to Claude");
+  expect(first.out).toContain("NEXT: answer --note");
+  expect(session.load()?.outcome).toBe("ESCALATE");
+  expect((await cli("run")).code).toBe(FAILED); // Not without an answer.
+
+  ScriptedJev.moves = [["DONE", null, null]];
+  const answered = await cli("answer", "--note", "Skip the cookie banner; search Lisbon");
+  expect(answered.code).toBe(OK);
+  expect(answered.out).toContain("OUTCOME GOAL_REPORTED (attempt 1/3)"); // The same attempt.
+  const plan = ScriptedJev.plans.at(-1);
+  expect(plan?.attempt).toBe(1);
+  expect(plan?.instructions).toEqual(["Skip the cookie banner; search Lisbon"]);
+  const seen = ScriptedJev.states.at(-1) as { plan: { claude_instructions: string[] }; action_history: unknown[] };
+  expect(seen.plan.claude_instructions).toHaveLength(1);
+  expect(seen.action_history.length).toBeGreaterThan(1); // The history was kept.
+  const answer = events().find((e) => e.type === "answer");
+  expect(answer.after).toBe("ESCALATE");
+  expect(JSON.stringify(answer)).not.toContain("cookie"); // Claude's words are not logged, only their length.
+});
+
+test("answer is for v2 only", async () => {
+  await begin();
+  ScriptedJev.moves = [["BLOCKED", null, null]];
+  await cli("run");
+  const { code, out } = await cli("answer", "--note", "x");
+  expect(code).toBe(FAILED);
+  expect(out).toContain("REJECTED: answer is for --flow v2");
+});

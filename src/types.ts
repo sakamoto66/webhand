@@ -91,6 +91,8 @@ export interface Plan {
   steps: Step[];
   values: Value[];
   notes?: string[];
+  /** v2: Claude's answers to Jev's questions (`webhand answer`). They continue the same attempt, so Jev sees them. */
+  instructions?: string[];
   attempt?: number;
   service?: { description: string; facts: string[] } | null;
   /** v2: the page is offered whole (elements beyond the viewport with their own operations). */

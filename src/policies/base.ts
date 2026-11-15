@@ -90,6 +90,15 @@ a field that already contains the requested value. Choose only an offered elemen
 when the element the next step needs is not offered (it may be off screen). Never pick a different
 element as a stand-in for one that is not listed.`;
 
+/** v2: Jev hands the decision to Claude. The attempt is not over: Claude answers and the run continues. */
+export const ESCALATE = "ESCALATE";
+export const ESCALATE_HELP =
+  "You cannot decide: the page is not one the plan expects, nothing offered fits, you are not confident, or the next operation cannot be undone and Claude has not allowed it. Claude answers, then you continue.";
+
+/** Added to NEXT_ACTION when Claude has answered an earlier ESCALATE or a stop. */
+export const INSTRUCTION_RULES = `plan.claude_instructions are Claude's answers to your earlier questions, oldest first.
+Follow the newest one over the plan's steps where they differ. They do not replace the page: act only on what is offered.`;
+
 export const NOT_VISIBLE = "NOT_VISIBLE";
 export const NOT_VISIBLE_HELP = "The element the next step needs is not in this list. Nothing is executed.";
 
@@ -234,6 +243,7 @@ export function modelState(page: Page, history: HistoryEntry[], plan: Plan | nul
       notes_from_earlier_attempts: plan.notes ?? [],
     };
     if (plan.compared) (state.plan as Record<string, unknown>).compared = plan.compared;
+    if (plan.instructions?.length) (state.plan as Record<string, unknown>).claude_instructions = plan.instructions;
   }
   const shown: Record<string, unknown> = { url: page.url, title: page.title, text: page.text };
   shown.offscreen = offscreen(page);
@@ -253,7 +263,7 @@ export function modelState(page: Page, history: HistoryEntry[], plan: Plan | nul
 
 /** Map a model's choice to an observed action. Anything else is rejected, not repaired. */
 export function resolve(page: Page, operation: string, target: string | null | undefined): Decision {
-  if (operation in TERMINAL_HELP) return new Decision(operation);
+  if (operation in TERMINAL_HELP || operation === ESCALATE) return new Decision(operation);
   const [, targets, controls] = actionSpace(page.actions);
   const control = controls.get(operation);
   if (control) return new Decision(operation, control);

@@ -3,7 +3,7 @@
 import { expect, test, vi } from "vitest";
 import { summarize } from "../src/metrics.ts";
 import { actionSpace, modelState, resolve } from "../src/policies/base.ts";
-import { estimateTokens, type Fetch, JevPolicy, validateChoice } from "../src/policies/jev.ts";
+import { buildQuestions, estimateTokens, type Fetch, JevPolicy, validateChoice } from "../src/policies/jev.ts";
 import { ScriptedPolicy } from "../src/policies/scripted.ts";
 import { modelCall, type Plan, PolicyError } from "../src/types.ts";
 
@@ -349,4 +349,18 @@ test("dropdown options reach Jev once each in short form", async () => {
   expect(resolve(PAGE, "SELECT", "3:1").action?.id).toBe("e4");
   // Claude's view of the page keeps the full option list.
   expect(actionSpace(PAGE.actions)[0][2].options[0].value).toBe("a");
+});
+
+test("Claude's answers reach Jev only when there are some, and ESCALATE is offered only in v2", () => {
+  const plan: Plan = { goal: "g", steps: [], values: [] };
+  const page = { url: "u", title: "t", text: "x", actions: [] };
+  expect("claude_instructions" in (modelState(page, [], plan).plan as object)).toBe(false);
+  const answered = { ...plan, instructions: ["Use the second tab"] };
+  expect((modelState(page, [], answered).plan as { claude_instructions: string[] }).claude_instructions).toEqual([
+    "Use the second tab",
+  ]);
+  const [, v1] = buildQuestions(plan, new Map(), new Map(), new Map());
+  const [, v2] = buildQuestions({ ...plan, flow: "v2" }, new Map(), new Map(), new Map());
+  expect(Object.keys(v1)).not.toContain("ESCALATE");
+  expect(Object.keys(v2)).toContain("ESCALATE");
 });
