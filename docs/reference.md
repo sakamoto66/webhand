@@ -95,6 +95,38 @@ networkingMode=mirrored
 
 Then restart WSL by running `wsl --shutdown` in PowerShell. Local file URLs are opened as `file://wsl.localhost/...`.
 
+## Headless shell
+
+`--engine headless-shell` (or `auto`, below) runs the session on `chrome-headless-shell`, Chromium's windowless build. It is the same engine as Chrome (real layout, several tabs, a page that stays when a command ends), so it needs no daemon. It uses about half the memory of Chrome's `--headless=new`: roughly 240–260 MB for one page against 350–470 MB, in the same measurement (see `docs/research-plan.md`).
+
+- Install: Playwright's `chromium_headless_shell` build is found in its browser cache (`~/.cache/ms-playwright`, or `PLAYWRIGHT_BROWSERS_PATH`), or set `WEBHAND_HEADLESS_SHELL` to the binary, or put `chrome-headless-shell` on `PATH`.
+- The page is 1120x780, the same as Chrome. Chrome's window includes 87px of browser UI (`--window-size=1120,867`); the shell has none, so it is started with `1120,780`. With the same window size the two read different elements.
+- No window and no saved profile (`--headed`, `[person]` steps, `learn`, `profile` are refused, and `--chrome windows` does not apply). A profile made by Chrome may be newer than the shell's build.
+- It is the default for a run that needs no window and no saved profile (`--engine auto`, the default; or `WEBHAND_ENGINE`). A window (`--headed`), a saved profile, or `--chrome windows` keeps Chrome, and so does a missing shell, quietly. `--engine chrome` always uses Chrome. The `SESSION:` line says which one ran.
+
+## Lightpanda
+
+`--engine lightpanda` runs the session on [Lightpanda](https://lightpanda.io) instead of Chrome (`--engine` is `chrome`, `lightpanda` or `obscura`; the default is `chrome`, or `WEBHAND_ENGINE`). `--chrome auto|linux|windows` says only where Chrome runs and does not apply to an engine. Lightpanda drops its pages when a CDP connection ends, and every webhand command connects anew, so webhand starts a small daemon (`src/daemon.ts`) that runs `lightpanda serve`, holds the one connection and page for the session, and answers the commands over an owner-only unix socket in the session's temporary folder (`state.socket`). The daemon runs the same `Browser`, so the freshness check and the no-retry rule apply as with Chrome. `finish` stops the daemon and Lightpanda together. Chrome sessions do not use the daemon.
+
+Limits:
+
+- No saved profile (`--session new` only), no window (`--headed`, `[person]` steps, `learn` and `profile` are refused).
+- `file:` URLs cannot be opened (serve the page over http), and a second tab cannot be opened. A link with `target="_blank"` or `window.open` does nothing and raises no error: the page stays as it was. The run log records a `window_ignored` event (step and URLs) after such a step, so a click that "did nothing" can be told from one that was refused. Jev gets no new option for it.
+- No layout: element positions are simulated and screenshots are placeholders, so what Jev is shown differs from Chrome. Compare results with Chrome as a separate experiment.
+- `lightpanda` must be on `PATH`.
+
+## Obscura
+
+`--engine obscura` runs the session on [Obscura](https://github.com/h4ckf0r0day/obscura) (Rust, V8, Apache-2.0) the same way as Lightpanda: a daemon holds the connection and page, and commands reach it over the session's socket. Unlike Lightpanda it has real layout, real screenshots and more than one page.
+
+- Install: unpack the release archive (`obscura` and `obscura-worker` side by side) and set `WEBHAND_OBSCURA` to the `obscura` path, or put it on `PATH`.
+- Obscura refuses loopback and private addresses by default (its SSRF guard). For local pages only, set `WEBHAND_OBSCURA_ALLOW_PRIVATE=1`; leave it unset for real sites.
+- Same limits as Lightpanda: no saved profile, no window (`--headed`, `[person]` steps, `learn` and `profile` are refused).
+- New windows: `window.open` opens nothing and is recorded as `window_ignored`, as for Lightpanda. A `target="_blank"` link loads its target in the same tab instead (the page changes, so there is no `window_ignored`).
+- Tabs: Obscura has several pages and webhand switches between them (`TAB_n`), but nothing a page does opens a second tab (see above), so in practice a run has one. Its `Page.bringToFront` is not implemented, which webhand tolerates.
+- An inline element straight under `<body>` (not inside a paragraph, a block or a flex container) gets no size and is not offered; inside any block it is.
+- Obscura lacks some Web APIs that Chrome has. webhand adds these to the page for it (`compat`, in `src/browser.ts`; `assets/snapshot.js` is the same for every engine): an iterable `select.selectedOptions`, `isContentEditable` (so an editable div is a textbox), a form's controls by name (`form.guest`) and a form by id (`document.forms.id`). Without the last two, a page whose handler reads `form.guest.value` throws and the form is never submitted. Not covered: a cursor set by a stylesheet rule reads as `auto` (only an inline style gives `pointer`), so an element that is clickable only through a CSS cursor is not offered.
+
 ## Commands
 
 If the CLI is not installed globally, read `webhand` in the table below as `npx -y webhand@0.3`. `webhand --version` prints the version.

@@ -1061,6 +1061,181 @@ v2 の効果が完了に出るかは、引き続き v1 が `NOT_VISIBLE` で行�
 - 同じ id で `start` すると止まり、生きている別プロセスのロックがあると `Session is busy` で止まり、死んだプロセスのロックは引き継ぐことを確認しました。
 - `--id` なしの既定の出力は変わらず、golden も変わりません。Jev の実行はしていません。複数のセッションを同時に動かす実験（時間、完了、費用）は、まだ行っていません。
 
+## Lightpanda の動作確認の記録（2026-11-15）
+
+Lightpanda（1.1.0-nightly.11647）に接続できるようにし、既存のスナップショットがどこまで動くかを確かめました。変えた変数は、ブラウザだけです。
+
+- 動いたこと: `connectOverCDP`、`Runtime.evaluate` による `snapshot.js`（位置は模擬の値）、座標クリック、`Input.insertText`、`Page.captureScreenshot`（中身はプレースホルダー）。同じプロセスの中では、`hotel_filter` の SCRIPT が `verify()` に成功しました（`tests/lightpanda.test.ts`）。
+- 動かなかったこと: 起動時の空白タブは実体のないタブで、閉じる操作が固まる（`Target.attachToTarget` も失敗する）。`file:` URL は `UnsupportedProtocol`。同じコンテキストの2つ目の `newPage` は `TargetAlreadyLoaded`。CDP 接続を切るとページが消え、2回目の接続は `about:blank`。
+- 結論: 接続を切るとページが消えるため、素のままでは分割実行が成立しません。ドキュメントを調べましたが、接続をまたいでページを残す方法はありませんでした（残せるのは `--cookie`、`--cookie-jar` の Cookie だけ）。
+- 対応: 接続とページを保つ常駐プロセス（`src/daemon.ts`）を置き、CLI は unix ソケットで頼むだけの `RemoteBrowser`（`src/remote.ts`）を使う。鮮度確認は常駐の `Browser.act` で行うので、規則は変わらない。Chrome の経路は変えていない。
+- 確認: 別々の CLI プロセスで `start`、`act TYPE_TEXT`、`observe`、`finish` を行い、入力値が次のコマンドで残り、`finish` で常駐が消えることを確かめた。`tests/lightpanda.test.ts` では、接続を切って張り直してもページが残り、`hotel_filter` の SCRIPT が `verify()` に成功し、`StalePage` が同じクラスで戻る。
+- 新しいウィンドウ: `target="_blank"` のリンクも `window.open` も、新しいページを作らず、エラーも出さない（2つ目のページ、2つ目のコンテキストはどちらも作れない）。ログに `window_ignored` を残すようにした。Jev の選択肢は増やしていない。同じタブで開く操作を足すかは別の実験にする。
+- 残る制約: 保存プロファイル、画面、`file:`、2つ目のタブがない。位置は模擬の値なので、Jev に見える内容が Chrome と違う。Jev での精度の比較（Chrome と Lightpanda）は未実施で、別の実験にする。
+- Jev の実行はしていません。
+
+## Chrome と Lightpanda の比較（2026-11-15）
+
+変えた変数はブラウザだけです。6 タスク × 2 ブラウザ × 3 回（Lightpanda の `hotel_filter` の 1 回目は試走を含めた）を、Jev つきで 1 試行（見直しなし）ずつ実行しました。どちらも同じ http の URL（`WEBHAND_RESEARCH_BASE_URL`）で、計画（手順と値）も同じです。成功の判定は `verify()` だけです。「報告」は Jev が `DONE` を返したことで、成功の証拠にしていません。
+
+| タスク | Chrome verify | Lightpanda verify | Chrome の終了 | Lightpanda の終了 |
+|---|---|---|---|---|
+| hotel_filter | 0/3 | 0/3 | 3 回とも報告 | 3 回とも報告 |
+| cookie_wall | 3/3 | 3/3 | 報告 | 報告 |
+| plan_lowest | 3/3 | 3/3 | 報告 | 3 回とも STUCK |
+| plan_pages | 3/3 | 3/3 | 報告 | 報告 |
+| settings_long | 3/3 | 3/3 | 報告 | 3 回とも BLOCKED |
+| signup_ticker | 3/3 | 3/3 | 報告 | 報告 |
+
+- `verify()` の成功は、`hotel_filter` を除く 15 回ずつで同じ（Chrome 15/18、Lightpanda 15/18）。
+- `hotel_filter` は両方とも失敗した。6 回中 5 回は Jev が結果一覧を経ずに `View Casa Flora` を押した。手順に「まだ結果を開かない」の但し書きがなかった私の計画の問題で、ブラウザの差ではない。Lightpanda の試走 1 回だけが絞り込みの手順を踏んだが、それも `verify()` は失敗した（原因は未確認）。
+- 差が出たのは終了の仕方。`plan_lowest` と `settings_long` では、Lightpanda は操作が効いているのに（`verify()` は成功）、Jev に確認の文言が見えず、`plan_lowest` は同じボタンを3回押して STUCK、`settings_long` は WAIT を繰り返して BLOCKED になった。Chrome では確認の文言が出力に出る。Lightpanda では位置が模擬のため見える範囲が違うことが原因と考えられるが、未確認。
+- 注意: 見えない結果に対して同じ操作を繰り返すので、冪等でない操作（カートに追加するなど）では重複する恐れがある。
+- 所要時間は同程度（Jev の応答が支配的）。1 試行でも、Chrome と Lightpanda の差は数秒の範囲だった。
+- 見直し（`replan`）は行っていない。Claude が見直せば `verify()` の差がさらに縮まる可能性があるが、未実施。
+
+## エンジン比較 E1（2026-11-15、Jev なし）
+
+`research/engines.ts` で、ブラウザエンジンを比べました（`node research/engines.ts`）。同じ `assets/snapshot.js` を、6 つの fixture（`hotel`、`plans`、`settings_long`、`cookie_wall`、`signup_ticker`、`plan_pages`）で読みます。各エンジンで 10 回起動し直し、メモリは PSS をプロセスグループで合計しました。同時セッションは 6 つです。
+
+| エンジン | 1 ページ（MB） | 4 ページ・1 ブラウザ | 4 ブラウザ | 同時 6 セッション | snapshot の読み取り | 起動ごとの安定 | Chrome と同じ action 一覧 |
+|---|---|---|---|---|---|---|---|
+| Chrome 154 `--headless=new` | 353–475 | 453–563 | 1155–1212 | 約 1.6 GB | 60/60 | 6/6 | 基準 |
+| chrome-headless-shell | 242–263 | 299–320 | 599–611 | 約 0.84 GB | 60/60 | 6/6 | 6/6 |
+| Lightpanda | 23 | 不可（1 ページのみ） | 40 | 66 MB | 60/60 | 6/6 | 2/6 |
+| Obscura 0.2.7（そのまま） | 33 | 44 | 59 | 146 MB | 50/60 | 5/6 | 5/6 |
+| Obscura 0.2.7 + snapshot.js の1か所を書き換え（別条件） | 33 | 44 | 59 | 150 MB | 60/60 | 6/6 | 6/6 |
+
+- 範囲は 2 回の測定のばらつきです（Chrome の idle は 326〜449 MB、起動は 0.1〜3 秒と、キャッシュの状態で大きく変わる）。順位は変わらないが、1 回の値を絶対値として使わない。
+- 起動ごとの安定は、10 回の起動で読み取りの全ハッシュ（位置を含む）が同じことを指す。どのエンジンも、読めた fixture では 10 回とも同じだった。
+- Obscura は `select.selectedOptions is not iterable` で `settings_long` が読めない。`[...select.options].filter(o => o.selected)` に書き換えた複製で、6 つの fixture すべて読め、Chrome と同じ action 一覧になった。リポジトリの `snapshot.js` は変えていない。
+- headless-shell は、窓の指定を Chrome に合わせないと別の要素を読む。`--window-size=1120,867` は new headless では高さ 780 の表示領域だが、shell には窓枠がなく 867 になる。そのままだと 2 つの fixture で action が 1 つずつ違った（`Scroll down`、`Backup schedule on`）。shell に 1120,780 を渡すと 6/6 一致した。
+- Lightpanda は action 一覧が Chrome と 2/6 しか一致しない（位置が疑似値）。
+- 未確認: Obscura で操作（クリック、選択、入力）が効くか。接続をまたいでページが残らないので、常駐プロセスが要る。
+
+## Obscura の動作確認（2026-11-15、Jev なし）
+
+Obscura 0.2.7 を、`snapshot.js` の1か所を書き換えた複製（リポジトリは変更なし）で、全タスクの SCRIPT を `verify()` で採点した。同じ SCRIPT を Chrome でも走らせ、結果を比べた。同一プロセス、1つの CDP 接続、fixture は http で配信。
+
+- 22 タスク中 20 で、Obscura は Chrome と同じ結果（成功も失敗も同じ。`collect_*` と `plan_*` の多くは、この SCRIPT 単体では Chrome でも失敗する設計）。`catalog_big`、`cookie_wall`、`hotel_filter`、`plan_lowest`、`signup_ticker`、`order_signin` などで、クリック、選択、入力が効くことを確かめた。
+- 違った 2 つ:
+  - `dense_booking`（Chrome は成功、Obscura は失敗）: 操作はすべて実行されたが、送信の処理が動かなかった。原因は fixture の送信処理が `form.arrival.value` のようにフォームの子要素を名前で引くこと。Obscura ではこの書き方が `undefined` を返す（`form.elements.arrival` なら動く）。submit ボタンのクリックと Enter での送信自体は Chrome と同じに動く。ページ側のスクリプトで普通に使われる書き方なので、実在のサイトでも同じ失敗が起きる。
+  - `tab_form`（Chrome は成功、Obscura は `JEV_FAILED`）: タブを切り替えるタスク。原因は未確認。
+- `hotel_reserve` は、ローカルサーバーの用意がこの方法ではできず、両方とも実行できなかった。
+- 常駐プロセスは未実装。接続を切るとページが消えるため、コマンドを分けた実行（`start`、`run`）はまだできない。
+
+## Obscura を常駐で動かした比較（2026-11-15）
+
+常駐プロセスをエンジン指定にし（Lightpanda と Obscura）、Obscura の互換処理（反復できる `select.selectedOptions`）は `snapshot.js` を変えずにページ側へ足した。変えた変数はブラウザだけ。6 タスク × 3 回、Jev つき、1 試行（見直しなし）、同じ計画、同じ http の URL。Chrome と Lightpanda は前の比較（2026-11-15）の値。
+
+| タスク | Chrome | Lightpanda | Obscura |
+|---|---|---|---|
+| cookie_wall | 3/3 | 3/3 | 3/3 |
+| plan_lowest | 3/3 | 3/3（Jev は `STUCK`） | 3/3 |
+| plan_pages | 3/3 | 3/3 | 3/3 |
+| settings_long | 3/3 | 3/3（Jev は `BLOCKED`） | 3/3 |
+| signup_ticker | 3/3 | 3/3 | 3/3 |
+| hotel_filter（直した計画） | 0/3 | — | 0/3 |
+
+`verify()` の成功の数。Jev が完了を報告したかは別で、Lightpanda の `plan_lowest` と `settings_long` だけ、操作は効いたのに Jev が完了と判断できなかった。
+
+- Obscura は、Chrome と同じく 15/15 で成功し、Jev も毎回完了を報告した。Lightpanda で見えなかった確認の文言（`Plan chosen` など）も Obscura では見える。所要時間は Chrome と同程度。
+- `hotel_filter` は「まだ結果を開かない」を足した計画でも、Chrome と Obscura の両方で 0/3。Jev が毎回、絞り込まずに `View Casa Flora` を押した。ブラウザの差ではなく、計画の書き方か Jev の選び方の問題。別の実験にする。
+- 見直しは行っていない。コマンドをまたぐ実行（`start`、`observe`、`finish`）が、Obscura で通ることも確かめた。
+
+## `--engine` への整理（2026-11-15）
+
+`--chrome` に混ぜていたエンジン（`lightpanda`、`obscura`）を `--engine chrome|lightpanda|obscura` に分けた。`--chrome auto|linux|windows` は Chrome をどこで動かすかだけを決める。既定の出力、状態ファイル、ログは変えていない（Chrome のセッションは `engine` を書かない。エンジンのときだけ状態とログの `run_start` に `engine` が入り、`chrome` は `linux`）。公開前の機能なので、`--chrome lightpanda` の旧形式は残していない。
+
+## hotel_filter の見直し（2026-11-15）
+
+0/3（Chrome）、0/3（Obscura）、前の 3 回の Chrome も 0 だった `hotel_filter` を見直した。ブラウザは Chrome と Obscura の両方で、見直しなし・1 試行、Jev つき。変えた変数は、Claude の計画の書き方だけ。
+
+- 原因: 最初の画面に、Lisbon・Design・無料キャンセルの Casa Flora がすでに一覧に出ている。カテゴリと「無料キャンセル」は押すと一覧にすぐ反映されるが、目的地だけは `Find stays` を押すまで反映されない。Jev は一覧が絞り込まれて見えると手順を終えたと見て、`Find stays` を押さずに `View Casa Flora` を押した（5/6 回は絞り込みを飛ばし、1 回は途中まで）。完了を確かめる `verify()` は、目的地が反映された状態で開くことを求める。
+- 見直し（`replan --restart`）では直らなかった: 「Find stays が押されていない」と事実を伝えても、2 回目も同じく結果を直接開いた。
+- 手で確かめたこと: `Find stays` を押すと、見出しが `2 places` から `1 places in Lisbon` に変わる。目的地が反映された、見えて確かな目印。
+- 計画: 1つ目の手順の完了条件を、この見出しにした。「`Find stays` を押す; まだ結果を開かない; done when the results heading reads 1 places in Lisbon」。2つ目は「見出しがそうなった後でだけ Casa Flora を開く」。値は `Destination=Lisbon`。
+- 結果: `verify()` の成功は Chrome 3/3、Obscura 3/3（前の計画では 0/6）。Jev は毎回、完了を報告した。
+- 読み取れること: 完了条件に、ページに見える具体的な文言を書くと、Jev は手順を飛ばさなかった。ページを手で確かめて文言を拾うのは、Claude の仕事（計画）。この文言のような学習済みの事実は、サービス情報の `facts` に残せる（`/webhand-learn`）。
+- 未確認: 別のタスクでも同じ書き方が効くか。3 回では偶然の可能性も残る。
+
+## headless-shell の導入（2026-11-15）
+
+`--engine headless-shell` を追加した（選んだときだけ。既定は Chrome のまま）。Chromium の窓のないビルドで、通常の Chrome と同じ起動経路（`startChrome`、ポートへ接続）。接続を切ってもページが残るので、常駐は使わない。窓も保存プロファイルもない。
+
+- 窓の大きさ: Chrome の `--window-size=1120,867` は UI の 87px を含み、表示領域は 1120x780。シェルには UI がないので `1120,780` を渡す。そうしないと、2つの fixture で action が1つずつ違った（E1）。
+- Jev なしの確認: 全 22 タスクの SCRIPT を `verify()` で採点し、Chrome と同じ結果だった（`tab_form` のタブ切り替えも含む）。`hotel_reserve` だけは、この方法ではローカルサーバーを用意できず、どちらも実行できない。
+- メモリは E1 のとおり、Chrome の `--headless=new` の約半分（1 ページ 242〜263 MB に対して 353〜475 MB）。
+- 未実施: Jev つきの比較（Chrome と headless-shell で 6 タスク × 3 回）。既定にするかは、これで決める。保存プロファイルの扱い（Chrome で作ったプロファイルをシェルで開けるか）も未確認で、今は拒否している。
+
+## headless-shell の Jev つき比較（2026-11-15）
+
+変えた変数はブラウザだけ（Chrome の `--headless=new` と `--engine headless-shell`）。6 タスク × 3 回、Jev つき、1 試行（見直しなし）、同じ計画、同じ http の URL。Chrome は前の比較と `hotel_filter` の見直しの結果（同じ計画、同じ手順）で、headless-shell と同じ時間帯には取っていない。
+
+| タスク | Chrome の `verify()` | headless-shell の `verify()` | Jev の終了 |
+|---|---|---|---|
+| hotel_filter（見直した計画） | 3/3 | 3/3 | どちらも完了報告 |
+| cookie_wall | 3/3 | 3/3 | 同じ |
+| plan_lowest | 3/3 | 3/3 | 同じ |
+| plan_pages | 3/3 | 3/3 | 同じ |
+| settings_long | 3/3 | 3/3 | 同じ |
+| signup_ticker | 3/3 | 3/3 | 同じ |
+
+- `verify()` は 18/18 で Chrome と同じ。Jev は 18 回とも完了を報告した。所要時間も同じ範囲（Jev の応答が支配的）。
+- 採用の基準（E1 で決めた「`verify()` の成功が同じ」と「メモリが6割以下」）は両方満たした。メモリは Chrome の約 55%（1 ページ 242〜263 MB に対して 353〜475 MB）。
+- 未実施: 並列（`--id` で複数セッションを同時に動かす）での確認、保存プロファイルの扱い。既定を切り替えるかは、まだ決めていない（切り替えると、保存プロファイルを使わないヘッドレスのセッションがシェルになる）。
+
+## 既定を headless-shell にした（2026-11-15）
+
+`--engine` の既定を `auto` にした。窓も保存プロファイルも要らない実行（`--headed` なし、`--session new`、`--chrome windows` を求めていない）で、シェルが入っていれば headless-shell を使う。それ以外と、シェルがないときは、今までどおり Chrome（黙って戻す）。根拠は、上の Jev つき比較（`verify()` が 18/18 で同じ、メモリは約 55%）。
+
+- WSL では、`--chrome auto` が Windows の Chrome に接続できる環境だと、ヘッドレスでも Windows の Chrome を選んでいた。ヘッドレスなら窓は見えず、Windows 側につなぐ利点がないので、シェルを優先する。Windows の Chrome を使うのは `--chrome windows` を求めたときだけ。
+- テストは `WEBHAND_ENGINE=chrome` に固定する（出力が、そのマシンにあるブラウザで変わらないように）。`tests/golden/` は変えていない。Chrome が既定のときの出力は同じ。
+- 影響: シェルが入っている環境では、`SESSION:` の行が `(Chrome headless shell)` になり、ログの `run_start` に `engine` が入る。
+- 戻し方: `--engine chrome`、または `WEBHAND_ENGINE=chrome`。
+
+## ログイン状態の独立（2026-11-15、Jev なし）
+
+Cookie でログインを模すローカルのサイトで、エンジンごとに、別々のセッション、同じセッションのタブ、`target=_blank` を確かめた（表は `docs/design-shared-browser.md`）。
+
+- headless-shell と Chrome（`--headless=new`）: コンテキストが分かれ、Cookie は漏れない。同じコンテキストのタブは共有。`target=_blank` は開いた元のコンテキストに入る。
+- Obscura と Lightpanda: セッションごとにプロセスが別なので独立。Obscura は同じプロセスのタブで Cookie を共有し、2つ目のコンテキストは独立。Lightpanda はタブも2つ目のコンテキストも作れない。
+- 直したこと: Obscura も、`window.open` が何も開かない（ページが残る）ので、新しいウィンドウの記録（`window_ignored`）を有効にした。`target=_blank` のリンクだけは、同じタブでリンク先へ移る。
+- 分かった制約: Obscura は、`<body>` 直下の inline の要素を大きさ 0 として扱い、Jev に出さない。
+
+## `tab_form` が Obscura で通らない原因（2026-11-15、Jev なし）
+
+Chrome と headless-shell では成功し、Obscura では SCRIPT が `JEV_FAILED` になっていた。手で順に確かめ、原因は3つだった。
+
+1. リンクが新しいタブで開かない（原因の本体）: このタスクは `target="_blank"` のリンクが新しいタブを開き、`TAB_2` で切り替えることを前提にしている。Obscura は同じタブでリンク先を読み込むので、`TAB_2` が現れず、SCRIPT が次の手順を見つけられない。
+2. ページ側のスクリプトが動かない: 登録の処理が `event.target.guest.value` とフォームの子要素を名前で引く。Obscura では `form.guest` が `undefined`（`form.elements.guest` は取れるが、`HTMLInputElement` ではない）。同じタブでフォームに着いても、入力して Register を押しても、`Registration received` は出ず、`verify()` は失敗する。`dense_booking` と同じ原因。
+3. webhand の切り替え処理（直した）: 2つ目のページを手で作ると、タブは2つとして正しく見え、`TAB_2` も出るが、切り替えで `Tab could not be switched to` になった。Obscura が `Page.bringToFront` を実装していない（`Unknown Page method`）ため。未実装のときだけ無視するようにし、切り替えは動いた（`tests/engines.test.ts`）。Chrome の挙動は変えていない。
+- 付記: Obscura の `Target.getTargetInfo` は、どのページでも `browser` を返す。ページを区別する ID にならないので、コマンドをまたいでタブを覚える仕組み（Chrome の `state/tab`）は使えない。常駐では、1つのプロセスが `this.page` を持つので影響しない。
+- 結論: `tab_form` は、1 と 2 のため、Obscura では通らない（webhand の不具合ではない）。タブ切り替えの機能そのものは、Obscura でも動く。
+
+## Obscura の互換処理の拡張（2026-11-15、Jev なし）
+
+Chrome、Obscura、Lightpanda で、フォームと DOM まわりの 40 項目ほどを並べて確かめた。Obscura だけが違ったのは、フォームの子要素の名前での参照（`form.guest`、`form.sel`）、`document.forms.id`、`select.selectedOptions` の反復、`isContentEditable`（未定義）、スタイルシート由来の cursor（`auto`）。ほかの項目（`FormData`、`requestSubmit`、`dialog`、各種 Observer、`fetch`、`localStorage` など）は Chrome と同じ。
+
+- ページ側に足したもの（`compat`）: `selectedOptions`、`isContentEditable`、フォームの名前での参照（`HTMLFormElement` のプロトタイプに Proxy）、`document.forms` を包んで `document.forms.id` を解決。`assets/snapshot.js` は変えていない。
+- 結果: 全 22 タスクの SCRIPT のうち 20 で Chrome と同じ結果（前は 19）。`dense_booking` が成功に変わった（`form.arrival.value` が動く）。残る 2 つは、`hotel_reserve`（この方法では実行できない）と `tab_form`（リンクが同じタブで開き、`TAB_2` が現れない）。`tab_form` のフォーム自体は、同じタブで入力して `Registration received` まで進む（名前付きアクセスが効いた）ので、Jev の実行なら、`TAB_2` なしで完了できる可能性がある（未実施）。
+- 足せなかったもの: スタイルシートの規則で `cursor: pointer` を指定した要素は、Obscura では `auto` と読めるので、Jev に出ない（インラインの style だけが `pointer`）。規則の照合を自前で書くことになり、費用に見合わないので、制約として記録した。`<details>` の閉じた中身が `innerText` に出る差もある。
+
+## tab_form を Obscura で Jev つきに実行（2026-11-15）
+
+変えた変数はブラウザだけ（Chrome と Obscura）。`tab_form`、3 回ずつ、Jev つき、1 試行（見直しなし）、同じ計画。計画は「新しいタブで開く」と前提にせず、「Event desk のページからゲストのフォームを開く」「フォームで Guest の値を入れて Register を押す; done when Registration received is shown」の2手順と、値 `Guest=Tab Tester`。
+
+| | `verify()` | Jev の操作 |
+|---|---|---|
+| Chrome | 3/3 | リンクをクリック → `TAB_2` で切り替え → 入力 → Register |
+| Obscura（1回目の実行） | 0/3 | リンクをクリック → 入力 → Register（同じタブ）。ページには `Registration received` が出た |
+| Obscura（検証の変換を足して取り直し） | 3/3 | 同じ |
+
+- Jev は Obscura でも、毎回完了した。リンクが同じタブで開いても、手順に沿ってフォームに入力し、`Registration received` まで進んだ。`TAB_2` は不要だった。
+- Obscura の最初の 0/3 は、検証側の問題だった。`tab_form` の `verify()` は `browser.context.pages()` でタブを調べるが、常駐の構成の CLI 側（`RemoteBrowser`）には `context` がなく、検証が例外になって失敗と記録された。タスクの失敗ではない。この 3 回も除外せずに、記録に残す。
+- 直したこと（研究用のラッパー `research/webhand.ts`。配布物には入らない）: `context` を持たないブラウザには、常駐側で評価する1ページだけを `context.pages()` として見せる変換を足した。検証の中身は変えていない。取り直した 3 回は、この変換を足した後の結果。
+- 結論: `tab_form` は、Obscura でも、Jev が同じタブで進めて完了できる。タスクが前提にする「新しいタブ」は使えないが、目的（フォームの登録）は達成できる。
+
 ## 次の手順
 
 1. GOAL 単位の設計で `hotel_filter` と `hotel_reserve` を実行し、変更後の基準値を取る。

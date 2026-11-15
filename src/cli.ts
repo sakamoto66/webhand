@@ -18,6 +18,7 @@ import { gitState, logOnce, maskUrls, pageEvent, Recorder, safeUrl, summarize } 
 import { loadMore, type MoreChooser } from "./more.ts";
 import { actionSpace, offscreen, planText, resolve } from "./policies/base.ts";
 import { JevPolicy } from "./policies/jev.ts";
+import { type Driver, RemoteBrowser } from "./remote.ts";
 import * as runbook from "./runbook.ts";
 import * as session from "./session.ts";
 import {
@@ -259,8 +260,27 @@ function requireSession(): session.State {
   return state;
 }
 
+/** The session's browser: Chrome by CDP port, or the daemon that holds an engine's page (Lightpanda, Obscura) by socket. Opens url when given. */
+async function attach(
+  state: { port?: number; socket?: string },
+  url: string | null,
+  view?: ViewChoice | null,
+): Promise<Driver> {
+  if (state.socket) {
+    const remote = await RemoteBrowser.connect(state.socket, view ?? null);
+    try {
+      if (url) await remote.goto(url);
+    } catch (error) {
+      await remote.close();
+      throw error;
+    }
+    return remote;
+  }
+  return await Browser.open(url, { port: state.port, view });
+}
+
 async function openPage(state: session.State, url: string | null = null, restart = false): Promise<void> {
-  const browser = await Browser.open(url, { port: state.port, view: browserView(state) });
+  const browser = await attach(state, url, browserView(state));
   try {
     state.page = await browser.observe();
     if (restart && process.env.WEBHAND_SCREENSHOTS === "1") {
@@ -387,6 +407,7 @@ async function commandStart(args: Args): Promise<number> {
   let serviceName: string | null = null;
   let profile: string | null;
   let chrome: string;
+  let engine: string;
   let note: string | null;
   try {
     if (args.runbook) {
@@ -398,7 +419,9 @@ async function commandStart(args: Args): Promise<number> {
     serviceName = args.service || (book ? book.service : null);
     service = serviceName ? runbook.loadService(serviceName) : null;
     profile = session.parseSession(args.session);
-    [chrome, note] = session.chooseChrome(args.chrome);
+    engine = session.chooseEngine(args.engine, { headed: args.headed, profile, chrome: args.chrome });
+    // --chrome says where Chrome runs; the other engines have no such choice.
+    [chrome, note] = engine === "chrome" ? chooseChrome(args.chrome) : ["linux", null];
   } catch (error) {
     if (error instanceof runbook.RunbookError || error instanceof session.SessionError) {
       throw new CliExit(error.message);
@@ -440,7 +463,7 @@ async function commandStart(args: Args): Promise<number> {
   if (plan.more && !plan.compare && !plan.collect) throw new CliExit("--more needs --compare or --collect");
   let chromeState: session.State;
   try {
-    chromeState = await deps.startChrome({ headed: args.headed, profile, chrome });
+    chromeState = await deps.startChrome({ headed: args.headed, profile, chrome, engine });
   } catch (error) {
     if (error instanceof session.SessionError) throw new CliExit(error.message);
     throw error;
@@ -470,15 +493,16 @@ async function commandStart(args: Args): Promise<number> {
   };
   context.log = state.log;
   const recorder = new Recorder(state.log);
-  let browser: Browser | null = null;
+  let browser: Driver | null = null;
   try {
-    browser = await Browser.open(state.start_url, { port: chromeState.port, view: browserView(state) });
+    browser = await attach(chromeState, state.start_url, browserView(state));
     state.page = await browser.observe();
     recorder.event("run_start", {
       task,
       goal,
       chrome: browser.version,
       chrome_host: chrome,
+      ...(engine !== "chrome" ? { engine } : {}),
       session: profile ? "profile" : "new",
       git: gitState(),
       runbook: state.runbook,
@@ -507,6 +531,7 @@ async function commandStart(args: Args): Promise<number> {
       error: maskUrls(describeError(error).split("\n")[0]),
       url: safeUrl(state.start_url),
       chrome_host: chrome,
+      ...(engine !== "chrome" ? { engine } : {}),
       session: profile ? "profile" : "new",
       started_at: new Date().toISOString(),
     });
@@ -518,7 +543,9 @@ async function commandStart(args: Args): Promise<number> {
   }
   session.save(state);
   if (note) print(`NOTE: ${note}`);
-  print(`${describePlan(plan, state.view)}\nSESSION: ${args.session} (${chrome} Chrome)\n${headline(state.page)}`);
+  print(
+    `${describePlan(plan, state.view)}\nSESSION: ${args.session} (${session.hostName(engine, chrome)})\n${headline(state.page)}`,
+  );
   print("NEXT: webhand run");
   return OK;
 }
@@ -600,7 +627,7 @@ async function commandRun(args: Args): Promise<number> {
   session.save(state);
 
   const policy = deps.policy();
-  const browser = await Browser.open(null, { port: state.port, view: browserView(state) });
+  const browser = await attach(state, null, browserView(state));
   const recorder = new Recorder(state.log);
   let result: agent.AgentResult;
   // With --more, a scan presses Claude's control for more items when the list ends.
@@ -852,7 +879,7 @@ async function commandAct(args: Args): Promise<number> {
   decision.text = decision.action.kind === "fill" ? args.text : null;
   state.decisions += 1;
   session.save(state);
-  const browser = await Browser.open(null, { port: state.port, view: browserView(state) });
+  const browser = await attach(state, null, browserView(state));
   const recorder = new Recorder(state.log);
   try {
     await execute(browser, state.page, decision, state.history, recorder, {
@@ -930,9 +957,9 @@ async function commandFinish(args: Args): Promise<number> {
   try {
     const verify = context.hooks.verify;
     if (verify) {
-      const browser = await Browser.open(null, { port: state.port });
+      const browser = await attach(state, null);
       try {
-        verdict = await verify(browser, state);
+        verdict = await verify(browser as Browser, state); // A remote browser has evaluate, which is what verifiers use.
       } finally {
         await browser.close();
       }
@@ -1009,7 +1036,7 @@ async function commandLearn(args: Args): Promise<number> {
     const parts = String(args.name).split("/");
     serviceFile = parts.length > 1 ? runbook.servicePath(parts[0], args.scope) : null;
     profile = session.parseSession(args.session);
-    [chrome, note] = session.chooseChrome(args.chrome);
+    [chrome, note] = chooseChrome(args.chrome);
   } catch (error) {
     if (error instanceof runbook.RunbookError || error instanceof session.SessionError) {
       throw new CliExit(error.message);
@@ -1080,7 +1107,7 @@ async function commandProfile(args: Args): Promise<number> {
   let chrome: string;
   try {
     let note: string | null;
-    [chrome, note] = session.chooseChrome(args.chrome);
+    [chrome, note] = chooseChrome(args.chrome);
     if (note) print(`NOTE: ${note}`);
     if (args.action === "list") {
       const profiles = session.listProfiles(chrome);
@@ -1166,6 +1193,13 @@ function commands(): Record<string, CommandSpec> {
     default: chromeDefault,
     help: "auto uses the Windows Chrome on WSL when it is reachable",
   };
+  const engineOption: OptionSpec = {
+    name: "engine",
+    type: "string",
+    choices: [...session.ENGINE_CHOICES],
+    default: process.env.WEBHAND_ENGINE ?? "auto",
+    help: "What runs the browser. auto (default) uses the headless shell when it is installed and the run needs no window or saved profile, else Chrome. headless-shell, lightpanda and obscura have no window and no saved profile, and --chrome does not apply to them. Default: WEBHAND_ENGINE, else auto",
+  };
   const viewOptions: OptionSpec[] = [
     {
       name: "focus",
@@ -1233,6 +1267,7 @@ function commands(): Record<string, CommandSpec> {
         },
         { name: "session", type: "string", default: "new", help: "new (temporary) or profile:NAME (saved sign-in)" },
         chromeOption,
+        engineOption,
         { name: "headed", type: "boolean" },
         { name: "max-attempts", type: "int", default: DEFAULT_ATTEMPTS },
         { name: "max-actions", type: "int", default: Budget.MAX_ACTIONS, help: "Per attempt" },

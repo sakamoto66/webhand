@@ -95,6 +95,38 @@ networkingMode=mirrored
 
 設定したら、PowerShell で `wsl --shutdown` を実行して WSL を再起動します。ローカルファイルの URL は `file://wsl.localhost/...` に変換して開きます。
 
+## ヘッドレスシェル
+
+`--engine headless-shell`（または後述の `auto`）で、Chromium の窓のないビルド `chrome-headless-shell` でセッションを動かします。Chrome と同じエンジンなので（実際のレイアウト、複数タブ、コマンドが終わってもページが残る）、常駐プロセスは要りません。メモリは Chrome の `--headless=new` の約半分です。同じ測定で、1 ページあたり 240〜260 MB 前後に対して、350〜470 MB でした（`docs/research-plan.md`）。
+
+- 入れ方: Playwright の `chromium_headless_shell` を、そのブラウザキャッシュ（`~/.cache/ms-playwright`、または `PLAYWRIGHT_BROWSERS_PATH`）から探します。`WEBHAND_HEADLESS_SHELL` にバイナリを指定するか、`chrome-headless-shell` を `PATH` に置いてもかまいません。
+- ページは Chrome と同じ 1120x780 です。Chrome の窓には、ブラウザの UI が 87px 含まれます（`--window-size=1120,867`）。シェルには UI がないので `1120,780` で起動します。窓の大きさを同じにすると、別の要素を読んでしまいます。
+- 窓も保存プロファイルもありません。`--headed`、`[person]` ステップ、`learn`、`profile` は使えず、`--chrome windows` も効きません。Chrome で作ったプロファイルは、シェルのビルドより新しいことがあるためです。
+- 窓も保存プロファイルも要らない実行では、これが既定です（`--engine auto`。既定。`WEBHAND_ENGINE` でも指定できます）。窓（`--headed`）、保存プロファイル、`--chrome windows` のときは Chrome のままで、シェルが入っていないときも、黙って Chrome を使います。`--engine chrome` なら必ず Chrome です。どちらで動いたかは `SESSION:` の行に出ます。
+
+## Lightpanda
+
+`--engine lightpanda` で、Chrome の代わりに [Lightpanda](https://lightpanda.io) でセッションを動かします（`--engine` は `chrome`、`lightpanda`、`obscura`。既定は `chrome`、または `WEBHAND_ENGINE`）。`--chrome auto|linux|windows` は Chrome をどこで動かすかだけを決め、エンジンには効きません。Lightpanda は CDP 接続が終わるとページを失い、webhand はコマンドごとに接続し直します。そこで webhand は小さな常駐プロセス（`src/daemon.ts`）を起動します。常駐が `lightpanda serve` を動かし、セッションの間、接続とページを1つ保ち、セッション用の一時フォルダにある所有者専用の unix ソケット（`state.socket`）でコマンドに応えます。常駐の中で動くのは同じ `Browser` なので、鮮度確認とリトライしない規則は Chrome と同じです。`finish` で常駐と Lightpanda をまとめて止めます。Chrome のセッションは常駐を使いません。
+
+制約:
+
+- 保存プロファイルはありません（`--session new` のみ）。画面もないため、`--headed`、`[person]` ステップ、`learn`、`profile` は使えません。
+- `file:` の URL は開けません（ページは http で配信します）。2つ目のタブも開けません。`target="_blank"` のリンクや `window.open` は何も起きず、エラーにもならず、ページはそのままです。そのステップの後に、実行ログへ `window_ignored` イベント（ステップと URL）を残すので、「何も起きなかったクリック」を、拒否されたものと区別できます。Jev に新しい選択肢は出しません。
+- レイアウトがないため、要素の位置は模擬で、スクリーンショットはプレースホルダーです。Jev に見せる内容が Chrome と違うので、Chrome との比較は別の実験として扱います。
+- `lightpanda` が `PATH` にある必要があります。
+
+## Obscura
+
+`--engine obscura` で、[Obscura](https://github.com/h4ckf0r0day/obscura)（Rust、V8、Apache-2.0）でセッションを動かします。仕組みは Lightpanda と同じで、常駐プロセスが接続とページを保ち、コマンドはセッションのソケットで頼みます。Lightpanda と違い、実際のレイアウト、実際のスクリーンショット、複数ページがあります。
+
+- 入れ方: リリースのアーカイブを展開し（`obscura` と `obscura-worker` を同じ場所に置く）、`WEBHAND_OBSCURA` に `obscura` のパスを設定するか、`PATH` に置きます。
+- Obscura は既定で、ループバックとプライベートアドレスを拒否します（SSRF 対策）。ローカルのページを使うときだけ `WEBHAND_OBSCURA_ALLOW_PRIVATE=1` を設定します。実在のサイトでは設定しません。
+- 制約は Lightpanda と同じです。保存プロファイルも窓もないので、`--headed`、`[person]` ステップ、`learn`、`profile` は使えません。
+- 新しいウィンドウ: `window.open` は何も開かず、Lightpanda と同じく `window_ignored` として記録します。`target="_blank"` のリンクは、新しいウィンドウではなく、同じタブでリンク先を読み込みます（ページが変わるので、`window_ignored` は出ません）。
+- タブ: Obscura は複数のページを持ち、webhand はそれらを切り替えられます（`TAB_n`）。ただし、ページの操作で2つ目のタブが開くことはない（上記）ので、実際には1つです。`Page.bringToFront` は未実装で、webhand は、それがなくても切り替えます。
+- `<body>` の直下にある inline の要素（段落、ブロック、flex の中でないもの）は、大きさが 0 になり、Jev には出ません。ブロックの中にあれば出ます。
+- Chrome にある Web API の一部が、Obscura にはありません。webhand は、次のものをページ側に足します（`compat`。`src/browser.ts`。`assets/snapshot.js` はどのエンジンでも同じです）。反復できる `select.selectedOptions`、`isContentEditable`（編集できる div を `textbox` にするため）、フォームの子要素の名前での参照（`form.guest`）、id でのフォームの参照（`document.forms.id`）。後の2つがないと、ハンドラが `form.guest.value` と読むページは例外になり、フォームが送信されません。足せないもの: スタイルシートの規則で指定した cursor は `auto` と読めます（インラインの style だけが `pointer` になる）。CSS の cursor だけでクリックできる要素は、Jev に出ません。
+
 ## コマンド
 
 下の表の `webhand` は、インストールしていなければ `npx -y webhand@0.3` と読み替えてください。`webhand --version` で版を確認できます。
