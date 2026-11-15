@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fieldnote · Choose your seat</title>
+<style>
+  body { font: 16px/1.6 system-ui, sans-serif; margin: 0 auto; max-width: 640px; padding: 0 24px; }
+  canvas { border: 1px solid #ccc; }
+  #status { margin: 8px 0; font-weight: 600; }
+</style></head>
+<body>
+  <nav><a href="#help">Help</a> · <a href="#legend">Legend</a> · <a href="#prices">Prices</a> · <button id="zoom" type="button">Zoom map</button> · <button id="print" type="button">Print map</button></nav>
+  <h1>Choose your seat</h1>
+  <p>Pick a seat on the map. Rows A to D, seats 1 to 6.</p>
+  <canvas id="map" width="480" height="200"></canvas>
+  <p id="status" role="status">Selected seat: none</p>
+  <p>The seat map does not work in every browser. The plain list version of this page is seats-list.html, in the same folder.</p>
+<script>
+  // The seats exist only as pixels on a canvas: nothing in the page lists them.
+  const canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
+  const rows = ["A", "B", "C", "D"];
+  rows.forEach((r, y) => { for (let x = 0; x < 6; x++) {
+    ctx.fillStyle = "#cde"; ctx.fillRect(10 + x * 78, 10 + y * 48, 66, 38);
+    ctx.fillStyle = "#123"; ctx.fillText(r + (x + 1), 30 + x * 78, 34 + y * 48);
+  } });
+  canvas.addEventListener("click", e => {
+    const b = canvas.getBoundingClientRect(), x = Math.floor((e.clientX - b.left - 10) / 78), y = Math.floor((e.clientY - b.top - 10) / 48);
+    if (x < 0 || x > 5 || y < 0 || y > 3) return;
+    const seat = rows[y] + (x + 1);
+    document.body.dataset.seat = seat;
+    document.getElementById("status").textContent = "Selected seat: " + seat;
+  });
+  document.getElementById("zoom").addEventListener("click", () => { document.getElementById("status").dataset.zoom = "1"; });
+  document.getElementById("print").addEventListener("click", () => { document.getElementById("status").dataset.print = "1"; });
+</script>
+</body>
+</html>

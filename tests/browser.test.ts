@@ -776,6 +776,23 @@ test("needs_extra_value: the company code is asked for only after Request quote"
   expect(await browser.evaluate("document.getElementById('error').hidden")).toBe(true);
 });
 
+test("canvas_seats: the seats are pixels, the list page has them as buttons", async () => {
+  const seats = await loadTask("canvas_seats");
+  await browser.close();
+  await open(seats.startUrl(ROOT));
+  expect((await seats.verify(browser)).success).toBe(false);
+  const page = await browser.observe();
+  expect(page.actions.map((a: Action) => a.label).join(" ")).not.toContain("B4");
+  expect((await browser.unseen()).canvases).toBe(1);
+  await browser.close();
+  await open(seats.startUrl(ROOT).replace("canvas_seats.html", "seats-list.html"));
+  const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
+  const plan = { goal: seats.GOAL, steps: [], values: [] };
+  await runAgent(browser, new ScriptedPolicy(seats.SCRIPT), plan, recorder);
+  recorder.close();
+  expect(await seats.verify(browser)).toEqual({ success: true, evidence: { seat: "B4" } });
+});
+
 test("a covered target does not run, and Jev is told what covers it; closing the cover lets it run", async () => {
   const wall = await loadTask("cookie_wall");
   await browser.close();

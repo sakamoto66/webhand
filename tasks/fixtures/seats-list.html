@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fieldnote · Choose your seat (list)</title>
+<style>
+  body { font: 16px/1.6 system-ui, sans-serif; margin: 0 auto; max-width: 640px; padding: 0 24px; }
+  ul { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  #status { margin: 8px 0; font-weight: 600; }
+</style></head>
+<body>
+  <h1>Choose your seat (list)</h1>
+  <p id="status" role="status">Selected seat: none</p>
+  <ul>
+    <li><button data-seat="A1">Seat A1</button></li>
+    <li><button data-seat="A2">Seat A2</button></li>
+    <li><button data-seat="A3">Seat A3</button></li>
+    <li><button data-seat="A4">Seat A4</button></li>
+    <li><button data-seat="A5">Seat A5</button></li>
+    <li><button data-seat="A6">Seat A6</button></li>
+    <li><button data-seat="B1">Seat B1</button></li>
+    <li><button data-seat="B2">Seat B2</button></li>
+    <li><button data-seat="B3">Seat B3</button></li>
+    <li><button data-seat="B4">Seat B4</button></li>
+    <li><button data-seat="B5">Seat B5</button></li>
+    <li><button data-seat="B6">Seat B6</button></li>
+    <li><button data-seat="C1">Seat C1</button></li>
+    <li><button data-seat="C2">Seat C2</button></li>
+    <li><button data-seat="C3">Seat C3</button></li>
+    <li><button data-seat="C4">Seat C4</button></li>
+    <li><button data-seat="C5">Seat C5</button></li>
+    <li><button data-seat="C6">Seat C6</button></li>
+    <li><button data-seat="D1">Seat D1</button></li>
+    <li><button data-seat="D2">Seat D2</button></li>
+    <li><button data-seat="D3">Seat D3</button></li>
+    <li><button data-seat="D4">Seat D4</button></li>
+    <li><button data-seat="D5">Seat D5</button></li>
+    <li><button data-seat="D6">Seat D6</button></li>
+  </ul>
+<script>
+  document.querySelectorAll("button[data-seat]").forEach(b => b.addEventListener("click", () => {
+    document.body.dataset.seat = b.dataset.seat;
+    document.getElementById("status").textContent = "Selected seat: " + b.dataset.seat;
+  }));
+</script>
+</body>
+</html>

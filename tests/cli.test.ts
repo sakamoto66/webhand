@@ -647,3 +647,21 @@ test("v2: a scroll loop is named in WHY", async () => {
   expect(out).toContain("OUTCOME STUCK");
   expect(out).toContain("WHY: Jev scrolled up and down three times");
 });
+
+test("v2: BLOCKED on a page whose target is drawn on a canvas says so, and offers another way", async () => {
+  expect((await research("start", "--task", "canvas_seats", "--chrome", "linux", "--flow", "v2")).code).toBe(OK);
+  ScriptedJev.moves = [["BLOCKED", null, null]];
+  const { out } = await cli("run");
+  expect(out).toContain("OUTCOME BLOCKED");
+  expect(out).toContain("1 canvas, 0 frame, and 0 plugin parts");
+  expect(out).toContain("another way");
+  await research("finish", "--status", "abandoned");
+});
+
+test("v2: BLOCKED on a page with nothing hidden gets no canvas hint", async () => {
+  await begin("--flow", "v2");
+  ScriptedJev.moves = [["BLOCKED", null, null]];
+  const { out } = await cli("run");
+  expect(out).toContain("OUTCOME BLOCKED");
+  expect(out).not.toContain("plugin parts");
+});

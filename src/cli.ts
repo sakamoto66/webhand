@@ -577,6 +577,17 @@ async function commandStart(args: Args): Promise<number> {
 /** Outcomes after which `answer` continues the same attempt (v2). */
 const ANSWERABLE: string[] = [agent.ESCALATE, agent.STUCK, agent.BLOCKED, agent.GOAL_REPORTED, agent.JEV_FAILED];
 
+/** v2: parts of the page webhand cannot see into, said plainly so that Claude looks for another way. */
+function unseenHint(page: Page): string {
+  if (!agent.unseenParts(page)) return "";
+  const unseen = (page.status?.unseen ?? {}) as Record<string, number>;
+  return (
+    `. The page has ${unseen.canvases ?? 0} canvas, ${unseen.frames ?? 0} frame, and ${unseen.objects ?? 0} plugin parts ` +
+    "whose content webhand cannot see: what Jev needs may be inside one. Answering cannot reveal it; look for another way " +
+    "(a list or text version, another page, a keyboard route) or ask the person"
+  );
+}
+
 /** Why the run came back, from the log of this attempt only. No page text. */
 function diagnose(state: session.State, outcome: string): string {
   const status = state.page?.status as { kind?: string } | undefined;
@@ -591,18 +602,14 @@ function diagnose(state: session.State, outcome: string): string {
       return "Jev scrolled up and down three times and chose nothing: what it needs may not be on this page, or is elsewhere on it";
     }
     if (count("stale")) return "the last choices were refused as stale: the page keeps changing under the target";
-    if (count("missing")) {
-      const hidden = agent.unseenParts(state.page);
-      const unseen = (state.page.status?.unseen ?? {}) as Record<string, number>;
-      return hidden
-        ? `Jev could not find the element it needs in what was offered. The page has ${unseen.canvases ?? 0} canvas, ${unseen.frames ?? 0} frame, and ${unseen.objects ?? 0} plugin parts whose content webhand cannot see: the element may be inside one. Answering cannot reveal it; look for another way (a list or text version, another page, a keyboard route) or ask the person`
-        : "Jev could not find the element it needs in what was offered";
-    }
+    if (count("missing")) return `Jev could not find the element it needs in what was offered${unseenHint(state.page)}`;
     return "the last three actions did not change the page";
   }
   if (outcome === agent.GOAL_REPORTED) return "Jev thinks the goal is met and asks Claude to check the page";
   if (outcome === agent.JEV_FAILED) return "Jev gave no usable decision; nothing was executed";
-  return "Jev handed the decision to Claude: the page is not what the plan expects, nothing offered fits, or the operation cannot be undone";
+  const handed =
+    "Jev handed the decision to Claude: the page is not what the plan expects, nothing offered fits, or the operation cannot be undone";
+  return `${handed}${unseenHint(state.page)}`;
 }
 
 /** What Claude needs for this outcome, and nothing more. */
