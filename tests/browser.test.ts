@@ -1077,3 +1077,16 @@ test("menu_invoice_moved: the invoices are under Tools now, and the scripted run
   expect(result.outcome).toBe("GOAL_REPORTED");
   expect((await moved.verify(browser)).success).toBe(true);
 });
+
+test("two_parts: the second part, pinning the note, can be done by a scripted run", async () => {
+  const two = await loadTask("two_parts");
+  await browser.close();
+  await open(two.startUrl(ROOT), { whole: true });
+  expect((await two.verify(browser)).success).toBe(false);
+  const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
+  const plan = { goal: two.GOAL, steps: [], values: [], flow: "v2" as const };
+  const result = await runAgent(browser, new ScriptedPolicy(two.SCRIPT), plan, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect((await two.verify(browser)).success).toBe(true);
+});

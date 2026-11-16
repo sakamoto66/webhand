@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Notes</title>
+<nav><a href="two_home.html">Home</a> <a href="two_billing.html">Billing</a> <a href="two_notes.html">Notes</a></nav><hr>
+<h1>Notes</h1>
+<ul>
+<li>Groceries <button type="button" aria-label="Pin Groceries" onclick="pin('Groceries')">Pin</button></li>
+<li>Ideas <button type="button" aria-label="Pin Ideas" onclick="pin('Ideas')">Pin</button></li>
+<li>Travel <button type="button" aria-label="Pin Travel" onclick="pin('Travel')">Pin</button></li>
+</ul>
+<p id="result"></p>
+<script>
+function pin(name) {
+  document.body.dataset.pinned = name;
+  document.getElementById('result').textContent = 'Pinned ' + name;
+}
+</script>
