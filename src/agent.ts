@@ -326,6 +326,7 @@ export async function runAgent(
       onDecision(decisions);
       // v2: what worked before on this kind of page, when the site is known (stage 3).
       const known = options.knowledge?.hints(page.url) ?? [];
+      if (known.length) recorder.event("known_offered", { attempt, count: known.length });
       decision = await policy.choose(known.length ? { ...page, known } : page, plan, history);
       flushCalls();
       if (decision.operation === "NOT_VISIBLE") {

@@ -1026,10 +1026,17 @@ test("v2: a run that finished as done leaves hints, and the next run's Jev state
   };
   await browser.close();
   await open(menu.startUrl(ROOT), { whole: true });
-  const again = new Recorder(join(tmpPath(), "again.jsonl"));
+  const againLog = join(tmpPath(), "again.jsonl");
+  const again = new Recorder(againLog);
   await runAgent(browser, spy as never, plan, again, new Budget(), { knowledge: new Knowledge(dir) });
   again.close();
   expect(seen[0]).toEqual(hints);
+  const offered = readFileSync(againLog, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .filter((e) => e.type === "known_offered");
+  expect(offered[0]).toMatchObject({ count: 1 });
 });
 
 test("menu_orders: a scripted run opens the Orders page, and the verifier reads the page that is open", async () => {
