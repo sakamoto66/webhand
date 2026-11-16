@@ -42,7 +42,7 @@ flowchart LR
 | `NEEDS_VALUE` | No planned value fits an input field | `run --value "label=value"`; asks the user if unsure |
 | `NEEDS_HUMAN` | Login, verification code, CAPTCHA, or a `[person]` step | Asks the user, then `run --human-done` |
 | `BLOCKED` / `STUCK` / `ATTEMPT_BUDGET` | No way forward | `replan` to retry, `act` to fill in one action, or `finish` |
-| `ESCALATE` | Jev hands the decision to Claude (flow v2): a step the goal does not ask for that deletes, pays, sends, or cannot be undone | Reads `WHY:`, then `answer` so the same attempt goes on |
+| `ESCALATE` | Jev hands the decision to Claude (flow v2): a step the goal does not ask for that deletes, pays, sends, or cannot be undone, or a page the plan does not cover where nothing offered fits | Reads `WHY:`, then `answer` so the same attempt goes on |
 | `JEV_FAILED` | Jev's response was unusable (nothing was executed) | `run` again, `replan`, or `act` |
 | `UNCERTAIN` | Unknown whether an action took effect | Does not repeat it; `finish --status error` |
 
@@ -173,12 +173,12 @@ Prefix a step with `[person]` to make it a step a human performs (requires `--he
 | | v2 (default) | v1 |
 | --- | --- | --- |
 | What Jev is offered | The actions of the whole page, including elements beyond the viewport (scrolled into view before acting), and elements inside frames | What is in view, plus the regions Claude chose with `--focus` / `--read` |
-| When Jev cannot go on | Jev can `ESCALATE`; Claude answers with `answer` and the same attempt continues | The attempt ends with `STUCK` or `BLOCKED`; Claude runs `replan` |
-| Freshness check | On the target element and the address only | On the observed page |
+| When Jev cannot go on | Jev can also `ESCALATE`; Claude answers with `answer` (also after `STUCK`, `BLOCKED`, `GOAL_REPORTED`, `JEV_FAILED`) and the same attempt continues | The attempt ends with `STUCK` or `BLOCKED`; Claude runs `replan` |
+| Freshness check | On the target (the page key and the target's guard); scrolls and waits are never refused | On the observed page |
 | Page state | `PAGE:` line (`blocked`, `login`, `error`, ...), and a stop when the target is in a part webhand cannot see (canvas, plugin) | Not reported |
-| Earlier runs | Records what clicks and selects did on each kind of page, and offers it to Jev on the same kind of page | Not used |
+| Earlier runs | Records what clicks and selects did on each kind of page, and offers to Jev, on the same kind of page, the operations of runs that ended `done` (at most 5) | Not used |
 
-What v2 records is kept in `~/.webhand/knowledge/<host>.json`: the kind of page (the address with ids and query values taken out) and the kind and label of the operations tried on it. Typed text, values, anything that reads as personal data, and controls inside list items (their labels are page content) are not kept. `WEBHAND_KNOWLEDGE=0` turns recording off, and `webhand knowledge clear` deletes it.
+What v2 records is kept in `~/.webhand/knowledge/<host>.json`: the kind of page (the address with ids and query values taken out) and the kind and label of the operations tried on it. Typed text, values, anything that reads as personal data, and controls inside list items (their labels are page content) are not kept. `WEBHAND_KNOWLEDGE=0` turns off recording and offering, `WEBHAND_KNOWLEDGE_USE=0` stops only the offering to Jev, and `webhand knowledge clear` deletes it.
 
 ## Learning mode
 

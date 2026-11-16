@@ -1286,7 +1286,7 @@ async function commandProfile(args: Args): Promise<number> {
   return OK;
 }
 
-/** Saved logins. `save` takes the sign-in of a running session; `start --auth NAME` begins a new session with it. */
+/** What webhand learned about sites from its own runs: list, show HOST, clear [HOST]. */
 async function commandKnowledge(args: Args): Promise<number> {
   const knowledge = new Knowledge();
   if (args.action === "list") {

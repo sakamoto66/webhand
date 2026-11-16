@@ -4,7 +4,7 @@
  * the operations tried on it (kind and label) and what each did: how often the page changed, and where it went.
  * Only labels of controls that read as plain names are kept, and none from inside a list item (a result, a row,
  * a card: its label is the page's content, such as a name or a title); typed text, values, query values, and anything that
- * looks like personal data never are. Nothing here is shown to Jev yet: this step only records.
+ * looks like personal data never are. Operations from runs that ended done are offered to Jev on the same kind of page (hints()).
  */
 
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";

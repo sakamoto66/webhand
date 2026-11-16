@@ -42,7 +42,7 @@ flowchart LR
 | `NEEDS_VALUE` | 入力欄に合う値が計画にない | `run --value "ラベル=値"`。わからなければユーザーに聞く |
 | `NEEDS_HUMAN` | ログイン、認証コード、CAPTCHA、`[person]` の手順 | ユーザーに依頼し、`run --human-done` |
 | `BLOCKED` / `STUCK` / `ATTEMPT_BUDGET` | 進めなくなった | `replan` で再挑戦、`act` で1手補う、または `finish` |
-| `ESCALATE` | Jev が判断を Claude に任せた（flow v2）。目的が求めていない、削除・支払い・送信・取り消せない手順の前など | `WHY:` を読み、`answer` で同じ試行を続ける |
+| `ESCALATE` | Jev が判断を Claude に任せた（flow v2）。目的が求めていない、削除・支払い・送信・取り消せない手順の前、計画にないページで選べる操作がないときなど | `WHY:` を読み、`answer` で同じ試行を続ける |
 | `JEV_FAILED` | Jev の応答が使えない（何も実行していない） | もう一度 `run`、`replan`、または `act` |
 | `UNCERTAIN` | 操作が実行されたかどうか不明 | 繰り返さず、`finish --status error` |
 
@@ -173,12 +173,12 @@ networkingMode=mirrored
 | | v2（既定） | v1 |
 | --- | --- | --- |
 | Jev に出すもの | ページ全体の操作（画面外の要素は操作前にスクロールして見せる）とフレーム内の要素 | 見えている範囲と、Claude が `--focus` / `--read` で選んだ領域 |
-| Jev が進めないとき | Jev が `ESCALATE` できる。Claude が `answer` で答えると同じ試行が続く | 試行が `STUCK` か `BLOCKED` で終わり、Claude が `replan` する |
-| 鮮度の確認 | 操作対象の要素とアドレスだけ | 観測したページ全体 |
+| Jev が進めないとき | Jev が `ESCALATE` もできる。Claude が `answer`（`STUCK`、`BLOCKED`、`GOAL_REPORTED`、`JEV_FAILED` のあとも可）で答えると同じ試行が続く | 試行が `STUCK` か `BLOCKED` で終わり、Claude が `replan` する |
+| 鮮度の確認 | 操作対象（ページのキーと対象の guard）だけ。スクロールと待機は断らない | 観測したページ全体 |
 | ページの状態 | `PAGE:` の行（`blocked`、`login`、`error` など）。対象が webhand に見えない部分（canvas、プラグイン）にあるときは止める | 出さない |
-| 過去の実行 | 各ページ形でのクリックと選択の結果を記録し、同じ種類のページで Jev に示す | 使わない |
+| 過去の実行 | 各ページ形でのクリックと選択の結果を記録し、同じ種類のページで、`done` で終わった実行の操作を（最大5件）Jev に示す | 使わない |
 
-v2 が記録するのは、`~/.webhand/knowledge/<host>.json` に置く、ページの種類（ID とクエリ値を除いたアドレス）と、そこで試した操作の種類とラベルだけです。入力した文、値、個人情報に見えるもの、リスト項目の中のコントロール（ラベルがページの内容）は残しません。`WEBHAND_KNOWLEDGE=0` で記録を止め、`webhand knowledge clear` で消せます。
+v2 が記録するのは、`~/.webhand/knowledge/<host>.json` に置く、ページの種類（ID とクエリ値を除いたアドレス）と、そこで試した操作の種類とラベルだけです。入力した文、値、個人情報に見えるもの、リスト項目の中のコントロール（ラベルがページの内容）は残しません。`WEBHAND_KNOWLEDGE=0` で記録と提示を止め、`WEBHAND_KNOWLEDGE_USE=0` で Jev への提示だけを止め、`webhand knowledge clear` で消せます。
 
 ## 学習モード
 
