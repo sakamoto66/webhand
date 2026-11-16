@@ -6,6 +6,7 @@
 
 import type { PageCheck } from "./browser.ts";
 import { quote } from "./format.ts";
+import type { Knowledge } from "./knowledge.ts";
 import { pageEvent, type Recorder, type ScreenshotAfter, safeUrl } from "./metrics.ts";
 import {
   type Action,
@@ -180,7 +181,7 @@ export async function execute(
   decision: Decision,
   history: HistoryEntry[],
   recorder: Recorder,
-  options: { decidedBy: string; attempt: number; onChange?: OnChange; values?: Value[] },
+  options: { decidedBy: string; attempt: number; onChange?: OnChange; values?: Value[]; knowledge?: Knowledge },
 ): Promise<Page> {
   const onChange = options.onChange ?? (() => {});
   const action = decision.action as Page;
@@ -204,6 +205,13 @@ export async function execute(
   const newPage = await browser.observe();
   step.page_changed = !samePage(newPage, page);
   recorder.event("step_result", { step: step.step, page_changed: step.page_changed });
+  options.knowledge?.record({
+    from: page.url,
+    to: newPage.url,
+    kind: action.kind,
+    label: action.label,
+    changed: step.page_changed,
+  });
   if (asked.length) {
     recorder.event("window_ignored", { step: step.step, attempt: options.attempt, urls: asked.map(safeUrl) });
   }
@@ -273,6 +281,7 @@ export async function runAgent(
     decisions?: number;
     onChange?: OnChange;
     onDecision?: (count: number) => void;
+    knowledge?: Knowledge;
   } = {},
 ): Promise<AgentResult> {
   const attempt = plan.attempt ?? 1;
@@ -357,6 +366,7 @@ export async function runAgent(
         attempt,
         onChange,
         values: plan.values,
+        knowledge: options.knowledge,
       });
     } catch (error) {
       if (error instanceof StalePage) {

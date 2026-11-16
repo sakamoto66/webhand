@@ -14,6 +14,7 @@ import { Browser, type ViewChoice } from "./browser.ts";
 import { type Collected, type Collector, collectScan, MAX_COLLECTED } from "./collect.ts";
 import { type Compared, type Comparer, compareScan, MAX_PAGES, MAX_SCROLLS, type Reader } from "./compare.ts";
 import { describeError, quote, show, stamp, toJson } from "./format.ts";
+import { Knowledge } from "./knowledge.ts";
 import * as learn from "./learn.ts";
 import { gitState, logOnce, maskUrls, pageEvent, Recorder, safeUrl, summarize } from "./metrics.ts";
 import { loadMore, type MoreChooser } from "./more.ts";
@@ -780,6 +781,8 @@ async function commandRun(args: Args): Promise<number> {
       history: state.history,
       page: state.page,
       decisions: state.attempt_decisions,
+      // v2 records what its operations did, for the next run on the site (WEBHAND_KNOWLEDGE=0 turns it off).
+      knowledge: state.plan.flow === "v2" && process.env.WEBHAND_KNOWLEDGE !== "0" ? new Knowledge() : undefined,
       onChange: (page) => {
         state.page = page;
         session.save(state);

@@ -970,3 +970,24 @@ test("a tracking-pixel frame is not counted as a part webhand cannot see", async
     server.close();
   }
 });
+
+test("v2: a run records what its clicks did for the next run, and never what was typed", async () => {
+  const { Knowledge } = await import("../src/knowledge.ts");
+  const settings = await loadTask("settings_long");
+  await browser.close();
+  await open(settings.startUrl(ROOT), { whole: true });
+  const dir = join(tmpPath(), "knowledge");
+  const plan = { goal: settings.GOAL, steps: [], values: [], flow: "v2" as const };
+  const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
+  const script = [
+    { operation: "CLICK", label: "Weekly summary on" },
+    { operation: "CLICK", label: "Save settings" },
+  ];
+  await runAgent(browser, new ScriptedPolicy(script), plan, recorder, new Budget(), { knowledge: new Knowledge(dir) });
+  recorder.close();
+  const saved = JSON.parse(readFileSync(join(dir, "local.json"), "utf8"));
+  const transitions = Object.values(saved.pages).flatMap((p) =>
+    Object.keys((p as { transitions: object }).transitions),
+  );
+  expect(transitions).toEqual(expect.arrayContaining(["click|Weekly summary on", "click|Save settings"]));
+});
