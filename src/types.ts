@@ -49,6 +49,8 @@ export interface ModelCall {
   dropped_elements?: number;
   /** The lowered token budget the request was fitted to, after Jev refused one over its limit */
   token_budget?: number;
+  /** What Jev counted over what was estimated for the previous request (the estimate is scaled by it) */
+  token_scale?: number;
   /** The requests Jev refused over its limit before this one went through: what the refused request held */
   refused?: { estimated_tokens: number; request_chars: number; choices: number; elements: number; budget: number }[];
 }
