@@ -16,7 +16,7 @@ npm run build && npm link      # webhand コマンドを作業ツリーのビル
 claude --plugin-dir .          # このチェックアウトのスキルを読み込む
 ```
 
-このリポジトリ内では `npx -y webhand@0.3` が `webhand: not found` で失敗します。npm がリポジトリ自身（`webhand@0.3.0`）を指定に合うものとみなし、ローカルの `node_modules/.bin` から bin を探すためです。`npm link` を使う（スキルは `webhand` を直接実行する）か、`npx -y webhand@latest` を使ってください。
+このリポジトリ内では `npx -y webhand@0.4` が `webhand: not found` で失敗します。npm がリポジトリ自身（`webhand@0.4.0`）を指定に合うものとみなし、ローカルの `node_modules/.bin` から bin を探すためです。`npm link` を使う（スキルは `webhand` を直接実行する）か、`npx -y webhand@latest` を使ってください。
 
 実行ログをリポジトリ内に残すには、`.claude/settings.local.json`（コミットしない）に次を書きます。
 

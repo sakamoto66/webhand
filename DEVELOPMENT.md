@@ -16,7 +16,7 @@ npm run build && npm link      # point the webhand command at this working tree'
 claude --plugin-dir .          # load the skills from this checkout
 ```
 
-Inside this repository, `npx -y webhand@0.3` fails with `webhand: not found`: npm treats the repository itself (`webhand@0.3.0`) as satisfying the spec and looks for the bin in the local `node_modules/.bin`. Use `npm link` (the skills then run `webhand` directly) or `npx -y webhand@latest`.
+Inside this repository, `npx -y webhand@0.4` fails with `webhand: not found`: npm treats the repository itself (`webhand@0.4.0`) as satisfying the spec and looks for the bin in the local `node_modules/.bin`. Use `npm link` (the skills then run `webhand` directly) or `npx -y webhand@latest`.
 
 To keep run logs inside the repository, put this in `.claude/settings.local.json` (not committed):
 
