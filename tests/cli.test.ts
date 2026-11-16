@@ -597,7 +597,7 @@ test("v2: ESCALATE stops with a diagnosis, and answer continues the same attempt
 });
 
 test("answer is for v2 only", async () => {
-  await begin();
+  await begin("--flow", "v1");
   ScriptedJev.moves = [["BLOCKED", null, null]];
   await cli("run");
   const { code, out } = await cli("answer", "--note", "x");

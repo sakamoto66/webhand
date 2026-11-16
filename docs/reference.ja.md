@@ -42,6 +42,7 @@ flowchart LR
 | `NEEDS_VALUE` | 入力欄に合う値が計画にない | `run --value "ラベル=値"`。わからなければユーザーに聞く |
 | `NEEDS_HUMAN` | ログイン、認証コード、CAPTCHA、`[person]` の手順 | ユーザーに依頼し、`run --human-done` |
 | `BLOCKED` / `STUCK` / `ATTEMPT_BUDGET` | 進めなくなった | `replan` で再挑戦、`act` で1手補う、または `finish` |
+| `ESCALATE` | Jev が判断を Claude に任せた（flow v2）。目的が求めていない、削除・支払い・送信・取り消せない手順の前など | `WHY:` を読み、`answer` で同じ試行を続ける |
 | `JEV_FAILED` | Jev の応答が使えない（何も実行していない） | もう一度 `run`、`replan`、または `act` |
 | `UNCERTAIN` | 操作が実行されたかどうか不明 | 繰り返さず、`finish --status error` |
 
@@ -154,14 +155,30 @@ networkingMode=mirrored
 | `webhand start --goal G --url U --step S ... --value L=V ... --session ...` | Claude | 計画を記録し、Chrome で開始 URL を開く |
 | `webhand run` | Jev | GOAL まで操作する |
 | `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | Claude | 計画を見直して、次の試行を始める。開始 URL から（`--restart`）、または別のページから（`--url`） |
+| `webhand answer --note N [--value L=V] [--url URL]` | Claude | 同じ試行の中で Jev に答える（flow v2 のみ）。履歴と予算は引き継ぐ。計画全体が違うときだけ `replan` を使う |
 | `webhand act OP [TARGET]` | Claude | Jev の代わりに操作を1つ実行する |
 | `webhand observe` | Claude | 現在のページを表示する |
 | `webhand finish --status STATUS` | Claude | 独立検証、ログ記録、Chrome の終了 |
 | `webhand learn --name NAME --url URL [--scope project\|user]` | 人 | 操作を記録する |
 | `webhand profile login/list/delete` | 人 | 保存プロファイルを管理する |
 | `webhand auth save/list/delete NAME` | Claude | セッションのログインを保存し、`--auth NAME` で新しいセッションを始められるようにする |
+| `webhand knowledge list/show HOST/clear [HOST]` | 人 | webhand が自分の実行から学んだサイトの知識を表示・削除する（flow v2） |
 
 手順の先頭に `[person]` を付けると、人が行う手順になります（`--headed` が必須です）。`start` と `replan` の `--focus REGION` / `--skip REGION` で、観測する領域を選べます（下の「ページの領域」）。`--read KIND` で、画面の外の内容を足せます（下の「画面の外を読む」）。`--runbook NAME --param k=v` を指定すると、手順書の GOAL、開始 URL、手順が既定値になり、params は入力値として Jev に渡されます。
+
+### flow v1 と v2
+
+`start --flow v2` が既定です。`--flow v1` または `WEBHAND_FLOW=v1` で、以前の流れを選べます。v1 は実験の基準として残しています。
+
+| | v2（既定） | v1 |
+| --- | --- | --- |
+| Jev に出すもの | ページ全体の操作（画面外の要素は操作前にスクロールして見せる）とフレーム内の要素 | 見えている範囲と、Claude が `--focus` / `--read` で選んだ領域 |
+| Jev が進めないとき | Jev が `ESCALATE` できる。Claude が `answer` で答えると同じ試行が続く | 試行が `STUCK` か `BLOCKED` で終わり、Claude が `replan` する |
+| 鮮度の確認 | 操作対象の要素とアドレスだけ | 観測したページ全体 |
+| ページの状態 | `PAGE:` の行（`blocked`、`login`、`error` など）。対象が webhand に見えない部分（canvas、プラグイン）にあるときは止める | 出さない |
+| 過去の実行 | 各ページ形でのクリックと選択の結果を記録し、同じ種類のページで Jev に示す | 使わない |
+
+v2 が記録するのは、`~/.webhand/knowledge/<host>.json` に置く、ページの種類（ID とクエリ値を除いたアドレス）と、そこで試した操作の種類とラベルだけです。入力した文、値、個人情報に見えるもの、リスト項目の中のコントロール（ラベルがページの内容）は残しません。`WEBHAND_KNOWLEDGE=0` で記録を止め、`webhand knowledge clear` で消せます。
 
 ## 学習モード
 
@@ -233,7 +250,7 @@ nav#2                                    # 名前のない同じ種類が並ぶ�
 - 観測結果の `regions` には、領域ごとに位置（`above` / `visible` / `below`）、テキストと操作の表示数と全数、画面外の操作の数が入ります。Claude には `REGIONS`、Jev には `page.regions` として渡ります。何が切り捨てられたかがわかります。
 - `focus` の領域は先頭に並び、テキストはページ全体から取ります。`skip` の領域は要約にだけ出ます。どちらもないときは、画面内を DOM 順に取ります。開いた dialog は、view があるときは常に先頭です。
 - パターンはキーのどこに一致してもよく、一致した領域の内側も含みます。名前や番号のない段（`form`）は、その種類のどの領域にも一致します。focus と skip の両方に一致したら、深いほうが勝ちます（同じ深さなら focus）。
-- 操作の対象は view に関係なく画面内だけです。鮮度の判定（`marker`、`page_key`、`guards`）は、view に関係なく同じ入力から計算します。
+- flow v1 では、操作の対象は view に関係なく画面内だけです（v2 は画面外の要素も出します）。鮮度の判定（`marker`、`page_key`、`guards`）は、view に関係なく同じ入力から計算します。
 - view は、service.toml の `default`、手順書の `focus` / `skip`、Claude の `--focus` / `--skip` の順に重ね、後のものが勝ちます。`run_start` と `plan` のイベントに `view` が残ります。
 
 ```toml
@@ -257,7 +274,7 @@ skip = ["header", "footer"]
 
 ## 画面の外を読む
 
-Jev と Claude は、ふだんページの見えている部分しか受け取りません。よくあるページでは文章が500字ほどで、ページ全体には数万字あることもあります。`start` か `replan` に `--read KIND`（複数可）を付けると、観測のたびに、ページ全体から選んだ種類の内容を読み取り層として足します。Claude は `run` と `observe` の出力の `READ` で、Jev は `page.read` で受け取ります。
+flow v1 では（文章は v2 でも）、Jev と Claude は、ふだんページの見えている部分しか受け取りません。よくあるページでは文章が500字ほどで、ページ全体には数万字あることもあります。`start` か `replan` に `--read KIND`（複数可）を付けると、観測のたびに、ページ全体から選んだ種類の内容を読み取り層として足します。Claude は `run` と `observe` の出力の `READ` で、Jev は `page.read` で受け取ります。
 
 | 種類 | 中身 |
 | --- | --- |
@@ -269,7 +286,7 @@ Jev と Claude は、ふだんページの見えている部分しか受け取�
 | `control` | 画面外のボタン、入力欄などの操作要素。役割と名前だけ |
 | `media` | 画像の代替テキストと図の説明 |
 
-- 読むためだけのものです。この中のものは操作できません。操作の対象と鮮度の確認は、下の `SCROLL_TO` を除いて、これまでどおり見えている部分だけで決まります。`@ below 1200px` のような行は、その後の行がどこにあるかを示します。Jev はこれを見て、正しい方向へスクロールできます。
+- 読むためだけのものです。この中のものは操作できません。flow v1 では、操作の対象と鮮度の確認は、下の `SCROLL_TO` を除いて見えている部分だけで決まります（v2 は画面外の要素も操作の対象にします）。`@ below 1200px` のような行は、その後の行がどこにあるかを示します。Jev はこれを見て、正しい方向へスクロールできます。
 - 見えている部分にある本文、リストの項目、リンク、操作要素は入れません。画面内の文章と要素に、すでに入っているためです。見出しと表は、全体を入れます。
 - 読み取り層は最大12,000字です。種類ごとに同じ量を割り当て、少なくて済む種類の残りをほかの種類に回します。行は途中で切りません。切った種類の最後には `... N more characters` が付きます。
 - 読み取り層があるときは、画面外の要素（最大60個。近いものと遠いものを残す）を、`SCROLL_TO` の対象としてだけ、位置（`at="below 1200px"`）つきで渡します。`SCROLL_TO` はその要素を画面の中ほどまでスクロールするだけで、ほかには何もしません。次の観測で、その要素を操作できます。スクロールするたびに項目が増えるリストでは、最後の要素に `SCROLL_TO` すると次の項目が読み込まれます。Claude も `webhand act SCROLL_TO N` で使えます。

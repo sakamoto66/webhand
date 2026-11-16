@@ -1458,8 +1458,8 @@ function commands(): Record<string, CommandSpec> {
           name: "flow",
           type: "string",
           choices: [...FLOWS],
-          default: process.env.WEBHAND_FLOW || "v1",
-          help: "v2: offer Jev the whole page (research). Default: WEBHAND_FLOW, else v1",
+          default: process.env.WEBHAND_FLOW || "v2",
+          help: "v2 (default): offer Jev the whole page; v1: only what is in view. Default: WEBHAND_FLOW, else v2",
         },
         { name: "session", type: "string", default: "new", help: "new (temporary) or profile:NAME (saved sign-in)" },
         {

@@ -63,7 +63,7 @@ Add `--headed` when there are `[person]` steps, when the goal may stop at someth
 | `GOAL_REPORTED` | Check the printed page against every requirement of the goal. If it is met, finish `done`. If not, replan |
 | `NEEDS_VALUE` | `run --value "LABEL=VALUE"` with a value the goal or the user gave, where LABEL is the field's label exactly as the output shows it. Ask the user if you do not have it |
 | `NEEDS_HUMAN` | Ask the user to do it in the Chrome window, wait for them, then `run --human-done` |
-| `ESCALATE` (v2) | Jev handed the decision to you. Read `WHY:`, then answer (section 4b) so the same attempt goes on. It is not the end of the goal: do not finish while parts of the goal are still undone |
+| `ESCALATE` | Jev handed the decision to you. Read `WHY:`, then answer (section 4b) so the same attempt goes on. It is not the end of the goal: do not finish while parts of the goal are still undone |
 | `BLOCKED`, `STUCK`, `ATTEMPT_BUDGET` | Replan (section 4), or `act` once and `run` again. If the page is out of reach, section 5 |
 | `JEV_FAILED` | Nothing ran. `run` again once; if it repeats, replan or `act` |
 | `UNCERTAIN` | The action may have happened. Never repeat it or replan. Finish `error` |
@@ -79,7 +79,7 @@ webhand run
 
 `--reason` reaches Jev, so state the fact it missed. A reason alone often does not change what Jev does next: also rewrite the steps with `--step`, putting what not to do first into the first step and the visible condition into the step that went wrong too early. When `REGIONS` shows that the region a step needs was cut (`actions 0/141`) or skipped, add `--focus` for it or `--skip` for what crowded it out; this replaces your earlier `--focus` / `--skip`. When Jev scrolled up and down on a long page looking for something, add `--read` for what it was looking for, or change it with `--read KIND` (`--read none` turns it off). When Jev chose an item before the whole list was seen, add `--compare "CRITERION"`; each attempt compares again, and `--compare none` turns it off. When the answer needs every matching item of a long list and only part of it was seen, add `--collect "CONDITION"`; `--collect none` turns it off. When the compare or collect output shows fewer items than the list has because the rest is behind a button or a next page, add `--more "CONTROL"`; `--more none` turns it off. Use `--restart` to open the start URL again when the page is in a bad state; leave it out to continue from the current page. Do not restart after something was submitted on a real service. `replan` refuses after the attempt limit (3 by default); then finish `blocked`.
 
-## 4b. Answer Jev (only with `--flow v2` or `WEBHAND_FLOW=v2`)
+## 4b. Answer Jev (the default flow v2; not with `--flow v1` or `WEBHAND_FLOW=v1`)
 
 When the outcome is `ESCALATE`, `STUCK`, `BLOCKED`, `GOAL_REPORTED`, or `JEV_FAILED`, webhand prints `WHY:` and the page. Answer in the same attempt instead of replanning:
 
