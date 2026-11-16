@@ -941,10 +941,15 @@ test("v2: a scripted run fills and clicks inside an iframe, and the verifier rea
   const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
   const plan = { goal: checkout.GOAL, steps: [], values: [], flow: "v2" as const };
   expect((await checkout.verify(browser)).success).toBe(false);
-  const result = await runAgent(browser, new ScriptedPolicy(checkout.SCRIPT), plan, recorder);
+  const history: HistoryEntry[] = [];
+  const result = await runAgent(browser, new ScriptedPolicy(checkout.SCRIPT), plan, recorder, new Budget(), {
+    history,
+  });
   recorder.close();
   expect(result.outcome).toBe("GOAL_REPORTED");
   expect((await checkout.verify(browser)).success).toBe(true);
+  // Typing and pressing inside the frame change the page, though the page's own text and fields stay as they were.
+  expect(history.map((h) => h.page_changed)).toEqual([true, true]);
 });
 
 test("without whole, the frame's elements are not offered", async () => {

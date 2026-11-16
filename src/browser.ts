@@ -664,6 +664,7 @@ export class Browser {
     const frames = this.page.frames().filter((f) => f !== main && !f.isDetached());
     const added: Action[] = [];
     const keys: Record<string, unknown> = {};
+    const markers: Record<string, unknown> = {};
     const skipped: Record<string, number> = {};
     const skip = (reason: string) => {
       skipped[reason] = (skipped[reason] ?? 0) + 1;
@@ -687,6 +688,7 @@ export class Browser {
           continue;
         }
         keys[String(no)] = inner.page_key;
+        markers[String(no)] = inner.marker;
         Object.assign(state.guards, inner.guards);
         for (const action of inner.actions) {
           if (["scroll", "wait", "tab"].includes(action.kind)) continue;
@@ -708,6 +710,9 @@ export class Browser {
     }
     if (!added.length && !Object.keys(keys).length) return;
     state.frame_keys = keys;
+    // What the frames showed, so that a change inside a frame counts as the page having changed (not in `marker`, which
+    // the freshness check compares with the main page alone).
+    state.frame_markers = markers;
     const at = state.actions.findIndex((a: Action) => ["scroll", "wait"].includes(a.kind));
     state.actions.splice(at < 0 ? state.actions.length : at, 0, ...added);
     let n = 0;

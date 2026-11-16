@@ -252,9 +252,13 @@ function sameMarker(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-/** The same page in the same tab setup: a new or closed tab, or a switch, is a change even when the page is not. */
+/** The same page in the same tab setup and frames: a new or closed tab, a switch, or a change inside a frame is a change even when the page is not. */
 function samePage(a: Page, b: Page): boolean {
-  return sameMarker(a.marker, b.marker) && sameMarker(a.tabs ?? null, b.tabs ?? null);
+  return (
+    sameMarker(a.marker, b.marker) &&
+    sameMarker(a.tabs ?? null, b.tabs ?? null) &&
+    sameMarker(a.frame_markers ?? null, b.frame_markers ?? null)
+  );
 }
 
 export interface AgentResult {
