@@ -947,3 +947,26 @@ test("without whole, the frame's elements are not offered", async () => {
   expect(find(page, (a) => a.label === "Place order")).toBeUndefined();
   expect(page.frames_log).toBeUndefined();
 });
+
+test("a tracking-pixel frame is not counted as a part webhand cannot see", async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "text/html" });
+    response.end(
+      '<title>T</title><iframe width="1" height="1" src="about:blank"></iframe><iframe width="300" height="100" src="about:blank"></iframe>',
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    await browser.close();
+    await open(`http://127.0.0.1:${(server.address() as AddressInfo).port}/`);
+    expect((await browser.unseen()).frames).toBe(1);
+    await browser.close();
+    const page = await (
+      await open(`http://127.0.0.1:${(server.address() as AddressInfo).port}/`, { whole: true })
+    ).observe();
+    // The large frame is blank, so nothing of it is read, and one is left unseen.
+    expect(page.status.unseen.frames).toBeLessThanOrEqual(1);
+  } finally {
+    server.close();
+  }
+});

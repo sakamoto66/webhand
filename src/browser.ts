@@ -19,6 +19,8 @@ export function asset(name: string): string {
   return readFileSync(new URL(`../assets/${name}`, import.meta.url), "utf8");
 }
 
+// A frame smaller than this on either side (a tracking pixel, an ad slot) is neither read nor counted as unseen.
+const MIN_FRAME_SIDE = 20;
 const SNAPSHOT = asset("snapshot.js").trim();
 
 export interface ViewChoice {
@@ -80,13 +82,15 @@ const STATUS = `(() => {
   const kind = http >= 400 ? 'error' : signs.length ? 'check' : any('input[type="password"]') ? 'sign_in'
     : any('dialog[open],[role="dialog"],[role="alertdialog"],[aria-modal="true"]') ? 'dialog' : 'ready';
   const count = selector => [...document.querySelectorAll(selector)].filter(shown).length;
-  const unseen = {frames: count('iframe,frame'), canvases: count('canvas'), objects: count('object,embed')};
+  const framed = [...document.querySelectorAll('iframe,frame')].filter(e => { const r=e.getBoundingClientRect(); return r.width>=${MIN_FRAME_SIDE} && r.height>=${MIN_FRAME_SIDE} && getComputedStyle(e).visibility !== 'hidden'; }).length;
+  const unseen = {frames: framed, canvases: count('canvas'), objects: count('object,embed')};
   return {kind, ...(http ? {http_status: http} : {}), ...(signs.length ? {signs} : {}), unseen};
 })()`;
 const UNSEEN = `(() => {
   const shown = e => { const r=e.getBoundingClientRect(); return r.width>0 && r.height>0; };
   const count = selector => [...document.querySelectorAll(selector)].filter(shown).length;
-  return {frames: count('iframe,frame'), canvases: count('canvas'), objects: count('object,embed')};
+  const framed = [...document.querySelectorAll('iframe,frame')].filter(e => { const r=e.getBoundingClientRect(); return r.width>=${MIN_FRAME_SIDE} && r.height>=${MIN_FRAME_SIDE}; }).length;
+  return {frames: framed, canvases: count('canvas'), objects: count('object,embed')};
 })()`;
 /**
  * Notes what asks for a new window: window.open and a click on a link with target=_blank. Nothing is stopped or
@@ -356,7 +360,6 @@ const MAX_TAB_TITLE = 60;
 // frame: frame number times FRAME_BASE plus the id the frame's own snapshot gave. The main page is frame 0.
 const FRAME_BASE = 1_000_000;
 const MAX_FRAMES = 8;
-const MIN_FRAME_SIDE = 20;
 const FRAME_TEXT_LIMIT = 1500;
 const frameOf = (node: unknown): number => (Number.isInteger(node) ? Math.floor((node as number) / FRAME_BASE) : 0);
 // Makes the ids a frame's snapshot gives start at its own base.
