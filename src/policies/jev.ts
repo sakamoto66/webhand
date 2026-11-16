@@ -137,10 +137,12 @@ export function validateChoice(answer: Json, ids: Iterable<string>): Json {
 const NO_VALUE = "NONE";
 
 // Jev refuses a request over its token limit (HTTP 400 max_tokens_exceeded) and a question with more than 255
-// choices (HTTP 422), found 2026-11-13. Requests of about 40k tokens passed. Jev's tokenizer is not known, and
-// Japanese counted higher than estimated (round 17), so a refusal over the limit lowers the budget and the
-// request is fitted again; nothing runs in the browser in between.
-const TOKEN_BUDGET = 40_000;
+// choices (HTTP 422), found 2026-11-13. The estimate below read lower than Jev's count on real pages, by up to 1.5
+// times, and the limit sits at about 24k estimated tokens: in round ff, all 320 requests that went through held
+// 23,876 or fewer, and all 8 refused held 24,987 or more (rounds fc to ff showed that 40k, the first budget, was
+// refused again and again, and the budget lowered by a refusal stayed lowered for the run). A refusal still lowers
+// the budget and the request is fitted again; nothing runs in the browser in between.
+const TOKEN_BUDGET = 24_000;
 const MAX_CHOICES = 255;
 const OVER_LIMIT = "max_tokens_exceeded";
 const FIT_TRIES = 3;

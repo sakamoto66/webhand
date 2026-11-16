@@ -636,7 +636,7 @@ test("v2: a whole page over Jev's token limit is fitted; the target a few screen
       probabilities: Object.fromEntries(Object.keys(criteria).map((k) => [k, k === choice ? 1 : 0])),
     });
     const offered = Object.entries(request.questions.click_target.criteria).find(([, c]) =>
-      JSON.stringify(c).includes("Add Moss Towel 23 to cart"),
+      JSON.stringify(c).includes("Add Moss Towel 15 to cart"),
     );
     const done = sent.length > 1;
     const answers = {
@@ -652,7 +652,7 @@ test("v2: a whole page over Jev's token limit is fitted; the target a few screen
   const result = await runAgent(browser, policy, plan, recorder);
   recorder.close();
   expect(result.outcome).toBe("GOAL_REPORTED");
-  expect(estimateTokens(sent[0])).toBeLessThanOrEqual(40_000);
+  expect(estimateTokens(sent[0])).toBeLessThanOrEqual(24_000);
   const calls = readFileSync(log, "utf8")
     .trim()
     .split("\n")

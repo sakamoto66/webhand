@@ -181,7 +181,7 @@ test("over the token budget, elements in view are left out from the end", async 
     [],
   );
   const request = JSON.stringify(sent[0].body);
-  expect(estimateTokens(request)).toBeLessThanOrEqual(40_000);
+  expect(estimateTokens(request)).toBeLessThanOrEqual(24_000);
   // biome-ignore lint/suspicious/noExplicitAny: a request body as JSON.
   const labels = (sent[0].body as any).state.elements.map((e: { label: string }) => e.label);
   expect(labels[0]).toMatch(/^商品1 /);
@@ -211,7 +211,7 @@ test("refused over its limit, the request is fitted again to a lower budget, whi
       request_chars: JSON.stringify(sent[0].body).length,
       choices: expect.any(Number),
       elements: 205,
-      budget: 40_000,
+      budget: 24_000,
     },
   ]);
   await policy.choose(bigPage(5, 200), PLAN, []);
