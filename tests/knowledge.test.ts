@@ -140,3 +140,11 @@ test("the knowledge command lists, shows and clears what was learned, for the us
   expect((await cli("knowledge", "clear", "a.test")).out).toBe("FORGOT 1 site (a.test)\n");
   expect((await cli("knowledge", "list")).out).toBe("KNOWN SITES: (none)\n");
 });
+
+test("a control inside a list item is not recorded: its label is the page's content", () => {
+  const knowledge = new Knowledge(join(tmpPath(), "knowledge"));
+  const step = { from: "https://s.test/results", to: "https://s.test/hotel", kind: "click", changed: true };
+  expect(knowledge.record({ ...step, label: "Hotel Aurora", inItem: true })).toBe(false);
+  expect(knowledge.record({ ...step, label: "Next page", inItem: false })).toBe(true);
+  expect(knowledge.hosts()).toEqual([{ host: "s.test", pages: 1, operations: 1, worked: 0 }]);
+});

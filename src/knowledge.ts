@@ -2,7 +2,8 @@
  * What webhand learns about a site from its own runs (v2, stage 3), kept in the user's folder:
  * $WEBHAND_HOME/knowledge/<host>.json. For each kind of page (the address with ids and query values taken out),
  * the operations tried on it (kind and label) and what each did: how often the page changed, and where it went.
- * Only labels of controls that read as plain names are kept; typed text, values, query values, and anything that
+ * Only labels of controls that read as plain names are kept, and none from inside a list item (a result, a row,
+ * a card: its label is the page's content, such as a name or a title); typed text, values, query values, and anything that
  * looks like personal data never are. Nothing here is shown to Jev yet: this step only records.
  */
 
@@ -96,8 +97,16 @@ export class Knowledge {
   }
 
   /** One executed operation: what was tried on the page at `from`, and whether the page at `to` differs. */
-  record(step: { from: unknown; to: unknown; kind: string; label: unknown; changed: boolean }): boolean {
-    if (!RECORDED_KINDS.has(step.kind)) return false;
+  record(step: {
+    from: unknown;
+    to: unknown;
+    kind: string;
+    label: unknown;
+    changed: boolean;
+    /** The control sits in a list item (a row, a card, a result): its label is content, not a control. */
+    inItem?: boolean;
+  }): boolean {
+    if (!RECORDED_KINDS.has(step.kind) || step.inItem) return false;
     const label = plainLabel(step.label);
     const from = pageShape(step.from);
     if (!label || !from) return false;

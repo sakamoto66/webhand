@@ -1010,6 +1010,8 @@ test("v2: a run that finished as done leaves hints, and the next run's Jev state
   expect(result.outcome).toBe("GOAL_REPORTED");
   expect((await menu.verify(browser)).success).toBe(true);
   expect(knowledge.hints(menu.startUrl(ROOT))).toEqual([]);
+  // The invoice's Download sits in a list item: its label (a month) is the page's content, so it is not kept.
+  expect(readFileSync(join(dir, "local.json"), "utf8")).not.toContain("Download March");
   knowledge.confirm(history);
   const hints = knowledge.hints(menu.startUrl(ROOT));
   expect(hints.map((h) => h.label)).toEqual(["More"]);

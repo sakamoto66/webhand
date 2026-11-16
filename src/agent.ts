@@ -211,6 +211,7 @@ export async function execute(
     kind: action.kind,
     label: action.label,
     changed: step.page_changed,
+    inItem: page.guards?.[String(action.node)]?.[14] === "item",
   });
   if (asked.length) {
     recorder.event("window_ignored", { step: step.step, attempt: options.attempt, urls: asked.map(safeUrl) });
