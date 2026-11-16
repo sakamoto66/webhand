@@ -1031,3 +1031,16 @@ test("v2: a run that finished as done leaves hints, and the next run's Jev state
   again.close();
   expect(seen[0]).toEqual(hints);
 });
+
+test("menu_orders: a scripted run opens the Orders page, and the verifier reads the page that is open", async () => {
+  const orders = await loadTask("menu_orders");
+  await browser.close();
+  await open(orders.startUrl(ROOT), { whole: true });
+  expect((await orders.verify(browser)).success).toBe(false);
+  const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
+  const plan = { goal: orders.GOAL, steps: [], values: [], flow: "v2" as const };
+  const result = await runAgent(browser, new ScriptedPolicy(orders.SCRIPT), plan, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect((await orders.verify(browser)).success).toBe(true);
+});
