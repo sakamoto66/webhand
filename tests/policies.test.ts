@@ -188,24 +188,15 @@ test("tokens are estimated at about 3 ASCII characters a token and 1.5 tokens fo
 
 const overLimit = { status: 400, body: { detail: { error_type: "max_tokens_exceeded" } } };
 
-/** A click answer whose usage says Jev counted `factor` times the estimate. */
-// biome-ignore lint/suspicious/noExplicitAny: a request body as JSON.
-const countedAs = (request: any, factor: number) => {
-  const answer = clickTwo(request);
-  answer.body.usage = { input_tokens: Math.floor(estimateTokens(JSON.stringify(request)) * factor), output_tokens: 5 };
-  return answer;
-};
-
-test("refused over its limit, the request is fitted again to a lower limit, which comes back with each request that goes through", async () => {
+test("refused over its limit, the request is fitted again to a lower budget, which the run keeps", async () => {
   let refusals = 1;
-  const { policy, sent } = jevPolicy((request) => (refusals-- > 0 ? overLimit : countedAs(request, 1)));
+  const { policy, sent } = jevPolicy((request) => (refusals-- > 0 ? overLimit : clickTwo(request)));
   const decision = await policy.choose(bigPage(5, 200), PLAN, []);
   expect(decision.action?.label).toBe("Item 2");
   expect(sent).toHaveLength(2);
   const sizes = sent.map((s) => estimateTokens(JSON.stringify(s.body)));
-  const lowered = Math.floor(sizes[0] * 0.8);
-  expect(sizes[1]).toBeLessThanOrEqual(lowered);
-  expect(policy.calls[0].token_budget).toBe(lowered);
+  expect(sizes[1]).toBeLessThanOrEqual(Math.floor(sizes[0] * 0.6));
+  expect(policy.calls[0].token_budget).toBe(Math.floor(sizes[0] * 0.6));
   // What was refused is logged as counts only.
   expect(policy.calls[0].refused).toEqual([
     {
@@ -213,26 +204,11 @@ test("refused over its limit, the request is fitted again to a lower limit, whic
       request_chars: JSON.stringify(sent[0].body).length,
       choices: expect.any(Number),
       elements: 205,
-      budget: 36_000,
+      budget: 40_000,
     },
   ]);
-  // The request that went through lets the limit come back by a tenth.
   await policy.choose(bigPage(5, 200), PLAN, []);
-  const next = estimateTokens(JSON.stringify(sent[2].body));
-  expect(next).toBeLessThanOrEqual(Math.ceil(lowered * 1.1));
-  expect(next).toBeGreaterThan(sizes[1]);
-});
-
-test("the estimate is scaled by what Jev counted for the last request, so more of a page is asked about", async () => {
-  const labels = (i: number) => `商品${i} ${"説明".repeat(150)}`;
-  const { policy, sent } = jevPolicy((request) => countedAs(request, 0.5));
-  await policy.choose(bigPage(200, 0, labels), PLAN, []);
-  await policy.choose(bigPage(200, 0, labels), PLAN, []);
-  const asked = sent.map((s) => (s.body as { state: { elements: unknown[] } }).state.elements.length);
-  expect(asked[1]).toBeGreaterThan(asked[0]);
-  expect(policy.calls[0].token_scale).toBeUndefined();
-  expect(policy.calls[1].token_scale).toBeCloseTo(0.5, 1);
-  expect(policy.calls[1].dropped_elements ?? 0).toBeLessThan(policy.calls[0].dropped_elements ?? 0);
+  expect(estimateTokens(JSON.stringify(sent[2].body))).toBeLessThanOrEqual(sizes[1]);
 });
 
 test("refused over its limit three times, Jev's refusal stands and nothing is chosen", async () => {

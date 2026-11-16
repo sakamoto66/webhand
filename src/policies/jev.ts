@@ -137,19 +137,14 @@ export function validateChoice(answer: Json, ids: Iterable<string>): Json {
 const NO_VALUE = "NONE";
 
 // Jev refuses a request over its token limit (HTTP 400 max_tokens_exceeded) and a question with more than 255
-// choices (HTTP 422), found 2026-11-13. Jev's tokenizer is not known: its count was 0.45 to 1.5 times the estimate
-// (rounds fc, fd). The limit is kept in the tokens Jev reports (the largest request it took was 35.5k), and the
-// estimate is scaled by what the last request cost (reported over estimated), so a request is fitted to the real
-// limit. A refusal lowers the limit and the request is fitted again; nothing runs in the browser in between. The
-// lowered limit comes back by a tenth with each request that goes through, instead of staying for the run (in
-// rounds sa to fc, 271 of 273 calls with elements left out ran under a budget one refusal had lowered).
-const TOKEN_LIMIT = 36_000;
-const RECOVER = 1.1;
-const SCALE_RANGE: [number, number] = [0.3, 2];
+// choices (HTTP 422), found 2026-11-13. Requests of about 40k tokens passed. Jev's tokenizer is not known, and
+// Japanese counted higher than estimated (round 17), so a refusal over the limit lowers the budget and the
+// request is fitted again; nothing runs in the browser in between.
+const TOKEN_BUDGET = 40_000;
 const MAX_CHOICES = 255;
 const OVER_LIMIT = "max_tokens_exceeded";
 const FIT_TRIES = 3;
-const SHRINK = 0.8;
+const SHRINK = 0.6;
 
 /** A rough token count: about 3 characters a token for ASCII, 1.5 tokens for each other character (such as CJK). */
 export function estimateTokens(text: string): number {
@@ -343,15 +338,8 @@ export class JevPolicy implements Policy {
   readonly model: string;
   private readonly fetchJson: Fetch;
   private readonly agent: Agent | null;
-  /** The tokens Jev takes in a request, as it counts them; lowered when it refuses one, and recovering. */
-  private limit = TOKEN_LIMIT;
-  /** What Jev counted over what was estimated, for the last request that went through. */
-  private scale = 1;
-
-  /** The limit in estimated tokens, which the request is fitted to. */
-  private get budget(): number {
-    return Math.floor(this.limit / this.scale);
-  }
+  /** Lowered for the rest of the run when Jev refuses a request over its limit. */
+  private budget = TOKEN_BUDGET;
 
   constructor(options: { fetch?: Fetch } = {}) {
     const key = process.env.TYPESAFE_API_KEY;
@@ -431,16 +419,6 @@ export class JevPolicy implements Policy {
     return isObject ? result : {};
   }
 
-  /** After a request went through: what Jev counted against the estimate, and the limit recovering. */
-  private learn(body: unknown): void {
-    const counted = this.calls[this.calls.length - 1]?.input_tokens;
-    const estimated = estimateTokens(toJson(body));
-    if (counted && estimated) {
-      this.scale = Math.min(SCALE_RANGE[1], Math.max(SCALE_RANGE[0], counted / estimated));
-    }
-    this.limit = Math.min(TOKEN_LIMIT, Math.ceil(this.limit * RECOVER));
-  }
-
   async choose(whole: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {
     const values = valueChoices(plan);
     const build = (page: Page) => {
@@ -465,14 +443,10 @@ export class JevPolicy implements Policy {
     const refused: NonNullable<ModelCall["refused"]> = [];
     for (let tries = 1; ; tries++) {
       const extra: Partial<ModelCall> = fitted.dropped ? { dropped_elements: fitted.dropped } : {};
-      if (this.limit !== TOKEN_LIMIT || this.scale !== 1) {
-        extra.token_budget = this.budget;
-        extra.token_scale = Number(this.scale.toFixed(2));
-      }
+      if (this.budget !== TOKEN_BUDGET) extra.token_budget = this.budget;
       if (refused.length) extra.refused = refused;
       try {
         result = await this.post(fitted.body, "choose", extra);
-        this.learn(fitted.body);
         break;
       } catch (error) {
         const over = error instanceof PolicyError && String(error.diagnostic?.error ?? "").includes(OVER_LIMIT);
@@ -488,7 +462,7 @@ export class JevPolicy implements Policy {
         if (tries >= FIT_TRIES) {
           throw new PolicyError(error.message, { ...error.diagnostic, refused });
         }
-        this.limit = Math.min(this.limit, Math.floor(estimateTokens(toJson(fitted.body)) * this.scale * SHRINK));
+        this.budget = Math.floor(estimateTokens(toJson(fitted.body)) * SHRINK);
         fitted = fitChoose(whole, build, this.budget);
       }
     }
