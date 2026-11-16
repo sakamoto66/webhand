@@ -338,8 +338,15 @@ test("tab controls name the other tabs; a switch checks that the tabs are still 
     find(first, (a) => a.label === "Open guest form"),
     first,
   );
-  let page = await instance.observe();
-  expect(page.tabs).toEqual({ count: 2, current: 1 });
+  // The new tab is known to the browser a moment after the click; on a loaded machine that can be after the first look.
+  let page: Page = {};
+  await vi.waitFor(
+    async () => {
+      page = await instance.observe();
+      expect(page.tabs).toEqual({ count: 2, current: 1 });
+    },
+    { timeout: 10_000, interval: 100 },
+  );
   const control = find(page, (a) => a.kind === "tab");
   expect(control).toMatchObject({ id: "tab_2", tab: 2, label: "Switch to tab 2: Guest registration" });
   expect(page.actions.at(-1).id).toBe("wait");

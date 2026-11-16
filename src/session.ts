@@ -30,7 +30,8 @@ import { chromium } from "playwright-core";
 import { quote, sleep } from "./format.ts";
 import * as workspace from "./workspace.ts";
 
-const STARTUP_MS = 15_000;
+/** How long a browser may take to start. Tests set WEBHAND_STARTUP_MS higher: several suites at once load the machine. */
+const STARTUP_MS = Number(process.env.WEBHAND_STARTUP_MS) || 15_000;
 const PROFILE_NAME = /^[\p{L}\p{N}_-]+$/u;
 /** Where Chrome runs (--chrome). */
 export const CHROMES = ["auto", "linux", "windows"];
@@ -528,8 +529,24 @@ export async function stopChrome(state: State): Promise<void> {
   } catch {
     // Already gone.
   }
-  await exited(state.pid, state.chrome === "windows" ? 5000 : 2000);
-  if (!state.saved_profile) rmSync(state.profile, { recursive: true, force: true });
+  if (!(await exited(state.pid, state.chrome === "windows" ? 5000 : 2000))) {
+    // A browser slow to exit (a loaded machine) is still writing into its folder: end it, or the folder cannot go.
+    try {
+      process.kill(-state.pid, "SIGKILL");
+    } catch {
+      // Already gone.
+    }
+    await exited(state.pid, 2000);
+  }
+  if (!state.saved_profile) {
+    // A temporary folder is only tidying: it may not fail the call, which has done what it was asked to
+    // (round of full test runs at once: ENOTEMPTY turned "the browser did not start" into a crash).
+    try {
+      rmSync(state.profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch {
+      // Left behind in the temporary folder.
+    }
+  }
 }
 
 function alive(pid: number): boolean {

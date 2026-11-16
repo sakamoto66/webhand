@@ -8,8 +8,9 @@ export default defineConfig({
     pool: "forks",
     fileParallelism: true,
     maxWorkers: 6,
-    // Fixtures settle fast; the tests of settling itself set the real 150 ms back.
-    env: { WEBHAND_SETTLE_QUIET_MS: "40" },
+    // Fixtures settle fast; the tests of settling itself set the real 150 ms back. A browser may start slowly when
+    // the machine runs several suites (the default is 15 s).
+    env: { WEBHAND_SETTLE_QUIET_MS: "40", WEBHAND_STARTUP_MS: "45000" },
     testTimeout: 60_000,
     hookTimeout: 60_000,
     coverage: {
