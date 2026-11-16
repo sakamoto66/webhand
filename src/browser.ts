@@ -6,6 +6,7 @@ import {
   type BrowserContext,
   type CDPSession,
   chromium,
+  type Frame,
   type Browser as PlaywrightBrowser,
   type Page as PlaywrightPage,
 } from "playwright-core";
@@ -18,6 +19,8 @@ export function asset(name: string): string {
   return readFileSync(new URL(`../assets/${name}`, import.meta.url), "utf8");
 }
 
+// A frame smaller than this on either side (a tracking pixel, an ad slot) is neither read nor counted as unseen.
+const MIN_FRAME_SIDE = 20;
 const SNAPSHOT = asset("snapshot.js").trim();
 
 export interface ViewChoice {
@@ -79,13 +82,15 @@ const STATUS = `(() => {
   const kind = http >= 400 ? 'error' : signs.length ? 'check' : any('input[type="password"]') ? 'sign_in'
     : any('dialog[open],[role="dialog"],[role="alertdialog"],[aria-modal="true"]') ? 'dialog' : 'ready';
   const count = selector => [...document.querySelectorAll(selector)].filter(shown).length;
-  const unseen = {frames: count('iframe,frame'), canvases: count('canvas'), objects: count('object,embed')};
+  const framed = [...document.querySelectorAll('iframe,frame')].filter(e => { const r=e.getBoundingClientRect(); return r.width>=${MIN_FRAME_SIDE} && r.height>=${MIN_FRAME_SIDE} && getComputedStyle(e).visibility !== 'hidden'; }).length;
+  const unseen = {frames: framed, canvases: count('canvas'), objects: count('object,embed')};
   return {kind, ...(http ? {http_status: http} : {}), ...(signs.length ? {signs} : {}), unseen};
 })()`;
 const UNSEEN = `(() => {
   const shown = e => { const r=e.getBoundingClientRect(); return r.width>0 && r.height>0; };
   const count = selector => [...document.querySelectorAll(selector)].filter(shown).length;
-  return {frames: count('iframe,frame'), canvases: count('canvas'), objects: count('object,embed')};
+  const framed = [...document.querySelectorAll('iframe,frame')].filter(e => { const r=e.getBoundingClientRect(); return r.width>=${MIN_FRAME_SIDE} && r.height>=${MIN_FRAME_SIDE}; }).length;
+  return {frames: framed, canvases: count('canvas'), objects: count('object,embed')};
 })()`;
 /**
  * Notes what asks for a new window: window.open and a click on a link with target=_blank. Nothing is stopped or
@@ -351,6 +356,17 @@ const SELECT_OPTION = `(action => {
 
 const MAX_TAB_TITLE = 60;
 
+// v2: elements inside frames are read where they are, one snapshot per visible frame. A node id carries its
+// frame: frame number times FRAME_BASE plus the id the frame's own snapshot gave. The main page is frame 0.
+const FRAME_BASE = 1_000_000;
+const MAX_FRAMES = 8;
+const FRAME_TEXT_LIMIT = 1500;
+const frameOf = (node: unknown): number => (Number.isInteger(node) ? Math.floor((node as number) / FRAME_BASE) : 0);
+// Makes the ids a frame's snapshot gives start at its own base.
+const seedFrame = (no: number) =>
+  `(() => { const c = (window.__browserLab ||= {ids: new WeakMap(), nodes: new Map(), next: 1}); ` +
+  `if (c.next < ${no * FRAME_BASE}) c.next = ${no * FRAME_BASE}; })()`;
+
 /** A tab's title as the model sees it: one line, clipped. Page text, so never instructions. */
 function tabTitle(title: string): string {
   return title.replace(/\s+/g, " ").trim().slice(0, MAX_TAB_TITLE);
@@ -380,6 +396,8 @@ export class Browser {
   context!: BrowserContext;
   page!: PlaywrightPage;
   cdp!: CDPSession;
+  private frameNos = new Map<Frame, number>();
+  private framesByNo = new Map<number, Frame>();
 
   private constructor(attached: boolean, view: ViewChoice | null) {
     this.attached = attached;
@@ -594,6 +612,109 @@ export class Browser {
     await this.rememberTab();
   }
 
+  /** The page's frames, the main one first. For tests. */
+  frames(): Frame[] {
+    return this.page.frames();
+  }
+
+  private frameNo(frame: Frame): number {
+    let no = this.frameNos.get(frame);
+    if (no === undefined) {
+      no = this.frameNos.size + 1;
+      this.frameNos.set(frame, no);
+      this.framesByNo.set(no, frame);
+    }
+    return no;
+  }
+
+  /** Evaluates in the frame the node belongs to. Null when that frame is gone. */
+  // biome-ignore lint/suspicious/noExplicitAny: page values are untyped JSON.
+  private async evaluateFor(node: unknown, expression: string): Promise<any> {
+    const no = frameOf(node);
+    if (no === 0) return this.evaluate(expression);
+    const frame = this.framesByNo.get(no);
+    if (!frame || frame.isDetached()) return null;
+    try {
+      return (await frame.evaluate(expression)) ?? null;
+    } catch {
+      throw new StalePage("Document changed during evaluation");
+    }
+  }
+
+  /** Where a frame's own viewport starts, in the main page's viewport; null when it has no size. */
+  private async frameOffset(frame: Frame): Promise<{ x: number; y: number } | null> {
+    const element = await frame.frameElement().catch(() => null);
+    if (!element) return null;
+    try {
+      const box = await element.boundingBox();
+      if (!box || box.width < MIN_FRAME_SIDE || box.height < MIN_FRAME_SIDE) return null;
+      const [left, top] = await element.evaluate((e) => [(e as Element).clientLeft, (e as Element).clientTop]);
+      return { x: box.x + left, y: box.y + top };
+    } catch {
+      return null;
+    } finally {
+      await element.dispose().catch(() => {});
+    }
+  }
+
+  /** v2: the elements of the frames in the page, appended to the page's own, before its scroll and wait controls. */
+  private async observeFrames(state: Page): Promise<void> {
+    if (!this.view?.whole || this.compat) return;
+    const main = this.page.mainFrame();
+    const frames = this.page.frames().filter((f) => f !== main && !f.isDetached());
+    const added: Action[] = [];
+    const keys: Record<string, unknown> = {};
+    const skipped: Record<string, number> = {};
+    const skip = (reason: string) => {
+      skipped[reason] = (skipped[reason] ?? 0) + 1;
+    };
+    let direct = 0;
+    for (const frame of frames) {
+      if (Object.keys(keys).length >= MAX_FRAMES) {
+        skip("over_limit");
+        continue;
+      }
+      try {
+        if (!(await this.frameOffset(frame))) {
+          skip("no_size");
+          continue;
+        }
+        const no = this.frameNo(frame);
+        await frame.evaluate(seedFrame(no));
+        const inner = (await frame.evaluate(readState(this.view))) as Page | null;
+        if (!inner) {
+          skip("no_page");
+          continue;
+        }
+        keys[String(no)] = inner.page_key;
+        Object.assign(state.guards, inner.guards);
+        for (const action of inner.actions) {
+          if (["scroll", "wait", "tab"].includes(action.kind)) continue;
+          added.push({ ...action, frame: no, region: `frame_${no}` });
+        }
+        const text = String(inner.text ?? "")
+          .trim()
+          .slice(0, FRAME_TEXT_LIMIT);
+        if (text) state.text = `${state.text}\n[frame ${no}] ${text}`;
+        if (frame.parentFrame() === main) direct++;
+      } catch {
+        // A frame that changes or goes while it is read is left out; the page's own elements stand.
+        skip("error");
+      }
+    }
+    // For the run log (counts only): the frames read and why the others were not.
+    if (frames.length) {
+      state.frames_log = { found: frames.length, read: Object.keys(keys).length, elements: added.length, skipped };
+    }
+    if (!added.length && !Object.keys(keys).length) return;
+    state.frame_keys = keys;
+    const at = state.actions.findIndex((a: Action) => ["scroll", "wait"].includes(a.kind));
+    state.actions.splice(at < 0 ? state.actions.length : at, 0, ...added);
+    let n = 0;
+    for (const action of state.actions) if (/^e\d+$/.test(action.id)) action.id = `e${++n}`;
+    if (state.status?.unseen) state.status.unseen.frames = Math.max(0, state.status.unseen.frames - direct);
+  }
+
   async observe(): Promise<Page> {
     await this.leaveClosedTab();
     for (let i = 0; i < 10; i++) {
@@ -605,6 +726,7 @@ export class Browser {
         state = await this.evaluate(readState(this.view));
         // v2: what kind of page this is, for Jev and Claude.
         if (state !== null && this.view?.whole) state.status = await this.evaluate(STATUS);
+        if (state !== null) await this.observeFrames(state);
         if (state !== null) await this.offerTabs(state);
       } catch (error) {
         if (!(error instanceof StalePage)) throw error;
@@ -640,14 +762,16 @@ export class Browser {
     if (action !== null && targeted.includes(action.kind)) {
       const node = action.node;
       if (!Number.isInteger(node)) return ["target_unknown"];
-      const current = await this.evaluate(
+      const current = await this.evaluateFor(
+        node,
         "(() => { const c=window.__browserLab; " +
           `return c ? [c.pageKey(),c.guard(c.nodes.get(${node}))] : null; })()`,
       );
       if (current === null) return ["snapshot_gone"];
       const guard = page.guards?.[String(node)] ?? null;
+      const key = frameOf(node) === 0 ? page.page_key : page.frame_keys?.[String(frameOf(node))];
       return [
-        ...differing(current[0], page.page_key, PAGE_KEY_PARTS),
+        ...differing(current[0], key, PAGE_KEY_PARTS),
         ...(current[1] === null && guard !== null ? ["target_gone"] : differing(current[1], guard, GUARD_PARTS)),
       ];
     }
@@ -657,7 +781,12 @@ export class Browser {
 
   /** The text around observed elements, by node. Read-only. */
   async contexts(nodes: number[]): Promise<Record<string, string>> {
-    return (await this.evaluate(`${CONTEXTS}(${JSON.stringify(nodes)})`)) ?? {};
+    const out: Record<string, string> = {};
+    for (const no of new Set(nodes.map(frameOf))) {
+      const own = nodes.filter((n) => frameOf(n) === no);
+      Object.assign(out, (await this.evaluateFor(own[0], `${CONTEXTS}(${JSON.stringify(own)})`)) ?? {});
+    }
+    return out;
   }
 
   /** Opens a page a scan has already visited, to come back to an item on it. Navigation only. */
@@ -681,13 +810,26 @@ export class Browser {
    * StalePage, saying what covers it, so Jev can deal with that first. Nothing is clicked or typed here.
    */
   private async target(action: Action): Promise<{ x: number; y: number }> {
-    const resolve = async () =>
-      (await this.evaluate(`${RESOLVE_TARGET}(${JSON.stringify(action)})`)) as
+    const no = frameOf(action.node);
+    const resolve = async () => {
+      const found = (await this.evaluateFor(action.node, `${RESOLVE_TARGET}(${JSON.stringify(action)})`)) as
         | { x: number; y: number }
-        | { reason: string; cover?: string };
+        | { reason: string; cover?: string }
+        | null;
+      if (found === null) return { reason: "gone" };
+      if (no === 0 || "reason" in found) return found;
+      // A point in a frame is clicked where the frame sits in the page's viewport.
+      const frame = this.framesByNo.get(no);
+      const offset = frame ? await this.frameOffset(frame) : null;
+      if (!offset) return { reason: "hidden" };
+      const [w, h] = await this.evaluate("[innerWidth, innerHeight]");
+      const x = found.x + offset.x;
+      const y = found.y + offset.y;
+      return x < 0 || y < 0 || x >= w || y >= h ? { reason: "outside" } : { x, y };
+    };
     let found = await resolve();
     if ("reason" in found && (found.reason === "covered" || found.reason === "outside")) {
-      await this.evaluate(`${REVEAL}(${JSON.stringify(action.node)})`);
+      await this.evaluateFor(action.node, `${REVEAL}(${JSON.stringify(action.node)})`);
       await sleep(100);
       found = await resolve();
     }
@@ -709,7 +851,7 @@ export class Browser {
     }
     if (kind === "tab") return await this.switchTab(action, page);
     if (kind === "reveal") {
-      const found = await this.evaluate(`${REVEAL}(${JSON.stringify(action.node)})`);
+      const found = await this.evaluateFor(action.node, `${REVEAL}(${JSON.stringify(action.node)})`);
       if (!found) throw new StalePage("Target changed", ["target_gone"]);
       return;
     }
@@ -744,6 +886,11 @@ export class Browser {
   }
 
   private async select(action: Action): Promise<void> {
+    if (frameOf(action.node) !== 0) {
+      const done = await this.evaluateFor(action.node, `${SELECT_OPTION}(${JSON.stringify(action)})`);
+      if (done !== true) throw new MutationUncertain("Dropdown change was not confirmed");
+      return;
+    }
     const response = await this.call("Runtime.evaluate", {
       expression: `${SELECT_OPTION}(${JSON.stringify(action)})`,
       returnByValue: true,

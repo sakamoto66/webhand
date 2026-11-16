@@ -14,6 +14,7 @@ import { Browser, type ViewChoice } from "./browser.ts";
 import { type Collected, type Collector, collectScan, MAX_COLLECTED } from "./collect.ts";
 import { type Compared, type Comparer, compareScan, MAX_PAGES, MAX_SCROLLS, type Reader } from "./compare.ts";
 import { describeError, quote, show, stamp, toJson } from "./format.ts";
+import { Knowledge } from "./knowledge.ts";
 import * as learn from "./learn.ts";
 import { gitState, logOnce, maskUrls, pageEvent, Recorder, safeUrl, summarize } from "./metrics.ts";
 import { loadMore, type MoreChooser } from "./more.ts";
@@ -574,6 +575,44 @@ async function commandStart(args: Args): Promise<number> {
   return OK;
 }
 
+/** Outcomes after which `answer` continues the same attempt (v2). */
+const ANSWERABLE: string[] = [agent.ESCALATE, agent.STUCK, agent.BLOCKED, agent.GOAL_REPORTED, agent.JEV_FAILED];
+
+/** v2: parts of the page webhand cannot see into, said plainly so that Claude looks for another way. */
+function unseenHint(page: Page): string {
+  if (!agent.unseenParts(page)) return "";
+  const unseen = (page.status?.unseen ?? {}) as Record<string, number>;
+  return (
+    `. The page has ${unseen.canvases ?? 0} canvas, ${unseen.frames ?? 0} frame, and ${unseen.objects ?? 0} plugin parts ` +
+    "whose content webhand cannot see: what Jev needs may be inside one. Answering cannot reveal it; look for another way " +
+    "(a list or text version, another page, a keyboard route) or ask the person"
+  );
+}
+
+/** Why the run came back, from the log of this attempt only. No page text. */
+function diagnose(state: session.State, outcome: string): string {
+  const status = state.page?.status as { kind?: string } | undefined;
+  if (status?.kind === "check") return "the page is a bot check or CAPTCHA; a person must pass it";
+  if (status?.kind === "sign_in") return "the page asks for a sign-in; a person must sign in";
+  if (status?.kind === "error") return "the page is an error page";
+  if (status?.kind === "dialog") return "a dialog covers the page";
+  const rows = (state.history as HistoryEntry[]).filter((h) => (h.attempt ?? 1) === state.plan.attempt).slice(-3);
+  const count = (kind: string) => rows.filter((h) => h.kind === kind).length;
+  if (outcome === agent.STUCK) {
+    if (agent.looping(state.history as HistoryEntry[], state.plan.attempt)) {
+      return "Jev scrolled up and down three times and chose nothing: what it needs may not be on this page, or is elsewhere on it";
+    }
+    if (count("stale")) return "the last choices were refused as stale: the page keeps changing under the target";
+    if (count("missing")) return `Jev could not find the element it needs in what was offered${unseenHint(state.page)}`;
+    return "the last three actions did not change the page";
+  }
+  if (outcome === agent.GOAL_REPORTED) return "Jev thinks the goal is met and asks Claude to check the page";
+  if (outcome === agent.JEV_FAILED) return "Jev gave no usable decision; nothing was executed";
+  const handed =
+    "Jev handed the decision to Claude: the page is not what the plan expects, nothing offered fits, or the operation cannot be undone";
+  return `${handed}${unseenHint(state.page)}`;
+}
+
 /** What Claude needs for this outcome, and nothing more. */
 export function report(state: session.State, result: agent.AgentResult): number {
   const outcome = result.outcome;
@@ -592,6 +631,14 @@ export function report(state: session.State, result: agent.AgentResult): number 
     return OK;
   }
   print(`${recentActions(state)}\n${render(state.page)}`);
+  if (state.plan.flow === "v2" && ANSWERABLE.includes(outcome)) {
+    print(`WHY: ${diagnose(state, outcome)}`);
+    print(
+      "NEXT: answer --note '...' [--value 'LABEL=VALUE'] [--url URL] continues this attempt; replan changes the plan; " +
+        "if it cannot be done, ask the person with AskUserQuestion; finish",
+    );
+    return OK;
+  }
   if (outcome === agent.GOAL_REPORTED) {
     print("Check the page against the goal. If it is met: finish --status done. Otherwise: replan");
   } else if (outcome === agent.JEV_FAILED) {
@@ -618,8 +665,10 @@ async function commandRun(args: Args): Promise<number> {
     print("REJECTED: this field needs run --value 'LABEL=VALUE'");
     return FAILED;
   }
-  if ([agent.GOAL_REPORTED, agent.BLOCKED, agent.STUCK, agent.ATTEMPT_BUDGET].includes(outcome)) {
-    print(`REJECTED: the attempt ended with ${outcome}. Run replan, act, or finish`);
+  if ([agent.GOAL_REPORTED, agent.BLOCKED, agent.STUCK, agent.ATTEMPT_BUDGET, agent.ESCALATE].includes(outcome)) {
+    print(
+      `REJECTED: the attempt ended with ${outcome}. Run ${state.plan.flow === "v2" ? "answer, " : ""}replan, act, or finish`,
+    );
     return FAILED;
   }
   if (args.value.length) {
@@ -732,6 +781,11 @@ async function commandRun(args: Args): Promise<number> {
       history: state.history,
       page: state.page,
       decisions: state.attempt_decisions,
+      // v2 records what its operations did, for the next run on the site (WEBHAND_KNOWLEDGE=0 turns it off).
+      knowledge:
+        state.plan.flow === "v2" && process.env.WEBHAND_KNOWLEDGE !== "0"
+          ? new Knowledge(undefined, process.env.WEBHAND_KNOWLEDGE_USE !== "0")
+          : undefined,
       onChange: (page) => {
         state.page = page;
         session.save(state);
@@ -762,6 +816,61 @@ async function commandRun(args: Args): Promise<number> {
     await policy.close?.();
   }
   return report(state, result);
+}
+
+/** v2: Claude answers Jev's question. The same attempt continues: history and budget are kept. */
+async function commandAnswer(args: Args): Promise<number> {
+  const state = requireSession();
+  const plan = state.plan;
+  if (plan.flow !== "v2") {
+    print("REJECTED: answer is for --flow v2. Use replan");
+    return FAILED;
+  }
+  if (!ANSWERABLE.includes(state.outcome)) {
+    print(
+      `REJECTED: nothing is waiting for an answer (${state.outcome ?? "the run is not stopped"}). Run: webhand run`,
+    );
+    return FAILED;
+  }
+  if (args.url) {
+    let url: string;
+    try {
+      url = runbook.resolveUrl(args.url);
+    } catch (error) {
+      if (!(error instanceof runbook.RunbookError)) throw error;
+      print(`REJECTED: ${error.message.replace("start_url", "--url")}`);
+      return FAILED;
+    }
+    if (!openableUrl(url)) {
+      print("REJECTED: --url needs an http, https, or file URL, or a local file path");
+      return FAILED;
+    }
+    await openPage(state, session.browserUrl(url, state.chrome ?? "linux"), true);
+  }
+  const values = parseValues(args.value);
+  if (values.length) plan.values = mergeValues(plan.values, values);
+  plan.instructions = [...(plan.instructions ?? []), args.note];
+  // Not an action: it neither counts against the budget nor hides that the page did not change.
+  state.history.push({
+    step: state.history.length + 1,
+    attempt: plan.attempt,
+    kind: "answer",
+    operation: "ANSWER",
+    action: "Claude answered",
+    text: null,
+    url: state.page.url,
+    page_changed: true,
+  });
+  logOnce(state.log, "answer", {
+    attempt: plan.attempt,
+    after: state.outcome,
+    chars: [...args.note].length,
+    values: values.map((v) => v.label),
+    ...(args.url ? { url: safeUrl(args.url) } : {}),
+  });
+  state.outcome = null;
+  session.save(state);
+  return commandRun({ ...args, value: [], human_done: false });
 }
 
 /** Claude revises the plan after an attempt fell short, and starts the next attempt. */
@@ -995,6 +1104,10 @@ async function commandFinish(args: Args): Promise<number> {
     session.clear();
   }
   const plan = state.plan;
+  // v2: a run that finished as done marks its steps as the way that worked.
+  if (args.status === "done" && plan.flow === "v2" && process.env.WEBHAND_KNOWLEDGE !== "0") {
+    new Knowledge().confirm(state.history);
+  }
   const outcomes = [...state.outcomes, { attempt: plan.attempt, outcome: state.outcome, reason: args.reason }];
   const totals = runTotals(state.log);
   logOnce(state.log, "run_end", {
@@ -1174,6 +1287,25 @@ async function commandProfile(args: Args): Promise<number> {
 }
 
 /** Saved logins. `save` takes the sign-in of a running session; `start --auth NAME` begins a new session with it. */
+async function commandKnowledge(args: Args): Promise<number> {
+  const knowledge = new Knowledge();
+  if (args.action === "list") {
+    const hosts = knowledge.hosts();
+    if (!hosts.length) print("KNOWN SITES: (none)");
+    for (const h of hosts) print(`${h.host}: ${h.pages} pages, ${h.operations} operations, ${h.worked} that worked`);
+    return OK;
+  }
+  if (args.action === "show") {
+    if (!args.name) throw new CliExit("knowledge show needs a HOST");
+    const lines = knowledge.describe(args.name);
+    print(lines.length ? lines.join("\n") : `Nothing is known about ${args.name}`);
+    return lines.length ? OK : FAILED;
+  }
+  const removed = knowledge.forget(args.name ?? null);
+  print(`FORGOT ${removed} ${removed === 1 ? "site" : "sites"}${args.name ? ` (${args.name})` : ""}`);
+  return OK;
+}
+
 async function commandAuth(args: Args): Promise<number> {
   try {
     if (args.action === "list") {
@@ -1355,6 +1487,16 @@ function commands(): Record<string, CommandSpec> {
       ],
       run: commandRun,
     },
+    answer: {
+      help: "Claude (v2): answer Jev's question and continue the same attempt",
+      options: [
+        idOption,
+        { name: "note", type: "string", required: true, help: "A short instruction for Jev; it sees it" },
+        { name: "value", type: "string", multiple: true, metavar: "LABEL=VALUE", help: "Add or replace a value" },
+        { name: "url", type: "string", help: "Open this page first (the same attempt continues)" },
+      ],
+      run: commandAnswer,
+    },
     replan: {
       help: "Claude: revise the plan and start the next attempt",
       options: [
@@ -1419,6 +1561,15 @@ function commands(): Record<string, CommandSpec> {
         { name: "name", optional: true },
       ],
       run: commandAuth,
+    },
+    knowledge: {
+      help: "What webhand learned about sites from its own runs: list, show HOST, clear [HOST]",
+      options: [],
+      positionals: [
+        { name: "action", choices: ["list", "show", "clear"] },
+        { name: "name", optional: true },
+      ],
+      run: commandKnowledge,
     },
     profile: {
       help: "Saved profiles: list, login NAME --url URL, delete NAME",
@@ -1605,7 +1756,7 @@ const processIO: IO = {
  * Runs one command and returns its exit code. A CliExit or UsageError is thrown after the output is written,
  * so the caller prints its message and exits with 1 or 2.
  */
-const SESSION_COMMANDS = ["start", "run", "replan", "act", "observe", "finish"];
+const SESSION_COMMANDS = ["start", "run", "answer", "replan", "act", "observe", "finish"];
 
 /** Picks the session a command works on and holds its lock until the command ends. Returns the release function. */
 function takeSession(command: string, args: Args): () => void {

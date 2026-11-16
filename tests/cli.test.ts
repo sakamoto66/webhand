@@ -565,3 +565,103 @@ test("replan --url gives the Windows Chrome a local file by its Windows path, as
   await cli("replan", "--reason", "Another way in", "--url", "tasks/fixtures/dense.html").catch(() => {});
   expect(opened.mock.calls[0]?.[0]).toMatch(/^file:\/\/wsl\.localhost\/Ubuntu\/.+\/tasks\/fixtures\/dense\.html$/);
 });
+
+test("v2: ESCALATE stops with a diagnosis, and answer continues the same attempt", async () => {
+  await begin("--flow", "v2");
+  ScriptedJev.moves = [
+    ["TYPE_TEXT", "Destination", "Destination"],
+    ["ESCALATE", null, null],
+    ["ESCALATE", null, null], // Asked again when the typed field made the page stale.
+  ];
+  const first = await cli("run");
+  expect(first.code).toBe(OK);
+  expect(first.out).toContain("OUTCOME ESCALATE (attempt 1/3)");
+  expect(first.out).toContain("WHY: Jev handed the decision to Claude");
+  expect(first.out).toContain("NEXT: answer --note");
+  expect(session.load()?.outcome).toBe("ESCALATE");
+  expect((await cli("run")).code).toBe(FAILED); // Not without an answer.
+
+  ScriptedJev.moves = [["DONE", null, null]];
+  const answered = await cli("answer", "--note", "Skip the cookie banner; search Lisbon");
+  expect(answered.code).toBe(OK);
+  expect(answered.out).toContain("OUTCOME GOAL_REPORTED (attempt 1/3)"); // The same attempt.
+  const plan = ScriptedJev.plans.at(-1);
+  expect(plan?.attempt).toBe(1);
+  expect(plan?.instructions).toEqual(["Skip the cookie banner; search Lisbon"]);
+  const seen = ScriptedJev.states.at(-1) as { plan: { claude_instructions: string[] }; action_history: unknown[] };
+  expect(seen.plan.claude_instructions).toHaveLength(1);
+  expect(seen.action_history.length).toBeGreaterThan(1); // The history was kept.
+  const answer = events().find((e) => e.type === "answer");
+  expect(answer.after).toBe("ESCALATE");
+  expect(JSON.stringify(answer)).not.toContain("cookie"); // Claude's words are not logged, only their length.
+});
+
+test("answer is for v2 only", async () => {
+  await begin();
+  ScriptedJev.moves = [["BLOCKED", null, null]];
+  await cli("run");
+  const { code, out } = await cli("answer", "--note", "x");
+  expect(code).toBe(FAILED);
+  expect(out).toContain("REJECTED: answer is for --flow v2");
+});
+
+test("v2: a STUCK run on a page with a canvas tells Claude the element may be inside it", async () => {
+  await begin("--flow", "v2");
+  const state = session.load() as session.State;
+  state.history = [1, 2, 3].map((step) => ({
+    step,
+    attempt: 1,
+    kind: "missing",
+    operation: "NOT_VISIBLE",
+    action: "Wanted to CLICK, but the needed element was not listed. Nothing ran",
+    text: null,
+    url: "u",
+    page_changed: false,
+  }));
+  state.page = { ...state.page, status: { kind: "ready", unseen: { frames: 0, canvases: 2, objects: 0 } } };
+  session.save(state);
+  const { out } = await cli("run");
+  expect(out).toContain("OUTCOME STUCK");
+  expect(out).toContain("WHY: Jev could not find the element it needs");
+  expect(out).toContain("2 canvas, 0 frame, and 0 plugin parts");
+  expect(out).toContain("Answering cannot reveal it");
+});
+
+test("v2: a scroll loop is named in WHY", async () => {
+  await begin("--flow", "v2");
+  const state = session.load() as session.State;
+  state.history = ["SCROLL_DOWN", "SCROLL_UP", "SCROLL_DOWN", "SCROLL_UP", "SCROLL_DOWN", "SCROLL_UP"].map(
+    (operation, i) => ({
+      step: i + 1,
+      attempt: 1,
+      kind: "scroll",
+      operation,
+      action: operation,
+      text: null,
+      url: "u",
+      page_changed: true,
+    }),
+  );
+  session.save(state);
+  const { out } = await cli("run");
+  expect(out).toContain("OUTCOME STUCK");
+  expect(out).toContain("WHY: Jev scrolled up and down three times");
+});
+
+test("v2: BLOCKED on a page whose target is drawn on a canvas says so, and offers another way", async () => {
+  expect((await research("start", "--task", "canvas_seats", "--chrome", "linux", "--flow", "v2")).code).toBe(OK);
+  ScriptedJev.moves = [["BLOCKED", null, null]];
+  const { out } = await cli("run");
+  expect(out).toContain("OUTCOME BLOCKED");
+  expect(out).toContain("1 canvas, 0 frame, and 0 plugin parts");
+  expect(out).toContain("another way");
+  await research("finish", "--status", "abandoned");
+});
+
+test("v2: BLOCKED on a page with nothing hidden gets no canvas hint", async () => {
+  await begin("--flow", "v2");
+  ScriptedJev.moves = [["BLOCKED", null, null]];
+  const { out } = await cli("run");
+  expect(out).toContain("OUTCOME BLOCKED");
+  expect(out).not.toContain("plugin parts");
+});

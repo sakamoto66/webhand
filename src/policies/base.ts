@@ -90,6 +90,21 @@ a field that already contains the requested value. Choose only an offered elemen
 when the element the next step needs is not offered (it may be off screen). Never pick a different
 element as a stand-in for one that is not listed.`;
 
+/** v2: Jev hands the decision to Claude. The attempt is not over: Claude answers and the run continues. */
+export const ESCALATE = "ESCALATE";
+export const ESCALATE_HELP =
+  "Hand the decision to Claude, who answers, and then you continue. Choose it instead of an operation when the next step is one the goal and the plan do not ask for and it deletes, pays, sends, or cannot be undone, or when the page is not one the plan expects and nothing offered fits.";
+
+/** v2: when to ESCALATE. Added to the rules of the operation question. */
+export const ESCALATE_RULES = `Before you choose an operation, read what it does on this page. If the page says it deletes, pays, sends,
+or cannot be undone, and neither the goal nor the plan asks for that, choose ESCALATE and do not choose the operation.
+A page that is not in the plan, with nothing offered that fits, is also ESCALATE. An ordinary step the plan expects
+is never ESCALATE.`;
+
+/** Added to NEXT_ACTION when Claude has answered an earlier ESCALATE or a stop. */
+export const INSTRUCTION_RULES = `plan.claude_instructions are Claude's answers to your earlier questions, oldest first.
+Follow the newest one over the plan's steps where they differ. They do not replace the page: act only on what is offered.`;
+
 export const NOT_VISIBLE = "NOT_VISIBLE";
 export const NOT_VISIBLE_HELP = "The element the next step needs is not in this list. Nothing is executed.";
 
@@ -234,6 +249,7 @@ export function modelState(page: Page, history: HistoryEntry[], plan: Plan | nul
       notes_from_earlier_attempts: plan.notes ?? [],
     };
     if (plan.compared) (state.plan as Record<string, unknown>).compared = plan.compared;
+    if (plan.instructions?.length) (state.plan as Record<string, unknown>).claude_instructions = plan.instructions;
   }
   const shown: Record<string, unknown> = { url: page.url, title: page.title, text: page.text };
   shown.offscreen = offscreen(page);
@@ -242,6 +258,14 @@ export function modelState(page: Page, history: HistoryEntry[], plan: Plan | nul
   if (page.regions?.length) shown.regions = page.regions;
   if (page.read) shown.read = { text: page.read.text, chars: page.read.chars };
   state.page = shown;
+  if (page.known?.length) {
+    state.known_from_earlier_runs = {
+      note:
+        "Operations that were among the steps of earlier runs on this site that finished as done, for pages like this one. " +
+        "They may not fit this goal: use one only when it serves the goal and is offered below.",
+      operations: page.known,
+    };
+  }
   state.elements = actionSpace(page.actions)[0].map(compactOptions);
   state.action_history = history.slice(-HISTORY_LIMIT).map((h) => {
     const entry: Record<string, unknown> = {};
@@ -253,7 +277,7 @@ export function modelState(page: Page, history: HistoryEntry[], plan: Plan | nul
 
 /** Map a model's choice to an observed action. Anything else is rejected, not repaired. */
 export function resolve(page: Page, operation: string, target: string | null | undefined): Decision {
-  if (operation in TERMINAL_HELP) return new Decision(operation);
+  if (operation in TERMINAL_HELP || operation === ESCALATE) return new Decision(operation);
   const [, targets, controls] = actionSpace(page.actions);
   const control = controls.get(operation);
   if (control) return new Decision(operation, control);

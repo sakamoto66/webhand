@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Billing</title>
+<nav><a href="menu_home.html">Home</a> <a href="menu_orders.html">Orders</a> <a href="menu_tools.html">Tools</a> <a href="menu_reports.html">Reports</a> <a href="menu_more.html">More</a></nav><hr>
+<h1>Billing</h1>
+<ul>
+<li>February 2026 invoice <button type="button" aria-label="Download February 2026 invoice" onclick="done('February 2026')">Download</button></li>
+<li>March 2026 invoice <button type="button" aria-label="Download March 2026 invoice" onclick="done('March 2026')">Download</button></li>
+<li>April 2026 invoice <button type="button" aria-label="Download April 2026 invoice" onclick="done('April 2026')">Download</button></li>
+</ul>
+<p id="result"></p>
+<script>
+function done(month) {
+  document.body.dataset.downloaded = month;
+  document.getElementById('result').textContent = 'Downloaded ' + month + ' invoice';
+}
+</script>

@@ -3,7 +3,7 @@
 import { expect, test, vi } from "vitest";
 import { summarize } from "../src/metrics.ts";
 import { actionSpace, modelState, resolve } from "../src/policies/base.ts";
-import { estimateTokens, type Fetch, JevPolicy, validateChoice } from "../src/policies/jev.ts";
+import { buildQuestions, estimateTokens, type Fetch, JevPolicy, validateChoice } from "../src/policies/jev.ts";
 import { ScriptedPolicy } from "../src/policies/scripted.ts";
 import { modelCall, type Plan, PolicyError } from "../src/types.ts";
 
@@ -149,6 +149,13 @@ test("a small request goes to Jev whole", async () => {
   const { policy, sent } = jevPolicy(clickTwo);
   await policy.choose(bigPage(5, 5), PLAN, []);
   expect(clickChoices(sent[0].body)).toHaveLength(11);
+  // Every request's size is logged as counts, so a refusal can be set beside the requests that went through.
+  expect(policy.calls[0].request).toEqual({
+    estimated_tokens: estimateTokens(JSON.stringify(sent[0].body)),
+    request_chars: JSON.stringify(sent[0].body).length,
+    choices: expect.any(Number),
+    elements: 10,
+  });
   expect(policy.calls[0].dropped_elements).toBeUndefined();
 });
 
@@ -174,7 +181,7 @@ test("over the token budget, elements in view are left out from the end", async 
     [],
   );
   const request = JSON.stringify(sent[0].body);
-  expect(estimateTokens(request)).toBeLessThanOrEqual(40_000);
+  expect(estimateTokens(request)).toBeLessThanOrEqual(24_000);
   // biome-ignore lint/suspicious/noExplicitAny: a request body as JSON.
   const labels = (sent[0].body as any).state.elements.map((e: { label: string }) => e.label);
   expect(labels[0]).toMatch(/^商品1 /);
@@ -197,14 +204,26 @@ test("refused over its limit, the request is fitted again to a lower budget, whi
   const sizes = sent.map((s) => estimateTokens(JSON.stringify(s.body)));
   expect(sizes[1]).toBeLessThanOrEqual(Math.floor(sizes[0] * 0.6));
   expect(policy.calls[0].token_budget).toBe(Math.floor(sizes[0] * 0.6));
+  // What was refused is logged as counts only.
+  expect(policy.calls[0].refused).toEqual([
+    {
+      estimated_tokens: sizes[0],
+      request_chars: JSON.stringify(sent[0].body).length,
+      choices: expect.any(Number),
+      elements: 205,
+      budget: 24_000,
+    },
+  ]);
   await policy.choose(bigPage(5, 200), PLAN, []);
   expect(estimateTokens(JSON.stringify(sent[2].body))).toBeLessThanOrEqual(sizes[1]);
 });
 
 test("refused over its limit three times, Jev's refusal stands and nothing is chosen", async () => {
   const { policy, sent } = jevPolicy(() => overLimit);
-  await expect(policy.choose(bigPage(5, 200), PLAN, [])).rejects.toThrow(/HTTP 400/);
+  const error = (await policy.choose(bigPage(5, 200), PLAN, []).catch((e: unknown) => e)) as PolicyError;
+  expect(error.message).toMatch(/HTTP 400/);
   expect(sent).toHaveLength(3);
+  expect(error.diagnostic?.refused).toHaveLength(3);
 });
 
 test("another HTTP 400 is not fitted again", async () => {
@@ -349,4 +368,28 @@ test("dropdown options reach Jev once each in short form", async () => {
   expect(resolve(PAGE, "SELECT", "3:1").action?.id).toBe("e4");
   // Claude's view of the page keeps the full option list.
   expect(actionSpace(PAGE.actions)[0][2].options[0].value).toBe("a");
+});
+
+test("Claude's answers reach Jev only when there are some, and ESCALATE is offered only in v2", () => {
+  const plan: Plan = { goal: "g", steps: [], values: [] };
+  const page = { url: "u", title: "t", text: "x", actions: [] };
+  expect("claude_instructions" in (modelState(page, [], plan).plan as object)).toBe(false);
+  const answered = { ...plan, instructions: ["Use the second tab"] };
+  expect((modelState(page, [], answered).plan as { claude_instructions: string[] }).claude_instructions).toEqual([
+    "Use the second tab",
+  ]);
+  const [, v1] = buildQuestions(plan, new Map(), new Map(), new Map());
+  const [, v2] = buildQuestions({ ...plan, flow: "v2" }, new Map(), new Map(), new Map());
+  expect(Object.keys(v1)).not.toContain("ESCALATE");
+  expect(Object.keys(v2)).toContain("ESCALATE");
+});
+
+test("what worked before on this kind of page reaches Jev's state only when there is something", () => {
+  expect(modelState(PAGE, [], PLAN).known_from_earlier_runs).toBeUndefined();
+  const state = modelState(
+    { ...PAGE, known: [{ operation: "CLICK", label: "More", worked: "1 of 2 tries" }] },
+    [],
+    PLAN,
+  );
+  expect(state.known_from_earlier_runs).toMatchObject({ operations: [{ label: "More" }] });
 });

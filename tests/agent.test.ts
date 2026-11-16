@@ -310,3 +310,165 @@ test("maskUrls hides query values in any URL inside a message", async () => {
     'navigating to "https://a.example/p?id=%3Credacted%3E&k=%3Credacted%3E", waiting',
   );
 });
+
+test("ESCALATE returns to Claude as its own outcome, with the attempt still open", async () => {
+  const result = await run(new FakeBrowser(), [new Decision("ESCALATE")]);
+  expect(result.outcome).toBe("ESCALATE");
+  expect(result.actions).toBe(0);
+});
+
+test("Claude's answer is not an action: it does not count against the budget or hide a stuck run", async () => {
+  const history: HistoryEntry[] = [1, 2].map((step) => ({
+    step,
+    attempt: 1,
+    kind: "click",
+    operation: "CLICK",
+    action: "x",
+    text: null,
+    url: "u",
+    page_changed: false,
+  }));
+  history.push({
+    step: 3,
+    attempt: 1,
+    kind: "answer",
+    operation: "ANSWER",
+    action: "Claude answered",
+    page_changed: true,
+  });
+  const result = await run(new FakeBrowser(), [new Decision("DONE")], new Budget(3, 10), history);
+  expect(result.outcome).toBe("GOAL_REPORTED"); // Two of three actions used; the answer is not a third.
+});
+
+const entry = (operation: string, kind: string, changed: boolean): HistoryEntry => ({
+  step: 1,
+  attempt: 1,
+  kind,
+  operation,
+  action: operation,
+  text: null,
+  url: "u",
+  page_changed: changed,
+});
+
+test("v2: three round trips of scrolling stop the run as STUCK, though every scroll changed the page", async () => {
+  const history = ["SCROLL_DOWN", "SCROLL_UP", "SCROLL_DOWN", "SCROLL_UP", "SCROLL_DOWN", "SCROLL_UP"].map((op) =>
+    entry(op, "scroll", true),
+  );
+  const policy = new FakePolicy([]);
+  const v2 = await runAgent(new FakeBrowser(), policy, { ...PLAN, flow: "v2" }, recorder, new Budget(), { history });
+  expect(v2.outcome).toBe("STUCK");
+  expect(v2.detail).toContain("scrolled up and down");
+  expect(policy.calls).toHaveLength(0); // Jev was not asked again.
+  // v1 is unchanged: the same history is not a stop.
+  const v1 = await run(new FakeBrowser(), [new Decision("DONE")], new Budget(), [...history]);
+  expect(v1.outcome).toBe("GOAL_REPORTED");
+});
+
+test("v2: scrolling that is not a back and forth, or has another action between, is not a loop", async () => {
+  const down = ["SCROLL_DOWN", "SCROLL_DOWN", "SCROLL_UP", "SCROLL_DOWN", "SCROLL_UP", "SCROLL_DOWN"].map((op) =>
+    entry(op, "scroll", true),
+  );
+  const result = await runAgent(
+    new FakeBrowser(),
+    new FakePolicy([new Decision("DONE")]),
+    { ...PLAN, flow: "v2" },
+    recorder,
+    new Budget(),
+    { history: down },
+  );
+  expect(result.outcome).toBe("GOAL_REPORTED");
+});
+
+test("v2: two missing targets stop early on a page with a canvas, but not on a page without parts it cannot see", async () => {
+  const missing = () => [entry("NOT_VISIBLE", "missing", false), entry("NOT_VISIBLE", "missing", false)];
+  const withCanvas: Page = {
+    ...page(),
+    status: { kind: "ready", unseen: { frames: 0, canvases: 1, objects: 0 } },
+  };
+  class CanvasBrowser extends FakeBrowser {
+    override async observe(): Promise<Page> {
+      return withCanvas;
+    }
+  }
+  const stopped = await runAgent(
+    new CanvasBrowser(),
+    new FakePolicy([]),
+    { ...PLAN, flow: "v2" },
+    recorder,
+    new Budget(),
+    {
+      history: missing(),
+      page: withCanvas,
+    },
+  );
+  expect(stopped.outcome).toBe("STUCK");
+  expect(stopped.detail).toContain("parts webhand cannot see");
+  const plain = await runAgent(
+    new FakeBrowser(),
+    new FakePolicy([new Decision("DONE")]),
+    { ...PLAN, flow: "v2" },
+    recorder,
+    new Budget(),
+    { history: missing() },
+  );
+  expect(plain.outcome).toBe("GOAL_REPORTED"); // Without unseen parts, it takes three, as before.
+});
+
+test("v2: after Claude's answer, the scroll loop and the missing target are counted again from that point", async () => {
+  const answer = (): HistoryEntry => ({ ...entry("ANSWER", "answer", true), operation: "ANSWER" });
+  const loop = ["SCROLL_DOWN", "SCROLL_UP", "SCROLL_DOWN", "SCROLL_UP", "SCROLL_DOWN", "SCROLL_UP"].map((op) =>
+    entry(op, "scroll", true),
+  );
+  // The six scrolls came before the answer: Jev is asked.
+  const result = await runAgent(
+    new FakeBrowser(),
+    new FakePolicy([new Decision("DONE")]),
+    { ...PLAN, flow: "v2" },
+    recorder,
+    new Budget(),
+    {
+      history: [...loop, answer()],
+    },
+  );
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect(result.decisions).toBe(1); // Jev was asked once.
+  // Three round trips after the answer stop again.
+  const again = await runAgent(new FakeBrowser(), new FakePolicy([]), { ...PLAN, flow: "v2" }, recorder, new Budget(), {
+    history: [answer(), ...loop],
+  });
+  expect(again.outcome).toBe("STUCK");
+
+  const withCanvas: Page = { ...page(), status: { kind: "ready", unseen: { frames: 0, canvases: 1, objects: 0 } } };
+  class CanvasBrowser extends FakeBrowser {
+    override async observe(): Promise<Page> {
+      return withCanvas;
+    }
+  }
+  const missing = () => [entry("NOT_VISIBLE", "missing", false), entry("NOT_VISIBLE", "missing", false)];
+  const asked2 = await runAgent(
+    new CanvasBrowser(),
+    new FakePolicy([new Decision("DONE")]),
+    { ...PLAN, flow: "v2" },
+    recorder,
+    new Budget(),
+    {
+      history: [...missing(), answer()],
+      page: withCanvas,
+    },
+  );
+  expect(asked2.outcome).toBe("GOAL_REPORTED"); // Two missing targets before the answer do not stop it.
+  expect(asked2.decisions).toBe(1);
+  const stopped = await runAgent(
+    new CanvasBrowser(),
+    new FakePolicy([]),
+    { ...PLAN, flow: "v2" },
+    recorder,
+    new Budget(),
+    {
+      history: [answer(), ...missing()],
+      page: withCanvas,
+    },
+  );
+  expect(stopped.outcome).toBe("STUCK"); // Two new ones after it do.
+});

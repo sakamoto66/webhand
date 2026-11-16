@@ -1,0 +1,7 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Order form</title>
+<h2>Delivery</h2>
+<label>Name <input id="name" aria-label="Name"></label>
+<button id="order" onclick="document.body.dataset.ordered = document.getElementById('name').value; document.getElementById('done').textContent = 'Order placed for ' + document.getElementById('name').value">Place order</button>
+<p id="done"></p>

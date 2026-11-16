@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fieldnote · Request a quote</title>
+<style>
+  body { font: 16px/1.6 system-ui, sans-serif; margin: 0 auto; max-width: 640px; padding: 0 24px; }
+  #result, #error { margin: 8px 0; }
+  #error { color: #a00; }
+  form p { margin: 0 0 12px; }
+</style></head>
+<body>
+  <h1>Request a quote</h1>
+  <p>Tell us who you are and we will send a price.</p>
+  <form id="quote">
+    <p><label>Name <input name="name" autocomplete="off"></label></p>
+    <p><label>Email <input name="email" type="email" autocomplete="off"></label></p>
+    <p id="code-row" hidden><label>Company code <input name="code" autocomplete="off"></label></p>
+    <p id="error" role="alert" hidden>Company code is required for a quote.</p>
+    <p><button type="submit">Request quote</button></p>
+  </form>
+  <p id="result" role="status"></p>
+<script>
+  // The company code is asked for only after the first press of Request quote: a value the plan may lack.
+  const form = document.getElementById("quote");
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+    const f = form.elements;
+    if (f.code.value.trim() === "") {
+      document.getElementById("code-row").hidden = false;
+      document.getElementById("error").hidden = false;
+      return;
+    }
+    document.getElementById("error").hidden = true;
+    document.body.dataset.quote = JSON.stringify({ name: f.name.value, email: f.email.value, code: f.code.value });
+    document.getElementById("result").textContent = "Quote requested";
+  });
+</script>
+</body>
+</html>

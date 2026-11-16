@@ -49,6 +49,10 @@ export interface ModelCall {
   dropped_elements?: number;
   /** The lowered token budget the request was fitted to, after Jev refused one over its limit */
   token_budget?: number;
+  /** What the request held, counts only: estimated tokens, characters, choices over all questions, and elements asked about */
+  request?: { estimated_tokens: number; request_chars: number; choices: number; elements: number };
+  /** The requests Jev refused over its limit before this one went through: what the refused request held */
+  refused?: { estimated_tokens: number; request_chars: number; choices: number; elements: number; budget: number }[];
 }
 
 export function modelCall(
@@ -91,6 +95,8 @@ export interface Plan {
   steps: Step[];
   values: Value[];
   notes?: string[];
+  /** v2: Claude's answers to Jev's questions (`webhand answer`). They continue the same attempt, so Jev sees them. */
+  instructions?: string[];
   attempt?: number;
   service?: { description: string; facts: string[] } | null;
   /** v2: the page is offered whole (elements beyond the viewport with their own operations). */

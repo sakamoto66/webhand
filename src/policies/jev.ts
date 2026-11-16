@@ -26,6 +26,10 @@ import {
   COMPARE_RULES,
   COMPARED_RULES,
   type Controls,
+  ESCALATE,
+  ESCALATE_HELP,
+  ESCALATE_RULES,
+  INSTRUCTION_RULES,
   jevGoal,
   MORE_RULES,
   modelState,
@@ -133,10 +137,12 @@ export function validateChoice(answer: Json, ids: Iterable<string>): Json {
 const NO_VALUE = "NONE";
 
 // Jev refuses a request over its token limit (HTTP 400 max_tokens_exceeded) and a question with more than 255
-// choices (HTTP 422), found 2026-11-13. Requests of about 40k tokens passed. Jev's tokenizer is not known, and
-// Japanese counted higher than estimated (round 17), so a refusal over the limit lowers the budget and the
-// request is fitted again; nothing runs in the browser in between.
-const TOKEN_BUDGET = 40_000;
+// choices (HTTP 422), found 2026-11-13. The estimate below read lower than Jev's count on real pages, by up to 1.5
+// times, and the limit sits at about 24k estimated tokens: in round ff, all 320 requests that went through held
+// 23,876 or fewer, and all 8 refused held 24,987 or more (rounds fc to ff showed that 40k, the first budget, was
+// refused again and again, and the budget lowered by a refusal stayed lowered for the run). A refusal still lowers
+// the budget and the request is fitted again; nothing runs in the browser in between.
+const TOKEN_BUDGET = 24_000;
 const MAX_CHOICES = 255;
 const OVER_LIMIT = "max_tokens_exceeded";
 const FIT_TRIES = 3;
@@ -147,6 +153,31 @@ export function estimateTokens(text: string): number {
   let ascii = 0;
   for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) < 128) ascii++;
   return Math.ceil(ascii / 3 + (text.length - ascii) * 1.5);
+}
+
+/** The number of choices over all questions of a request. */
+function choiceCount(questions: Record<string, unknown>): number {
+  let total = 0;
+  for (const question of Object.values(questions)) {
+    const criteria = (question as { criteria: Map<string, unknown> | Record<string, unknown> }).criteria;
+    total += criteria instanceof Map ? criteria.size : Object.keys(criteria).length;
+  }
+  return total;
+}
+
+/** What a request holds, as counts: for the run log, so a refusal can be set beside the requests that went through. */
+function requestSize(fitted: {
+  body: unknown;
+  questions: Record<string, unknown>;
+  targets?: Map<string, Map<string, unknown>>;
+}) {
+  const chars = toJson(fitted.body);
+  return {
+    estimated_tokens: estimateTokens(chars),
+    request_chars: chars.length,
+    choices: choiceCount(fitted.questions),
+    elements: fitted.targets ? [...fitted.targets.values()].reduce((n, m) => n + m.size, 0) : 0,
+  };
 }
 
 function fits(body: unknown, questions: Record<string, unknown>, budget: number): boolean {
@@ -196,6 +227,7 @@ function taskBrief(plan: Plan): Record<string, unknown> {
   const brief: Record<string, unknown> = { goal: jevGoal(plan) };
   if (plan.steps?.length) brief.plan = planText(plan);
   if (plan.notes?.length) brief.notes_from_earlier_attempts = plan.notes;
+  if (plan.instructions?.length) brief.claude_instructions = plan.instructions;
   return brief;
 }
 
@@ -223,10 +255,13 @@ export function buildQuestions(
   let rules = reading ? `${next}\n${READ_RULES}` : next;
   if (tabbed) rules = `${rules}\n${TAB_RULES}`;
   if (plan.compared) rules = `${rules}\n${COMPARED_RULES}`;
+  if (plan.instructions?.length) rules = `${rules}\n${INSTRUCTION_RULES}`;
+  if (plan.flow === "v2") rules = `${rules}\n${ESCALATE_RULES}`;
   const operations: Record<string, string> = {};
   for (const key of targets.keys()) operations[key] = OPERATION_HELP[key];
   for (const [key, value] of controls) operations[key] = value.label;
   Object.assign(operations, TERMINAL_HELP);
+  if (plan.flow === "v2") operations[ESCALATE] = ESCALATE_HELP;
   const questions: Record<string, unknown> = {
     operation: { type: "choice", criteria: operations, instructions: { ...brief, rules } },
   };
@@ -422,15 +457,23 @@ export class JevPolicy implements Policy {
     };
     let fitted = fitChoose(whole, build, this.budget);
     let result: Json;
+    const refused: NonNullable<ModelCall["refused"]> = [];
     for (let tries = 1; ; tries++) {
       const extra: Partial<ModelCall> = fitted.dropped ? { dropped_elements: fitted.dropped } : {};
       if (this.budget !== TOKEN_BUDGET) extra.token_budget = this.budget;
+      if (refused.length) extra.refused = refused;
+      extra.request = requestSize(fitted);
       try {
         result = await this.post(fitted.body, "choose", extra);
         break;
       } catch (error) {
         const over = error instanceof PolicyError && String(error.diagnostic?.error ?? "").includes(OVER_LIMIT);
-        if (!over || tries >= FIT_TRIES) throw error;
+        if (!over) throw error;
+        // What Jev refused is kept in the log (counts only, no page text): its limit is not known.
+        refused.push({ ...requestSize(fitted), budget: this.budget });
+        if (tries >= FIT_TRIES) {
+          throw new PolicyError(error.message, { ...error.diagnostic, refused });
+        }
         this.budget = Math.floor(estimateTokens(toJson(fitted.body)) * SHRINK);
         fitted = fitChoose(whole, build, this.budget);
       }

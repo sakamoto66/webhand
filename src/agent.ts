@@ -6,6 +6,7 @@
 
 import type { PageCheck } from "./browser.ts";
 import { quote } from "./format.ts";
+import type { Knowledge } from "./knowledge.ts";
 import { pageEvent, type Recorder, type ScreenshotAfter, safeUrl } from "./metrics.ts";
 import {
   type Action,
@@ -27,6 +28,7 @@ export const STUCK = "STUCK"; // Three actions in a row did not change the page.
 export const ATTEMPT_BUDGET = "ATTEMPT_BUDGET";
 export const NEEDS_HUMAN = "NEEDS_HUMAN"; // A person acts in the window: sign-in, codes, CAPTCHA, [person] steps.
 export const NEEDS_VALUE = "NEEDS_VALUE"; // A field needs text and none of Claude's values fits.
+export const ESCALATE = "ESCALATE"; // v2: Jev handed the decision to Claude. `answer` continues the same attempt.
 export const JEV_FAILED = "JEV_FAILED"; // No usable decision. Nothing was executed.
 export const UNCERTAIN = "UNCERTAIN"; // A mutation may have happened. Never retried, never replanned.
 
@@ -117,7 +119,7 @@ export async function captureScreenshot(
 
 /** Executed actions only, in every attempt: not a person's step, a NOT_VISIBLE choice, or a refused stale one. */
 export function executed(history: HistoryEntry[]): HistoryEntry[] {
-  return history.filter((h) => !["human", MISSING, STALE].includes(h.kind));
+  return history.filter((h) => !["human", "answer", MISSING, STALE].includes(h.kind));
 }
 
 /** Executed actions of one attempt; they count against the budget. */
@@ -129,6 +131,35 @@ export function actionsIn(history: HistoryEntry[], attempt: number): HistoryEntr
 function stuck(history: HistoryEntry[], attempt = 1): boolean {
   const recent = history.filter((h) => (h.attempt ?? 1) === attempt && h.kind !== "human").slice(-3);
   return recent.length === 3 && recent.every((s) => s.page_changed === false && s.kind !== "wait");
+}
+
+/** Entries of this attempt after Claude's last answer: an answer starts the count again, so Jev is asked before any stop. */
+function sinceAnswer(history: HistoryEntry[], attempt: number): HistoryEntry[] {
+  const own = history.filter((h) => (h.attempt ?? 1) === attempt && h.kind !== "human");
+  const last = own.map((h) => h.kind).lastIndexOf("answer");
+  return own.slice(last + 1);
+}
+
+/** v2: back and forth scrolling (three round trips) with nothing else done between. Each scroll changes the page, so stuck() never sees it. */
+export function looping(history: HistoryEntry[], attempt = 1): boolean {
+  const recent = sinceAnswer(history, attempt).slice(-6);
+  const scrolls = recent.map((h) => h.operation);
+  return (
+    recent.length === 6 &&
+    scrolls.every((op, i) => (op === "SCROLL_DOWN" || op === "SCROLL_UP") && (i === 0 || op !== scrolls[i - 1]))
+  );
+}
+
+/** How many frames, canvases, and plugin objects the page has: parts webhand cannot see into. */
+export function unseenParts(page: Page): number {
+  const unseen = (page.status?.unseen ?? {}) as Record<string, number>;
+  return (unseen.frames ?? 0) + (unseen.canvases ?? 0) + (unseen.objects ?? 0);
+}
+
+/** v2: the needed element was not offered twice in a row, on a page with parts webhand cannot see into. */
+function missingInUnseen(history: HistoryEntry[], page: Page, attempt = 1): boolean {
+  const recent = sinceAnswer(history, attempt).slice(-2);
+  return recent.length === 2 && recent.every((h) => h.kind === MISSING) && unseenParts(page) > 0;
 }
 
 type OnChange = (page: Page) => void;
@@ -150,7 +181,7 @@ export async function execute(
   decision: Decision,
   history: HistoryEntry[],
   recorder: Recorder,
-  options: { decidedBy: string; attempt: number; onChange?: OnChange; values?: Value[] },
+  options: { decidedBy: string; attempt: number; onChange?: OnChange; values?: Value[]; knowledge?: Knowledge },
 ): Promise<Page> {
   const onChange = options.onChange ?? (() => {});
   const action = decision.action as Page;
@@ -174,6 +205,14 @@ export async function execute(
   const newPage = await browser.observe();
   step.page_changed = !samePage(newPage, page);
   recorder.event("step_result", { step: step.step, page_changed: step.page_changed });
+  options.knowledge?.record({
+    from: page.url,
+    to: newPage.url,
+    kind: action.kind,
+    label: action.label,
+    changed: step.page_changed,
+    inItem: page.guards?.[String(action.node)]?.[14] === "item",
+  });
   if (asked.length) {
     recorder.event("window_ignored", { step: step.step, attempt: options.attempt, urls: asked.map(safeUrl) });
   }
@@ -243,6 +282,7 @@ export async function runAgent(
     decisions?: number;
     onChange?: OnChange;
     onDecision?: (count: number) => void;
+    knowledge?: Knowledge;
   } = {},
 ): Promise<AgentResult> {
   const attempt = plan.attempt ?? 1;
@@ -270,6 +310,12 @@ export async function runAgent(
 
   while (true) {
     if (stuck(history, attempt)) return finish(STUCK, "three actions without a page change");
+    if (plan.flow === "v2" && looping(history, attempt)) {
+      return finish(STUCK, "scrolled up and down three times with nothing else done");
+    }
+    if (plan.flow === "v2" && missingInUnseen(history, page, attempt)) {
+      return finish(STUCK, "the needed element was not offered twice, and the page has parts webhand cannot see");
+    }
     if (actionsIn(history, attempt).length >= budget.maxActions || decisions >= budget.maxDecisions) {
       return finish(ATTEMPT_BUDGET, `${actionsIn(history, attempt).length} actions, ${decisions} decisions`);
     }
@@ -279,7 +325,10 @@ export async function runAgent(
       if (!(await browser.fresh(page))) page = await browser.observe();
       decisions += 1;
       onDecision(decisions);
-      decision = await policy.choose(page, plan, history);
+      // v2: what worked before on this kind of page, when the site is known (stage 3).
+      const known = options.knowledge?.hints(page.url) ?? [];
+      if (known.length) recorder.event("known_offered", { attempt, count: known.length });
+      decision = await policy.choose(known.length ? { ...page, known } : page, plan, history);
       flushCalls();
       if (decision.operation === "NOT_VISIBLE") {
         const entry = {
@@ -299,13 +348,15 @@ export async function runAgent(
           confidence: decision.confidence,
           offered: offered(page),
           ...(browser.unseen ? { unseen: await browser.unseen().catch(() => null) } : {}),
+          ...(page.frames_log ? { frames: page.frames_log } : {}),
         });
         onChange(page);
         continue;
       }
       if (decision.action === null) {
         if (!(await browser.fresh(page))) continue;
-        const outcome = ({ DONE: GOAL_REPORTED, NEEDS_HUMAN } as Record<string, string>)[decision.operation] ?? BLOCKED;
+        const outcome =
+          ({ DONE: GOAL_REPORTED, NEEDS_HUMAN, ESCALATE } as Record<string, string>)[decision.operation] ?? BLOCKED;
         return finish(outcome, `Jev chose ${decision.operation}`);
       }
       if (decision.action.kind === "fill" && decision.text === null) {
@@ -319,6 +370,7 @@ export async function runAgent(
         attempt,
         onChange,
         values: plan.values,
+        knowledge: options.knowledge,
       });
     } catch (error) {
       if (error instanceof StalePage) {
