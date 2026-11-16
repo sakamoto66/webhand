@@ -1,6 +1,6 @@
 {
   "name": "webhand",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Claude plans, asks, checks, and replans; Jev operates the browser toward the goal.",
   "license": "MIT",
   "author": "sakamoto66",

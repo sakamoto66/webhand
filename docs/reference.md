@@ -42,6 +42,7 @@ flowchart LR
 | `NEEDS_VALUE` | No planned value fits an input field | `run --value "label=value"`; asks the user if unsure |
 | `NEEDS_HUMAN` | Login, verification code, CAPTCHA, or a `[person]` step | Asks the user, then `run --human-done` |
 | `BLOCKED` / `STUCK` / `ATTEMPT_BUDGET` | No way forward | `replan` to retry, `act` to fill in one action, or `finish` |
+| `ESCALATE` | Jev hands the decision to Claude (flow v2): a step the goal does not ask for that deletes, pays, sends, or cannot be undone, or a page the plan does not cover where nothing offered fits | Reads `WHY:`, then `answer` so the same attempt goes on |
 | `JEV_FAILED` | Jev's response was unusable (nothing was executed) | `run` again, `replan`, or `act` |
 | `UNCERTAIN` | Unknown whether an action took effect | Does not repeat it; `finish --status error` |
 
@@ -154,14 +155,30 @@ If the CLI is not installed globally, read `webhand` in the table below as `npx 
 | `webhand start --goal G --url U --step S ... --value L=V ... --session ...` | Claude | Records the plan and opens the start URL in Chrome |
 | `webhand run` | Jev | Operates the page toward the GOAL |
 | `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | Claude | Revises the plan and starts the next attempt, from the start URL again (`--restart`) or from another page (`--url`) |
+| `webhand answer --note N [--value L=V] [--url URL]` | Claude | Answers Jev in the same attempt (flow v2 only): the history and the budget are kept. Use `replan` only when the whole plan is wrong |
 | `webhand act OP [TARGET]` | Claude | Performs a single action in Jev's place |
 | `webhand observe` | Claude | Shows the current page |
 | `webhand finish --status STATUS` | Claude | Runs independent verification, writes the log, and closes Chrome |
 | `webhand learn --name NAME --url URL [--scope project\|user]` | Person | Records a demonstration |
 | `webhand profile login/list/delete` | Person | Manages saved profiles |
 | `webhand auth save/list/delete NAME` | Claude | Saves the sign-in of a session, to start a new session with `--auth NAME` |
+| `webhand knowledge list/show HOST/clear [HOST]` | Person | Shows or deletes what webhand learned about sites from its own runs (flow v2) |
 
 Prefix a step with `[person]` to make it a step a human performs (requires `--headed`). `--focus REGION` / `--skip REGION` on `start` and `replan` choose which regions are observed (see [Page regions](#page-regions)), and `--read KIND` adds content from beyond the viewport (see [Reading beyond the viewport](#reading-beyond-the-viewport)). With `--runbook NAME --param k=v`, the runbook's GOAL, start URL, and steps become the defaults, and the params are passed to Jev as input values.
+
+### Flow v1 and v2
+
+`start --flow v2` is the default. `--flow v1` or `WEBHAND_FLOW=v1` selects the earlier flow, kept as the baseline of experiments.
+
+| | v2 (default) | v1 |
+| --- | --- | --- |
+| What Jev is offered | The actions of the whole page, including elements beyond the viewport (scrolled into view before acting), and elements inside frames | What is in view, plus the regions Claude chose with `--focus` / `--read` |
+| When Jev cannot go on | Jev can also `ESCALATE`; Claude answers with `answer` (also after `STUCK`, `BLOCKED`, `GOAL_REPORTED`, `JEV_FAILED`) and the same attempt continues | The attempt ends with `STUCK` or `BLOCKED`; Claude runs `replan` |
+| Freshness check | On the target (the page key and the target's guard); scrolls and waits are never refused | On the observed page |
+| Page state | `PAGE:` line (`blocked`, `login`, `error`, ...), and a stop when the target is in a part webhand cannot see (canvas, plugin) | Not reported |
+| Earlier runs | Records what clicks and selects did on each kind of page, and offers to Jev, on the same kind of page, the operations of runs that ended `done` (at most 5) | Not used |
+
+What v2 records is kept in `~/.webhand/knowledge/<host>.json`: the kind of page (the address with ids and query values taken out) and the kind and label of the operations tried on it. Typed text, values, anything that reads as personal data, and controls inside list items (their labels are page content) are not kept. `WEBHAND_KNOWLEDGE=0` turns off recording and offering, `WEBHAND_KNOWLEDGE_USE=0` stops only the offering to Jev, and `webhand knowledge clear` deletes it.
 
 ## Learning mode
 
@@ -233,7 +250,7 @@ nav#2                                    # sibling regions of the same kind with
 - The `regions` field of an observation lists, per region, its position (`above` / `visible` / `below`), shown and total counts of text and actions, and the number of off-screen actions. Claude sees it as `REGIONS` and Jev as `page.regions`, so it is clear what was cut.
 - `focus` regions come first, and their text is taken from the whole page. `skip` regions appear only in the summary. With neither, the visible part of the page is taken in DOM order. An open dialog always comes first when a view is set.
 - A pattern may match anywhere in a key and includes everything inside the matched region. A segment without a name or number (`form`) matches any region of that kind. If a region matches both focus and skip, the deeper match wins (focus on a tie).
-- Action targets are always limited to the visible part, regardless of the view. Freshness checks (`marker`, `page_key`, `guards`) are computed from the same input regardless of the view.
+- In flow v1, action targets are always limited to the visible part, regardless of the view (flow v2 also offers elements beyond the viewport). Freshness checks (`marker`, `page_key`, `guards`) are computed from the same input regardless of the view.
 - Views are layered in this order, later ones winning: `default` in service.toml, the runbook's `focus` / `skip`, then Claude's `--focus` / `--skip`. The `run_start` and `plan` events record the `view`.
 
 ```toml
@@ -257,7 +274,7 @@ For services without `verify()`, `verified` is `null`. A runbook's `done_when` i
 
 ## Reading beyond the viewport
 
-Jev and Claude normally see only the visible part of the page: about 500 characters of text on a typical page, while the whole page may hold tens of thousands. With `--read KIND` (repeatable) on `start` or `replan`, each observation adds a read layer with the chosen kinds of content from the whole page. Claude sees it as `READ` in the `run` and `observe` output, and Jev as `page.read`.
+In flow v1 (and for text in both flows), Jev and Claude normally see only the visible part of the page: about 500 characters of text on a typical page, while the whole page may hold tens of thousands. With `--read KIND` (repeatable) on `start` or `replan`, each observation adds a read layer with the chosen kinds of content from the whole page. Claude sees it as `READ` in the `run` and `observe` output, and Jev as `page.read`.
 
 | Kind | What it holds |
 | --- | --- |
@@ -269,7 +286,7 @@ Jev and Claude normally see only the visible part of the page: about 500 charact
 | `control` | Buttons, fields, and other controls outside the viewport: role and name only |
 | `media` | Image alternative text and figure captions |
 
-- It is for reading only. Nothing in it can be acted on; action targets and freshness checks stay limited to the visible part, apart from `SCROLL_TO` below. A line such as `@ below 1200px` says where the lines after it are, so Jev can scroll in the right direction.
+- It is for reading only. Nothing in it can be acted on; in flow v1, action targets and freshness checks stay limited to the visible part, apart from `SCROLL_TO` below (v2 also offers elements beyond the viewport). A line such as `@ below 1200px` says where the lines after it are, so Jev can scroll in the right direction.
 - Text, list items, links, and controls in view are left out, since the viewport text and the elements already hold them. The outline and tables are kept whole.
 - The layer holds at most 12,000 characters. Each kind gets an equal share, and a kind that needs less leaves the rest to the others. Lines are kept whole. A cut kind ends with `... N more characters`.
 - With the layer on, the elements beyond the viewport (up to 60; the nearest and the farthest are kept) are offered for `SCROLL_TO` only, with where they are (`at="below 1200px"`). `SCROLL_TO` scrolls the element into the middle of the viewport and does nothing else; the next observation can then act on it. In a list that loads more items as it is scrolled, a `SCROLL_TO` on its last element loads the next items. Claude can also use it: `webhand act SCROLL_TO N`.

@@ -87,6 +87,7 @@ Chrome is the only engine with a window and saved profiles. Obscura and Lightpan
 - **No blind retries**: A change to the page is never retried. If webhand cannot tell whether an action took effect, it stops instead of trying again.
 - **Page text is untrusted**: Content on the page is treated as data, never as instructions.
 - **Recordings and logs**: Learning mode masks password, one-time code, and card fields and all URL query values. Run logs keep the label of each typed value, not the value. Screenshots, saved only with `WEBHAND_SCREENSHOTS=1`, show typed values. Logs and screenshots under `~/.webhand/runs/` still contain page text, so do not share them.
+- **What webhand remembers about sites**: The default flow (v2) records the clicks and selects it tried and whether the page changed, per kind of page, in `~/.webhand/knowledge/` on your machine, and offers the ones from runs that ended `done` to Jev on later runs. Typed text, values, personal data, and labels inside list items are not recorded. Turn it off with `WEBHAND_KNOWLEDGE=0` (`WEBHAND_KNOWLEDGE_USE=0` stops only the offering), or delete it with `webhand knowledge clear`.
 - **Review before use**: Runbooks start as `draft` and are used for normal runs only after you set them to `approved`. Keep secrets and personal data out of runbooks; pass them as `params`.
 
 ## Documentation

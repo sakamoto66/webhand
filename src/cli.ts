@@ -1286,7 +1286,7 @@ async function commandProfile(args: Args): Promise<number> {
   return OK;
 }
 
-/** Saved logins. `save` takes the sign-in of a running session; `start --auth NAME` begins a new session with it. */
+/** What webhand learned about sites from its own runs: list, show HOST, clear [HOST]. */
 async function commandKnowledge(args: Args): Promise<number> {
   const knowledge = new Knowledge();
   if (args.action === "list") {
@@ -1458,8 +1458,8 @@ function commands(): Record<string, CommandSpec> {
           name: "flow",
           type: "string",
           choices: [...FLOWS],
-          default: process.env.WEBHAND_FLOW || "v1",
-          help: "v2: offer Jev the whole page (research). Default: WEBHAND_FLOW, else v1",
+          default: process.env.WEBHAND_FLOW || "v2",
+          help: "v2 (default): offer Jev the whole page; v1: only what is in view. Default: WEBHAND_FLOW, else v2",
         },
         { name: "session", type: "string", default: "new", help: "new (temporary) or profile:NAME (saved sign-in)" },
         {
