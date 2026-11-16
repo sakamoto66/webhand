@@ -149,6 +149,13 @@ test("a small request goes to Jev whole", async () => {
   const { policy, sent } = jevPolicy(clickTwo);
   await policy.choose(bigPage(5, 5), PLAN, []);
   expect(clickChoices(sent[0].body)).toHaveLength(11);
+  // Every request's size is logged as counts, so a refusal can be set beside the requests that went through.
+  expect(policy.calls[0].request).toEqual({
+    estimated_tokens: estimateTokens(JSON.stringify(sent[0].body)),
+    request_chars: JSON.stringify(sent[0].body).length,
+    choices: expect.any(Number),
+    elements: 10,
+  });
   expect(policy.calls[0].dropped_elements).toBeUndefined();
 });
 

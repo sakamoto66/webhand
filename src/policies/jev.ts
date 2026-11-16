@@ -163,6 +163,21 @@ function choiceCount(questions: Record<string, unknown>): number {
   return total;
 }
 
+/** What a request holds, as counts: for the run log, so a refusal can be set beside the requests that went through. */
+function requestSize(fitted: {
+  body: unknown;
+  questions: Record<string, unknown>;
+  targets?: Map<string, Map<string, unknown>>;
+}) {
+  const chars = toJson(fitted.body);
+  return {
+    estimated_tokens: estimateTokens(chars),
+    request_chars: chars.length,
+    choices: choiceCount(fitted.questions),
+    elements: fitted.targets ? [...fitted.targets.values()].reduce((n, m) => n + m.size, 0) : 0,
+  };
+}
+
 function fits(body: unknown, questions: Record<string, unknown>, budget: number): boolean {
   for (const question of Object.values(questions)) {
     const criteria = (question as { criteria: Map<string, unknown> | Record<string, unknown> }).criteria;
@@ -445,6 +460,7 @@ export class JevPolicy implements Policy {
       const extra: Partial<ModelCall> = fitted.dropped ? { dropped_elements: fitted.dropped } : {};
       if (this.budget !== TOKEN_BUDGET) extra.token_budget = this.budget;
       if (refused.length) extra.refused = refused;
+      extra.request = requestSize(fitted);
       try {
         result = await this.post(fitted.body, "choose", extra);
         break;
@@ -452,13 +468,7 @@ export class JevPolicy implements Policy {
         const over = error instanceof PolicyError && String(error.diagnostic?.error ?? "").includes(OVER_LIMIT);
         if (!over) throw error;
         // What Jev refused is kept in the log (counts only, no page text): its limit is not known.
-        refused.push({
-          estimated_tokens: estimateTokens(toJson(fitted.body)),
-          request_chars: toJson(fitted.body).length,
-          choices: choiceCount(fitted.questions),
-          elements: fitted.targets ? [...fitted.targets.values()].reduce((n, m) => n + m.size, 0) : 0,
-          budget: this.budget,
-        });
+        refused.push({ ...requestSize(fitted), budget: this.budget });
         if (tries >= FIT_TRIES) {
           throw new PolicyError(error.message, { ...error.diagnostic, refused });
         }
