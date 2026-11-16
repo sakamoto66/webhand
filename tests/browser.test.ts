@@ -991,3 +991,43 @@ test("v2: a run records what its clicks did for the next run, and never what was
   );
   expect(transitions).toEqual(expect.arrayContaining(["click|Weekly summary on", "click|Save settings"]));
 });
+
+test("v2: a run that finished as done leaves hints, and the next run's Jev state offers them on the same page", async () => {
+  const { Knowledge } = await import("../src/knowledge.ts");
+  const menu = await loadTask("menu_invoice");
+  const dir = join(tmpPath(), "knowledge");
+  await browser.close();
+  await open(menu.startUrl(ROOT), { whole: true });
+  const plan = { goal: menu.GOAL, steps: [], values: [], flow: "v2" as const };
+  const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
+  const history: HistoryEntry[] = [];
+  const knowledge = new Knowledge(dir);
+  const result = await runAgent(browser, new ScriptedPolicy(menu.SCRIPT), plan, recorder, new Budget(), {
+    history,
+    knowledge,
+  });
+  recorder.close();
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect((await menu.verify(browser)).success).toBe(true);
+  expect(knowledge.hints(menu.startUrl(ROOT))).toEqual([]);
+  knowledge.confirm(history);
+  const hints = knowledge.hints(menu.startUrl(ROOT));
+  expect(hints.map((h) => h.label)).toEqual(["More"]);
+  // The next run sees them in the state Jev is asked about, on the start page only.
+  const seen: unknown[] = [];
+  const spy = {
+    name: "spy",
+    calls: [],
+    config: () => ({}),
+    choose: async (page: Page) => {
+      seen.push(page.known ?? null);
+      return new ScriptedPolicy([]).choose(page, plan, []);
+    },
+  };
+  await browser.close();
+  await open(menu.startUrl(ROOT), { whole: true });
+  const again = new Recorder(join(tmpPath(), "again.jsonl"));
+  await runAgent(browser, spy as never, plan, again, new Budget(), { knowledge: new Knowledge(dir) });
+  again.close();
+  expect(seen[0]).toEqual(hints);
+});

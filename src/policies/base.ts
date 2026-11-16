@@ -258,6 +258,14 @@ export function modelState(page: Page, history: HistoryEntry[], plan: Plan | nul
   if (page.regions?.length) shown.regions = page.regions;
   if (page.read) shown.read = { text: page.read.text, chars: page.read.chars };
   state.page = shown;
+  if (page.known?.length) {
+    state.known_from_earlier_runs = {
+      note:
+        "Operations that were among the steps of earlier runs on this site that finished as done, for pages like this one. " +
+        "They may not fit this goal: use one only when it serves the goal and is offered below.",
+      operations: page.known,
+    };
+  }
   state.elements = actionSpace(page.actions)[0].map(compactOptions);
   state.action_history = history.slice(-HISTORY_LIMIT).map((h) => {
     const entry: Record<string, unknown> = {};

@@ -782,7 +782,10 @@ async function commandRun(args: Args): Promise<number> {
       page: state.page,
       decisions: state.attempt_decisions,
       // v2 records what its operations did, for the next run on the site (WEBHAND_KNOWLEDGE=0 turns it off).
-      knowledge: state.plan.flow === "v2" && process.env.WEBHAND_KNOWLEDGE !== "0" ? new Knowledge() : undefined,
+      knowledge:
+        state.plan.flow === "v2" && process.env.WEBHAND_KNOWLEDGE !== "0"
+          ? new Knowledge(undefined, process.env.WEBHAND_KNOWLEDGE_USE !== "0")
+          : undefined,
       onChange: (page) => {
         state.page = page;
         session.save(state);
@@ -1101,6 +1104,10 @@ async function commandFinish(args: Args): Promise<number> {
     session.clear();
   }
   const plan = state.plan;
+  // v2: a run that finished as done marks its steps as the way that worked.
+  if (args.status === "done" && plan.flow === "v2" && process.env.WEBHAND_KNOWLEDGE !== "0") {
+    new Knowledge().confirm(agent.executed(state.history));
+  }
   const outcomes = [...state.outcomes, { attempt: plan.attempt, outcome: state.outcome, reason: args.reason }];
   const totals = runTotals(state.log);
   logOnce(state.log, "run_end", {

@@ -67,3 +67,24 @@ test("a page the site has too many of is not added past the limit", () => {
     }),
   ).toBe(false);
 });
+
+test("hints offer only what worked in runs that finished as done, the most often first, and nothing when switched off", () => {
+  const dir = join(tmpPath(), "knowledge");
+  const knowledge = new Knowledge(dir);
+  const from = "https://s.test/home";
+  knowledge.record({ from, to: "https://s.test/tools", kind: "click", label: "Tools", changed: true });
+  knowledge.record({ from, to: "https://s.test/more", kind: "click", label: "More", changed: true });
+  knowledge.record({ from, to: "https://s.test/more", kind: "click", label: "More", changed: true });
+  // Nothing worked yet: nothing is offered.
+  expect(knowledge.hints(from)).toEqual([]);
+  knowledge.confirm([
+    { kind: "click", action: "More", url: from },
+    { kind: "click", action: "More", url: from },
+    { kind: "fill", action: "Name", url: from },
+  ]);
+  expect(knowledge.hints(from)).toEqual([
+    { operation: "CLICK", label: "More", worked: "1 of 2 tries", goes_to: "/more" },
+  ]);
+  expect(knowledge.hints("https://s.test/other")).toEqual([]);
+  expect(new Knowledge(dir, false).hints(from)).toEqual([]);
+});

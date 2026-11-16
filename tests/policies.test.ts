@@ -383,3 +383,13 @@ test("Claude's answers reach Jev only when there are some, and ESCALATE is offer
   expect(Object.keys(v1)).not.toContain("ESCALATE");
   expect(Object.keys(v2)).toContain("ESCALATE");
 });
+
+test("what worked before on this kind of page reaches Jev's state only when there is something", () => {
+  expect(modelState(PAGE, [], PLAN).known_from_earlier_runs).toBeUndefined();
+  const state = modelState(
+    { ...PAGE, known: [{ operation: "CLICK", label: "More", worked: "1 of 2 tries" }] },
+    [],
+    PLAN,
+  );
+  expect(state.known_from_earlier_runs).toMatchObject({ operations: [{ label: "More" }] });
+});

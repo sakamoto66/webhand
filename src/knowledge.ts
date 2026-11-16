@@ -20,6 +20,8 @@ interface Transition {
   label: string;
   tried: number;
   changed: number;
+  /** How many runs that finished as done had this operation among their steps. */
+  ok?: number;
   /** Where the page went when it changed: shape of the new address, with how many times. */
   to: Record<string, number>;
 }
@@ -67,11 +69,16 @@ export function plainLabel(label: unknown): string | null {
   return text;
 }
 
+const MAX_HINTS = 5;
+
 export class Knowledge {
   private readonly dir: string;
+  private readonly use: boolean;
 
-  constructor(dir: string = join(home(), "knowledge")) {
+  /** use: whether hints() offers what is known; recording goes on either way. */
+  constructor(dir: string = join(home(), "knowledge"), use = true) {
     this.dir = dir;
+    this.use = use;
   }
 
   private file(host: string): string {
@@ -114,5 +121,45 @@ export class Knowledge {
     writeFileSync(`${target}.tmp`, JSON.stringify(knowledge, null, 1));
     renameSync(`${target}.tmp`, target);
     return true;
+  }
+
+  /** A run finished as done: its click and select steps are marked as the way that worked. */
+  confirm(history: { kind?: unknown; action?: unknown; url?: unknown }[]): void {
+    const seen = new Set<string>();
+    for (const step of history) {
+      const label = plainLabel(step.action);
+      const from = pageShape(step.url);
+      if (!label || !from || !RECORDED_KINDS.has(String(step.kind))) continue;
+      const knowledge = this.load(from.host);
+      const transition = knowledge.pages[from.shape]?.transitions[`${step.kind}|${label}`];
+      const mark = `${from.host}|${from.shape}|${step.kind}|${label}`;
+      if (!transition || seen.has(mark)) continue;
+      seen.add(mark);
+      transition.ok = (transition.ok ?? 0) + 1;
+      const target = this.file(from.host);
+      writeFileSync(`${target}.tmp`, JSON.stringify(knowledge, null, 1));
+      renameSync(`${target}.tmp`, target);
+    }
+  }
+
+  /** What worked before on this kind of page: operations of runs that finished as done, the most often first. */
+  hints(url: unknown): { operation: string; label: string; worked: string; goes_to?: string }[] {
+    const from = pageShape(url);
+    if (!this.use || !from) return [];
+    const page = this.load(from.host).pages[from.shape];
+    if (!page) return [];
+    return Object.values(page.transitions)
+      .filter((t) => (t.ok ?? 0) > 0)
+      .sort((a, b) => (b.ok ?? 0) - (a.ok ?? 0) || b.changed / b.tried - a.changed / a.tried)
+      .slice(0, MAX_HINTS)
+      .map((t) => {
+        const goes = Object.entries(t.to).sort((a, b) => b[1] - a[1])[0]?.[0];
+        return {
+          operation: t.kind.toUpperCase(),
+          label: t.label,
+          worked: `${t.ok} of ${t.tried} tries`,
+          ...(goes ? { goes_to: goes } : {}),
+        };
+      });
   }
 }

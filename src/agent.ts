@@ -324,7 +324,9 @@ export async function runAgent(
       if (!(await browser.fresh(page))) page = await browser.observe();
       decisions += 1;
       onDecision(decisions);
-      decision = await policy.choose(page, plan, history);
+      // v2: what worked before on this kind of page, when the site is known (stage 3).
+      const known = options.knowledge?.hints(page.url) ?? [];
+      decision = await policy.choose(known.length ? { ...page, known } : page, plan, history);
       flushCalls();
       if (decision.operation === "NOT_VISIBLE") {
         const entry = {
