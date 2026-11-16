@@ -88,3 +88,55 @@ test("hints offer only what worked in runs that finished as done, the most often
   expect(knowledge.hints("https://s.test/other")).toEqual([]);
   expect(new Knowledge(dir, false).hints(from)).toEqual([]);
 });
+
+test("a step that led nowhere is not marked as the way that worked", () => {
+  const knowledge = new Knowledge(join(tmpPath(), "knowledge"));
+  const home = "https://s.test/home";
+  const more = "https://s.test/more";
+  const tools = "https://s.test/tools";
+  knowledge.record({ from: home, to: more, kind: "click", label: "More", changed: true });
+  knowledge.record({ from: more, to: tools, kind: "click", label: "Tools", changed: true });
+  knowledge.record({ from: tools, to: tools, kind: "click", label: "Nothing", changed: false });
+  knowledge.record({ from: tools, to: "https://s.test/billing", kind: "click", label: "Billing", changed: true });
+  knowledge.confirm([
+    { kind: "click", action: "More", url: home, page_changed: true },
+    { kind: "answer", url: more },
+    { kind: "click", action: "Tools", url: more, page_changed: true },
+    { kind: "click", action: "Nothing", url: tools, page_changed: false },
+    { kind: "click", action: "Billing", url: tools, page_changed: true },
+  ]);
+  expect(knowledge.hints(home)).toEqual([]);
+  expect(knowledge.hints(more).map((h) => h.label)).toEqual(["Tools"]);
+  expect(knowledge.hints(tools).map((h) => h.label)).toEqual(["Billing"]);
+});
+
+test("what is known can be listed, read and forgotten", () => {
+  const knowledge = new Knowledge(join(tmpPath(), "knowledge"));
+  expect(knowledge.hosts()).toEqual([]);
+  knowledge.record({ from: "https://a.test/x", to: "https://a.test/y", kind: "click", label: "Go", changed: true });
+  knowledge.record({ from: "https://b.test/x", to: "https://b.test/x", kind: "click", label: "Stay", changed: false });
+  expect(knowledge.hosts()).toEqual([
+    { host: "a.test", pages: 1, operations: 1, worked: 0 },
+    { host: "b.test", pages: 1, operations: 1, worked: 0 },
+  ]);
+  expect(knowledge.describe("a.test")).toEqual([
+    "/x (seen 1)",
+    '  CLICK "Go": tried 1, page changed 1, worked 0, goes to /y',
+  ]);
+  expect(knowledge.forget("a.test")).toBe(1);
+  expect(knowledge.forget("a.test")).toBe(0);
+  expect(knowledge.forget(null)).toBe(1);
+  expect(knowledge.hosts()).toEqual([]);
+});
+
+test("the knowledge command lists, shows and clears what was learned, for the user's folder", async () => {
+  const { cli } = await import("./helpers.ts");
+  const { Knowledge: Learned } = await import("../src/knowledge.ts");
+  expect((await cli("knowledge", "list")).out).toBe("KNOWN SITES: (none)\n");
+  new Learned().record({ from: "https://a.test/x", to: "https://a.test/y", kind: "click", label: "Go", changed: true });
+  expect((await cli("knowledge", "list")).out).toBe("a.test: 1 pages, 1 operations, 0 that worked\n");
+  expect((await cli("knowledge", "show", "a.test")).out).toContain('CLICK "Go": tried 1');
+  expect((await cli("knowledge", "show", "b.test")).code).toBe(1);
+  expect((await cli("knowledge", "clear", "a.test")).out).toBe("FORGOT 1 site (a.test)\n");
+  expect((await cli("knowledge", "list")).out).toBe("KNOWN SITES: (none)\n");
+});

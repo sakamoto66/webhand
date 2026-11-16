@@ -1106,7 +1106,7 @@ async function commandFinish(args: Args): Promise<number> {
   const plan = state.plan;
   // v2: a run that finished as done marks its steps as the way that worked.
   if (args.status === "done" && plan.flow === "v2" && process.env.WEBHAND_KNOWLEDGE !== "0") {
-    new Knowledge().confirm(agent.executed(state.history));
+    new Knowledge().confirm(state.history);
   }
   const outcomes = [...state.outcomes, { attempt: plan.attempt, outcome: state.outcome, reason: args.reason }];
   const totals = runTotals(state.log);
@@ -1287,6 +1287,25 @@ async function commandProfile(args: Args): Promise<number> {
 }
 
 /** Saved logins. `save` takes the sign-in of a running session; `start --auth NAME` begins a new session with it. */
+async function commandKnowledge(args: Args): Promise<number> {
+  const knowledge = new Knowledge();
+  if (args.action === "list") {
+    const hosts = knowledge.hosts();
+    if (!hosts.length) print("KNOWN SITES: (none)");
+    for (const h of hosts) print(`${h.host}: ${h.pages} pages, ${h.operations} operations, ${h.worked} that worked`);
+    return OK;
+  }
+  if (args.action === "show") {
+    if (!args.name) throw new CliExit("knowledge show needs a HOST");
+    const lines = knowledge.describe(args.name);
+    print(lines.length ? lines.join("\n") : `Nothing is known about ${args.name}`);
+    return lines.length ? OK : FAILED;
+  }
+  const removed = knowledge.forget(args.name ?? null);
+  print(`FORGOT ${removed} ${removed === 1 ? "site" : "sites"}${args.name ? ` (${args.name})` : ""}`);
+  return OK;
+}
+
 async function commandAuth(args: Args): Promise<number> {
   try {
     if (args.action === "list") {
@@ -1542,6 +1561,15 @@ function commands(): Record<string, CommandSpec> {
         { name: "name", optional: true },
       ],
       run: commandAuth,
+    },
+    knowledge: {
+      help: "What webhand learned about sites from its own runs: list, show HOST, clear [HOST]",
+      options: [],
+      positionals: [
+        { name: "action", choices: ["list", "show", "clear"] },
+        { name: "name", optional: true },
+      ],
+      run: commandKnowledge,
     },
     profile: {
       help: "Saved profiles: list, login NAME --url URL, delete NAME",

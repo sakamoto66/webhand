@@ -6,7 +6,7 @@
  * looks like personal data never are. Nothing here is shown to Jev yet: this step only records.
  */
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { home } from "./workspace.ts";
 
@@ -70,6 +70,8 @@ export function plainLabel(label: unknown): string | null {
 }
 
 const MAX_HINTS = 5;
+// Entries in a run's history that are not an operation. After a step, an answer or a NOT_VISIBLE choice means the run was stuck there.
+const DEAD_END = new Set(["answer", "missing"]);
 
 export class Knowledge {
   private readonly dir: string;
@@ -123,23 +125,76 @@ export class Knowledge {
     return true;
   }
 
-  /** A run finished as done: its click and select steps are marked as the way that worked. */
-  confirm(history: { kind?: unknown; action?: unknown; url?: unknown }[]): void {
+  /**
+   * A run finished as done: its click and select steps are marked as the way that worked, except the ones that led
+   * nowhere. A step does not count when the run was stuck on the page it led to (the next entry is an answer to
+   * Jev's question, or a NOT_VISIBLE choice) or when it changed nothing. `history` is the whole history, so that
+   * those entries are there to be seen.
+   */
+  confirm(history: { kind?: unknown; action?: unknown; url?: unknown; page_changed?: unknown }[]): void {
     const seen = new Set<string>();
-    for (const step of history) {
+    history.forEach((step, i) => {
       const label = plainLabel(step.action);
       const from = pageShape(step.url);
-      if (!label || !from || !RECORDED_KINDS.has(String(step.kind))) continue;
+      if (!label || !from || !RECORDED_KINDS.has(String(step.kind)) || step.page_changed === false) return;
+      if (DEAD_END.has(String(history[i + 1]?.kind))) return;
       const knowledge = this.load(from.host);
       const transition = knowledge.pages[from.shape]?.transitions[`${step.kind}|${label}`];
       const mark = `${from.host}|${from.shape}|${step.kind}|${label}`;
-      if (!transition || seen.has(mark)) continue;
+      if (!transition || seen.has(mark)) return;
       seen.add(mark);
       transition.ok = (transition.ok ?? 0) + 1;
       const target = this.file(from.host);
       writeFileSync(`${target}.tmp`, JSON.stringify(knowledge, null, 1));
       renameSync(`${target}.tmp`, target);
+    });
+  }
+
+  /** The sites that have knowledge, with how much. */
+  hosts(): { host: string; pages: number; operations: number; worked: number }[] {
+    let files: string[] = [];
+    try {
+      files = readdirSync(this.dir).filter((name) => name.endsWith(".json"));
+    } catch {
+      return [];
     }
+    return files.sort().map((name) => {
+      const knowledge = JSON.parse(readFileSync(join(this.dir, name), "utf8")) as HostKnowledge;
+      const transitions = Object.values(knowledge.pages).flatMap((page) => Object.values(page.transitions));
+      return {
+        host: knowledge.host,
+        pages: Object.keys(knowledge.pages).length,
+        operations: transitions.length,
+        worked: transitions.filter((t) => (t.ok ?? 0) > 0).length,
+      };
+    });
+  }
+
+  /** What is known about a site, as lines a person can read. */
+  describe(host: string): string[] {
+    const knowledge = this.load(host);
+    return Object.entries(knowledge.pages).flatMap(([shape, page]) => [
+      `${shape} (seen ${page.seen})`,
+      ...Object.values(page.transitions).map((t) => {
+        const goes = Object.entries(t.to).sort((a, b) => b[1] - a[1])[0]?.[0];
+        return `  ${t.kind.toUpperCase()} "${t.label}": tried ${t.tried}, page changed ${t.changed}, worked ${t.ok ?? 0}${goes ? `, goes to ${goes}` : ""}`;
+      }),
+    ]);
+  }
+
+  /** Forgets a site, or every site when host is null. Returns how many files went. */
+  forget(host: string | null): number {
+    const names = host === null ? this.hosts().map((h) => h.host) : [host];
+    let removed = 0;
+    for (const name of names) {
+      try {
+        rmSync(this.file(name));
+        removed += 1;
+      } catch {
+        // Nothing was known about it.
+      }
+    }
+    return removed;
   }
 
   /** What worked before on this kind of page: operations of runs that finished as done, the most often first. */
