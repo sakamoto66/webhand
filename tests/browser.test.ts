@@ -1044,3 +1044,15 @@ test("menu_orders: a scripted run opens the Orders page, and the verifier reads 
   expect(result.outcome).toBe("GOAL_REPORTED");
   expect((await orders.verify(browser)).success).toBe(true);
 });
+
+test("menu_invoice_moved: the invoices are under Tools now, and the scripted run finds them", async () => {
+  const moved = await loadTask("menu_invoice_moved");
+  await browser.close();
+  await open(moved.startUrl(ROOT), { whole: true });
+  const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
+  const plan = { goal: moved.GOAL, steps: [], values: [], flow: "v2" as const };
+  const result = await runAgent(browser, new ScriptedPolicy(moved.SCRIPT), plan, recorder);
+  recorder.close();
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect((await moved.verify(browser)).success).toBe(true);
+});
