@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fieldnote Events · RSVP</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;margin:0 auto;max-width:560px;padding:0 24px}#result{position:fixed;top:0;right:24px;background:#ffe;padding:4px 12px}#note{min-height:1.6em;color:#060}</style></head>
+<body>
+  <div id="result" role="status"></div>
+  <h1>Lantern evening RSVP</h1>
+  <p>Each press of Add guest adds one more seat to your party. The page does not show the total.</p>
+  <p><button type="button" id="add">Add guest</button> <span id="note" role="status"></span></p>
+  <button type="button" id="confirm">Confirm RSVP</button>
+<script>
+  // The party size is kept out of the page; only the order's data attribute holds it once confirmed.
+  let guests = 0;
+  const note = document.getElementById("note");
+  document.getElementById("add").addEventListener("click", () => {
+    guests += 1;
+    note.textContent = "Guest added";
+    setTimeout(() => { note.textContent = ""; }, 600);
+  });
+  document.getElementById("confirm").addEventListener("click", () => {
+    document.body.dataset.guests = String(guests);
+    document.getElementById("result").textContent = "RSVP confirmed";
+  });
+</script>
+</body>
+</html>
