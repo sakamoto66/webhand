@@ -7,7 +7,6 @@ facts = [
   "The Quantity field of a product page does not keep typed text; the order uses the count of Increase quantity and Decrease quantity.",
   "Search in the catalogue matches a whole item code only, so a name finds nothing (No items found). The Aisle buttons (Stationery, Bags, Kitchen) list the items by name.",
   "Place order on the checkout page stays disabled until the Terms of sale box has been read to its end. Print terms is the last control in that box; pressing it brings the end into view.",
-  "Max price on the price filter is read in cents (2000 means 20 euros); the page shows prices in euros.",
 ]
 
 [login]
@@ -20,10 +19,6 @@ purpose = "A product page with a quantity and Place order"
 [[pages]]
 url = "tasks/fixtures/search_exact.html"
 purpose = "The catalogue: search, aisles, and Add to cart"
-
-[[pages]]
-url = "tasks/fixtures/price_cents.html"
-purpose = "A price filter with Max price and Apply filter"
 
 [[pages]]
 url = "tasks/fixtures/terms_scroll.html"
