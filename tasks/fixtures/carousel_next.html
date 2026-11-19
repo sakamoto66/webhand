@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fieldnote Gallery · Cover photo</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;margin:0 auto;max-width:560px;padding:0 24px}#result{position:fixed;top:0;right:24px;background:#ffe;padding:4px 12px}.card{border:1px solid #999;padding:12px 16px;margin:12px 0}</style></head>
+<body>
+  <div id="result" role="status"></div>
+  <h1>Choose a cover photo</h1>
+  <div class="card"><strong id="name"></strong><p id="pos"></p></div>
+  <p>
+    <button type="button" id="prev">Previous photo</button>
+    <button type="button" id="next">Next photo</button>
+  </p>
+  <button type="button" id="pick">Use this photo</button>
+<script>
+  // One photo is shown at a time. The cover is the photo on screen when Use this photo is pressed.
+  const photos = ["Harbour at dawn", "Market stalls", "Rooftop garden", "Lantern festival", "Night ferry", "Old bridge"];
+  let i = 0;
+  const show = () => {
+    document.getElementById("name").textContent = photos[i];
+    document.getElementById("pos").textContent = "Photo " + (i + 1) + " of " + photos.length;
+  };
+  document.getElementById("next").addEventListener("click", () => { i = Math.min(photos.length - 1, i + 1); show(); });
+  document.getElementById("prev").addEventListener("click", () => { i = Math.max(0, i - 1); show(); });
+  document.getElementById("pick").addEventListener("click", () => {
+    document.body.dataset.cover = photos[i];
+    document.getElementById("result").textContent = "Cover saved";
+  });
+  show();
+</script>
+</body>
+</html>
