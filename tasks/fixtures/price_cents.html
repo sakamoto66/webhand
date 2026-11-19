@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fieldnote Shop · Price filter</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;margin:0 auto;max-width:560px;padding:0 24px}#result{position:fixed;top:0;right:24px;background:#ffe;padding:4px 12px}li{margin:4px 0}</style></head>
+<body>
+  <div id="result" role="status"></div>
+  <h1>Price filter</h1>
+  <p><label>Max price <input id="max" type="text" aria-label="Max price"></label> <button type="button" id="apply">Apply filter</button></p>
+  <ul id="items"></ul>
+<script>
+  // The field is read in cents and does not say so. Prices below are in euros.
+  const ITEMS = [["Notebook", 6.5], ["Pen", 9], ["Mug", 12], ["Tote bag", 18.5], ["Lamp", 32], ["Backpack", 45]];
+  const list = document.getElementById("items");
+  const draw = (maxEuros) => {
+    list.replaceChildren();
+    const shown = ITEMS.filter(([, price]) => price <= maxEuros);
+    if (!shown.length) { const li = document.createElement("li"); li.textContent = "No items"; list.append(li); return; }
+    for (const [name, price] of shown) { const li = document.createElement("li"); li.textContent = `${name} — €${price.toFixed(2)}`; list.append(li); }
+  };
+  draw(Infinity);
+  document.getElementById("apply").addEventListener("click", () => {
+    const cents = Number(document.getElementById("max").value.trim());
+    if (!Number.isFinite(cents) || cents < 0) { document.getElementById("result").textContent = "Invalid price"; return; }
+    document.body.dataset.maxCents = String(cents);
+    draw(cents / 100);
+    document.getElementById("result").textContent = "Filter applied";
+  });
+</script>
+</body>
+</html>

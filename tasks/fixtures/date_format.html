@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fieldnote Shop · Delivery</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;margin:0 auto;max-width:560px;padding:0 24px}#result{position:fixed;top:0;right:24px;background:#ffe;padding:4px 12px}</style></head>
+<body>
+  <div id="result" role="status"></div>
+  <h1>Schedule a delivery</h1>
+  <p>Order of 1 × Notebook, A5.</p>
+  <p><label>Delivery date <input id="when" type="text" aria-label="Delivery date"></label></p>
+  <button type="button" id="schedule">Schedule delivery</button>
+<script>
+  // The field reads numbers as day/month/year, and says nothing about it. Other shapes are rejected.
+  document.getElementById("schedule").addEventListener("click", () => {
+    const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(document.getElementById("when").value.trim());
+    const result = document.getElementById("result");
+    if (!match) { result.textContent = "Invalid date"; return; }
+    const [, day, month, year] = match.map(Number);
+    if (month < 1 || month > 12 || day < 1 || day > 31) { result.textContent = "Invalid date"; return; }
+    document.body.dataset.date = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    result.textContent = "Delivery scheduled";
+  });
+</script>
+</body>
+</html>
