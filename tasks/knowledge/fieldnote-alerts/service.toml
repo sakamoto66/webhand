@@ -1,0 +1,15 @@
+# Arm B of the learning A/B (tasks/wizard_more). Copied into the run's WEBHAND_HOME/runbooks.
+service = "fieldnote-alerts"
+description = "Fieldnote alerts, a local fixture: a two-step form that creates an alert"
+base_url = "tasks/fixtures/wizard_more.html"
+
+facts = [
+  "Next on step 1 stays disabled until the alert has a name and Send me a confirmation first is ticked. That box is hidden under More options; open More options first.",
+]
+
+[login]
+required = false
+
+[[pages]]
+url = "tasks/fixtures/wizard_more.html"
+purpose = "Step 1 (name and options) and step 2 (review and Create alert)"

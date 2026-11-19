@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fieldnote Shop · Notebook</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;margin:0 auto;max-width:560px;padding:0 24px}#result{position:fixed;top:0;right:24px;background:#ffe;padding:4px 12px}</style></head>
+<body>
+  <div id="result" role="status"></div>
+  <h1>Notebook, A5</h1>
+  <p>Dotted pages, 80 sheets.</p>
+  <p>
+    <label>Quantity <input id="qty" type="text" value="1" aria-label="Quantity"></label>
+    <button type="button" id="dec">Decrease quantity</button>
+    <button type="button" id="inc">Increase quantity</button>
+  </p>
+  <button type="button" id="order">Place order</button>
+<script>
+  // The order uses the stepper's own count. Typing in the field is shown, then put back when the field is left.
+  let count = 1;
+  const field = document.getElementById("qty");
+  const show = () => { field.value = String(count); };
+  document.getElementById("inc").addEventListener("click", () => { count += 1; show(); });
+  document.getElementById("dec").addEventListener("click", () => { count = Math.max(1, count - 1); show(); });
+  field.addEventListener("change", show);
+  field.addEventListener("blur", show);
+  document.getElementById("order").addEventListener("click", () => {
+    document.body.dataset.order = String(count);
+    document.getElementById("result").textContent = "Order placed";
+  });
+</script>
+</body>
+</html>
