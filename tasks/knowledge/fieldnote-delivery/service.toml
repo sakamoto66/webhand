@@ -1,0 +1,15 @@
+# Arm B of the learning A/B (tasks/date_format). Copied into the run's WEBHAND_HOME/runbooks.
+service = "fieldnote-delivery"
+description = "Fieldnote Shop delivery scheduling, a local fixture: one date field and Schedule delivery"
+base_url = "tasks/fixtures/date_format.html"
+
+facts = [
+  "The Delivery date field reads numbers with slashes as day/month/year (03/04/2026 is 3 April 2026). Other shapes are rejected with Invalid date, and the confirmation does not repeat the date.",
+]
+
+[login]
+required = false
+
+[[pages]]
+url = "tasks/fixtures/date_format.html"
+purpose = "Schedule a delivery: Delivery date and Schedule delivery"
