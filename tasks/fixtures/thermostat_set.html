@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fieldnote Home · Thermostat</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;margin:0 auto;max-width:560px;padding:0 24px}#result{position:fixed;top:0;right:24px;background:#ffe;padding:4px 12px}</style></head>
+<body>
+  <div id="result" role="status"></div>
+  <h1>Living room thermostat</h1>
+  <p>Target temperature: <strong id="temp"></strong></p>
+  <p><button type="button" id="cool">Cooler</button> <button type="button" id="warm">Warmer</button></p>
+  <button type="button" id="save">Save</button>
+<script>
+  // Each press moves the target by 0.5 °C. The saved value is the target on screen when Save is pressed.
+  let t = 20;
+  const show = () => { document.getElementById("temp").textContent = t.toFixed(1) + " °C"; };
+  document.getElementById("warm").addEventListener("click", () => { t = Math.min(30, t + 0.5); show(); });
+  document.getElementById("cool").addEventListener("click", () => { t = Math.max(10, t - 0.5); show(); });
+  document.getElementById("save").addEventListener("click", () => {
+    document.body.dataset.temp = t.toFixed(1);
+    document.getElementById("result").textContent = "Thermostat saved";
+  });
+  show();
+</script>
+</body>
+</html>
