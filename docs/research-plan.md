@@ -1782,6 +1782,15 @@ pb1 と pb2 が最後まで走らなかったので、同じ条件（pb、`a0d29
 
 **読み方**: 画面にエラーや「No items」が出る癖は、試行で解けるので、facts を渡しても差が出ない。黙って失敗する癖には、正しい facts が成功を大きく上げる（`terms_scroll` 0/8 → 6〜8/8、`date_format` 2/8 → 8/8）。繰り返しの回数のような、実行の問題には効かない（`qty_stepper`）。限界: 黙って失敗する癖で facts が効いたのは2タスク。各8回。
 
+### 繰り返し押す操作を、1回ずつの step に分ける（回 r38、`qty_stepper`、2026-11-19）
+
+前の節で、`qty_stepper` は計画が正しい（「3 になるまで Increase quantity を押す」）のに、Jev が1回押しただけで次の step に進んだ（facts を渡しても pa・pb・pc とも 1/8）。変数は計画の書き方だけにした。
+
+- 条件（各8回、同じコード `10ddfd8`、flow v2、正しい facts と `--service` あり）: pa: 現行のスキル。pb: スキルの Steps 項に1文を足す（同じ操作を何度も押して値に届くときは、1回ごとに step を分け、各 step に押した後の数を書く）。差はこの1文だけ。
+- 結果: **pa 0/8、pb 8/8**（Fisher 両側 p ≈ 0.0002）。pa の失敗8回は、すべて Increase を1回押して Place order に進み、数量 2 で「Order placed」が出た。pb は8回とも Claude が押す回数だけ step を分け、数量 3 で成功した。操作は pa 18、pb 28。`answer` は両方 0。
+- 読み方: 「繰り返しの回数」は facts ではなく、計画の粒度の問題だった。Jev は、1つの step の中で同じ操作を繰り返さない。Claude が step を分ければ、Jev は各 step を1回で終える。
+- 限界: 1タスク各8回。足した1文の例（quantity stepper、Increase quantity）が、このタスクの形に近い。別の繰り返し（Next ボタンを数回、スクロールを数回）で効くかは測っていない。
+
 ## 次の手順
 
 1. GOAL 単位の設計で `hotel_filter` と `hotel_reserve` を実行し、変更後の基準値を取る。
