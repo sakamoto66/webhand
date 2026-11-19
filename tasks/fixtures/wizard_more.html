@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fieldnote · Set up alerts</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;margin:0 auto;max-width:560px;padding:0 24px}#result{position:fixed;top:0;right:24px;background:#ffe;padding:4px 12px}</style></head>
+<body>
+  <div id="result" role="status"></div>
+  <h1>Set up alerts</h1>
+  <section id="s1">
+    <h2>Step 1 of 2: Channel</h2>
+    <label>Alert name <input type="text" aria-label="Alert name"></label>
+    <p><button type="button" id="more" aria-expanded="false">More options</button></p>
+    <div id="extra" hidden><label><input type="checkbox" id="confirm"> Send me a confirmation first</label></div>
+    <p><button type="button" id="next" disabled>Next</button></p>
+  </section>
+  <section id="s2" hidden>
+    <h2>Step 2 of 2: Review</h2>
+    <button type="button" id="finish">Create alert</button>
+  </section>
+<script>
+  // Next stays disabled until the confirmation box (under More options) is ticked and a name is typed.
+  const name = document.querySelector("#s1 input[type=text]");
+  const box = document.getElementById("confirm");
+  const next = document.getElementById("next");
+  const update = () => { next.disabled = !(box.checked && name.value.trim()); };
+  name.addEventListener("input", update); box.addEventListener("change", update);
+  document.getElementById("more").addEventListener("click", (event) => {
+    const extra = document.getElementById("extra");
+    extra.hidden = !extra.hidden;
+    event.target.setAttribute("aria-expanded", String(!extra.hidden));
+  });
+  next.addEventListener("click", () => { document.getElementById("s1").hidden = true; document.getElementById("s2").hidden = false; });
+  document.getElementById("finish").addEventListener("click", () => {
+    document.body.dataset.created = name.value.trim();
+    document.getElementById("result").textContent = "Alert created";
+  });
+</script>
+</body>
+</html>

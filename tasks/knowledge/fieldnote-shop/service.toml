@@ -1,0 +1,25 @@
+# Arm B of the learning A/B (tasks/qty_stepper, search_exact, terms_scroll). Copied into the run's WEBHAND_HOME/runbooks.
+service = "fieldnote-shop"
+description = "Fieldnote Shop, a local shop fixture: product page, catalogue, and checkout"
+base_url = "tasks/fixtures/qty_stepper.html"
+
+facts = [
+  "The Quantity field of a product page does not keep typed text; the order uses the count of Increase quantity and Decrease quantity.",
+  "Search in the catalogue matches a whole item code only, so a name finds nothing (No items found). The Aisle buttons (Stationery, Bags, Kitchen) list the items by name.",
+  "Place order on the checkout page stays disabled until the Terms of sale box has been read to its end. Print terms is the last control in that box; pressing it brings the end into view.",
+]
+
+[login]
+required = false
+
+[[pages]]
+url = "tasks/fixtures/qty_stepper.html"
+purpose = "A product page with a quantity and Place order"
+
+[[pages]]
+url = "tasks/fixtures/search_exact.html"
+purpose = "The catalogue: search, aisles, and Add to cart"
+
+[[pages]]
+url = "tasks/fixtures/terms_scroll.html"
+purpose = "Checkout with the terms of sale and Place order"

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fieldnote Shop · Catalogue</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;margin:0 auto;max-width:640px;padding:0 24px}#result{position:fixed;top:0;right:24px;background:#ffe;padding:4px 12px}li{margin:6px 0}</style></head>
+<body>
+  <div id="result" role="status"></div>
+  <h1>Catalogue</h1>
+  <form id="find"><input type="text" aria-label="Search" placeholder="Search"> <button type="submit">Search</button></form>
+  <nav aria-label="Aisles">
+    <button type="button" data-aisle="Stationery">Aisle: Stationery</button>
+    <button type="button" data-aisle="Bags">Aisle: Bags</button>
+    <button type="button" data-aisle="Kitchen">Aisle: Kitchen</button>
+  </nav>
+  <p id="note"></p>
+  <ul id="items"></ul>
+<script>
+  const ITEMS = [
+    { code: "ST-1001", name: "Dotted notebook", aisle: "Stationery" },
+    { code: "ST-1002", name: "Fountain pen", aisle: "Stationery" },
+    { code: "BG-2001", name: "Linen tote bag", aisle: "Bags" },
+    { code: "BG-2002", name: "Canvas backpack", aisle: "Bags" },
+    { code: "KT-3001", name: "Enamel mug", aisle: "Kitchen" },
+    { code: "KT-3002", name: "Tea towel", aisle: "Kitchen" },
+  ];
+  // Search matches a whole item code only; a name finds nothing. The aisles list everything.
+  const list = (items) => {
+    const ul = document.getElementById("items");
+    ul.replaceChildren();
+    for (const item of items) {
+      const li = document.createElement("li");
+      li.append(`${item.name} `);
+      const add = document.createElement("button");
+      add.type = "button"; add.textContent = `Add to cart: ${item.name}`;
+      add.addEventListener("click", () => {
+        document.body.dataset.cart = item.name;
+        document.getElementById("result").textContent = `Added to cart: ${item.name}`;
+      });
+      li.append(add); ul.append(li);
+    }
+  };
+  document.getElementById("find").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const query = event.target.querySelector("input").value.trim().toUpperCase();
+    const hits = ITEMS.filter((item) => item.code === query);
+    document.getElementById("note").textContent = hits.length ? "" : "No items found";
+    list(hits);
+  });
+  for (const button of document.querySelectorAll("[data-aisle]")) {
+    button.addEventListener("click", () => {
+      document.getElementById("note").textContent = "";
+      list(ITEMS.filter((item) => item.aisle === button.dataset.aisle));
+    });
+  }
+</script>
+</body>
+</html>

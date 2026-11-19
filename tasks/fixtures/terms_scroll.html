@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fieldnote Shop · Checkout</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;margin:0 auto;max-width:560px;padding:0 24px}#result{position:fixed;top:0;right:24px;background:#ffe;padding:4px 12px}
+#terms{height:120px;overflow:auto;border:1px solid #999;padding:8px}</style></head>
+<body>
+  <div id="result" role="status"></div>
+  <h1>Checkout</h1>
+  <p>1 × Notebook, A5 — total 12.00</p>
+  <h2>Terms of sale</h2>
+  <div id="terms" role="region" aria-label="Terms of sale">
+    <p>1. Orders are confirmed when payment is taken.</p><p>2. Delivery takes three to five working days.</p>
+    <p>3. Items may be returned within thirty days.</p><p>4. Refunds go to the original payment method.</p>
+    <p>5. Personalised items cannot be returned.</p><p>6. Prices include tax unless stated.</p>
+    <p>7. We may cancel an order if an item is unavailable.</p><p>8. Gift cards cannot be refunded.</p>
+    <p id="end">9. By placing an order you accept these terms.</p>
+    <p><button type="button" id="print">Print terms</button></p>
+  </div>
+  <p><button type="button" id="order" disabled>Place order</button></p>
+<script>
+  // Place order stays disabled until the terms have been read to the end.
+  const box = document.getElementById("terms");
+  const order = document.getElementById("order");
+  const check = () => { if (box.scrollTop + box.clientHeight >= box.scrollHeight - 2) order.disabled = false; };
+  box.addEventListener("scroll", check);
+  order.addEventListener("click", () => {
+    document.body.dataset.placed = "yes";
+    document.getElementById("result").textContent = "Order placed";
+  });
+</script>
+</body>
+</html>
