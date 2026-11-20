@@ -12,7 +12,7 @@ import { toJson } from "../src/format.ts";
 import { describePlan, recentActions } from "../src/output.ts";
 import { actionSpace, fileChoices } from "../src/policies/base.ts";
 import { buildQuestions } from "../src/policies/jev-questions.ts";
-import { type Action, type Page, PolicyError } from "../src/types.ts";
+import { type Action, type Page, PolicyError, StalePage } from "../src/types.ts";
 import { tmpPath } from "./helpers.ts";
 
 const PAGE = `<!doctype html><title>t</title>
@@ -21,6 +21,18 @@ const PAGE = `<!doctype html><title>t</title>
 <a href="/report.csv">Download report</a>
 <script>document.getElementById('cv').addEventListener('change', e =>
   document.getElementById('out').textContent = e.target.files[0].name)</script>`;
+
+// File inputs the page hides. D has no visible trigger (a closed dialog); E has two buttons, so it is ambiguous.
+const HIDDEN = `<!doctype html><title>h</title>
+<label for="a">Attach CV</label><input type="file" id="a" style="display:none">
+<div><button type="button">Choose photo</button><input type="file" id="b" hidden></div>
+<div style="position:relative;width:120px;height:30px"><button type="button">Overlay</button>
+<input type="file" id="c" style="opacity:0;position:absolute;inset:0"></div>
+<div style="display:none"><input type="file" id="d"></div>
+<div><button type="button">One</button><button type="button">Two</button><input type="file" id="e" hidden></div>
+<p id="out"></p>
+<script>for (const i of document.querySelectorAll('input[type=file]'))
+  i.addEventListener('change', e => document.getElementById('out').textContent += i.id + ':' + e.target.files[0].name + ';')</script>`;
 
 let server: Server;
 let url: string;
@@ -34,7 +46,7 @@ beforeEach(async () => {
       return;
     }
     res.writeHead(200, { "content-type": "text/html" });
-    res.end(PAGE);
+    res.end(req.url === "/hidden" ? HIDDEN : PAGE);
   });
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
@@ -150,4 +162,31 @@ test("a run's action list says what a click downloaded, and the plan names its f
   const plan = { goal: "g", steps: [], values: [], files: [{ label: "Resume", value: "/secret/cv.pdf" }] };
   expect(describePlan(plan)).toContain("FILES: Resume");
   expect(describePlan(plan)).not.toContain("/secret");
+});
+
+test("a file input the page hides is offered through its visible trigger and given its file", async () => {
+  const file = join(tmpPath(), "cv.txt");
+  writeFileSync(file, "hello");
+  browser = await Browser.open(`${url}hidden`);
+  const page = await browser.observe();
+  const uploads = page.actions.filter((a: Action) => a.kind === "upload");
+  // The closed dialog's input and the one with two buttons beside it are not offered.
+  expect(uploads.map((a: Action) => a.label)).toEqual(["Attach CV", "Choose photo", "Overlay"]);
+  expect(uploads.every((a: Action) => a.hidden === true)).toBe(true);
+  let current = page;
+  for (const action of uploads) {
+    await (browser as Browser).act(action, current, file);
+    current = await (browser as Browser).observe();
+  }
+  expect(await (browser as Browser).evaluate("document.getElementById('out').textContent")).toBe(
+    "a:cv.txt;b:cv.txt;c:cv.txt;",
+  );
+});
+
+test("a hidden file input that changed is not given a file", async () => {
+  browser = await Browser.open(`${url}hidden`);
+  const page = await browser.observe();
+  const upload = find(page, (a) => a.kind === "upload");
+  await browser.evaluate("document.querySelector('label[for=a]').textContent = 'Something else'");
+  await expect(browser.act(upload, page, "/etc/hostname")).rejects.toThrow(StalePage);
 });

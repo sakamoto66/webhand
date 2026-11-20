@@ -124,7 +124,8 @@ export const OPERATIONS: Record<string, string> = {
 export const OPERATION_HELP: Record<string, string> = {
   CLICK: "Click an element, button, menu option, autocomplete suggestion, or calendar day.",
   TYPE_TEXT: "Enter or replace text in an editable field. Claude supplies the value.",
-  UPLOAD_FILE: "Give a file field one of Claude's files. Claude supplies the file.",
+  UPLOAD_FILE:
+    "Give a file field one of Claude's files. Claude supplies the file. Use it instead of clicking a button that opens a file chooser.",
   SELECT: "Select an observed dropdown value.",
   SCROLL_TO: "Scroll an element beyond the viewport into view. Nothing is clicked.",
 };
