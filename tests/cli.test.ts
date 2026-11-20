@@ -292,6 +292,28 @@ test("a claimed done does not pass verification", async () => {
   expect([end.status, end.verified]).toEqual(["done", false]);
 });
 
+test("act refuses what it cannot run, without a step", async () => {
+  await begin();
+  // A field needs text.
+  const [, targets] = actionSpace(session.load()?.page.actions);
+  const field = [...(targets.get("TYPE_TEXT") ?? [])].find(([, a]) => a.label.includes("Destination"))?.[0];
+  const missing = await cli("act", "TYPE_TEXT", field as string);
+  expect([missing.code, missing.out]).toEqual([FAILED, expect.stringContaining("TYPE_TEXT needs --text")]);
+  // act runs one operation, not a verdict.
+  const verdict = await cli("act", "DONE");
+  expect([verdict.code, verdict.out]).toEqual([FAILED, expect.stringContaining("act runs one operation")]);
+  // After an uncertain action nothing more runs.
+  const state = session.load() as session.State;
+  state.outcome = "UNCERTAIN";
+  session.save(state);
+  const uncertain = await cli("act", "WAIT");
+  expect([uncertain.code, uncertain.out]).toEqual([
+    UNCERTAIN,
+    expect.stringContaining("the last action may have happened"),
+  ]);
+  expect(session.load()?.history).toEqual([]);
+});
+
 test("an invalid override is rejected without a step", async () => {
   await begin();
   expect((await cli("act", "CLICK", "999")).code).toBe(FAILED);
