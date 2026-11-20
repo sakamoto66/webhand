@@ -273,6 +273,89 @@ export interface AgentResult {
   jev?: Record<string, unknown>;
 }
 
+/** Why the attempt stops before Jev is asked again: [outcome, detail], or null to go on. */
+function stopReason(
+  plan: Plan,
+  history: HistoryEntry[],
+  page: Page,
+  attempt: number,
+  budget: Budget,
+  decisions: number,
+): [string, string] | null {
+  if (stuck(history, attempt)) return [STUCK, "three actions without a page change"];
+  if (plan.flow === "v2") {
+    if (looping(history, attempt)) return [STUCK, "scrolled up and down three times with nothing else done"];
+    if (missingInUnseen(history, page, attempt)) {
+      return [STUCK, "the needed element was not offered twice, and the page has parts webhand cannot see"];
+    }
+  }
+  const done = actionsIn(history, attempt).length;
+  if (done >= budget.maxActions || decisions >= budget.maxDecisions) {
+    return [ATTEMPT_BUDGET, `${done} actions, ${decisions} decisions`];
+  }
+  return null;
+}
+
+/** Jev said the element it needs was not listed: noted in the history and the log. Nothing ran. */
+async function noteNotVisible(
+  browser: Actor,
+  recorder: Recorder,
+  history: HistoryEntry[],
+  page: Page,
+  decision: Decision,
+  attempt: number,
+): Promise<void> {
+  history.push({
+    step: history.length + 1,
+    attempt,
+    operation: "NOT_VISIBLE",
+    kind: MISSING,
+    action: `Wanted to ${decision.wanted}, but the needed element was not listed. Nothing ran`,
+    text: null,
+    url: page.url,
+    page_changed: false,
+  });
+  recorder.event("not_visible", {
+    attempt,
+    wanted: decision.wanted,
+    confidence: decision.confidence,
+    offered: offered(page),
+    ...(browser.unseen ? { unseen: await browser.unseen().catch(() => null) } : {}),
+    ...(page.frames_log ? { frames: page.frames_log } : {}),
+  });
+}
+
+/** An action refused as stale is noted. Unchanged, the same choice would be refused again, so it counts toward STUCK. */
+function noteRefused(
+  recorder: Recorder,
+  history: HistoryEntry[],
+  decision: Decision & { action: Action },
+  error: StalePage,
+  observed: Page,
+  now: Page,
+  attempt: number,
+): void {
+  const entry = {
+    step: history.length + 1,
+    attempt,
+    operation: "STALE",
+    kind: STALE,
+    action: `${decision.operation} ${quote(decision.action.label)} did not run: ${error.message}`,
+    text: null,
+    url: observed.url,
+    page_changed: !samePage(now, observed),
+  };
+  history.push(entry);
+  recorder.event("stale", {
+    attempt,
+    wanted: decision.operation,
+    target: decision.action.label,
+    reason: error.message,
+    changed: error.changed,
+    page_changed: entry.page_changed,
+  });
+}
+
 /** Runs one attempt until an outcome above. history is extended in place. */
 export async function runAgent(
   browser: Actor,
@@ -313,16 +396,8 @@ export async function runAgent(
   });
 
   while (true) {
-    if (stuck(history, attempt)) return finish(STUCK, "three actions without a page change");
-    if (plan.flow === "v2" && looping(history, attempt)) {
-      return finish(STUCK, "scrolled up and down three times with nothing else done");
-    }
-    if (plan.flow === "v2" && missingInUnseen(history, page, attempt)) {
-      return finish(STUCK, "the needed element was not offered twice, and the page has parts webhand cannot see");
-    }
-    if (actionsIn(history, attempt).length >= budget.maxActions || decisions >= budget.maxDecisions) {
-      return finish(ATTEMPT_BUDGET, `${actionsIn(history, attempt).length} actions, ${decisions} decisions`);
-    }
+    const stop = stopReason(plan, history, page, attempt, budget, decisions);
+    if (stop) return finish(stop[0], stop[1]);
     let decision: Decision | null = null;
     const executed = history.length;
     try {
@@ -335,25 +410,7 @@ export async function runAgent(
       decision = await policy.choose(known.length ? { ...page, known } : page, plan, history);
       flushCalls();
       if (decision.operation === "NOT_VISIBLE") {
-        const entry = {
-          step: history.length + 1,
-          attempt,
-          operation: "NOT_VISIBLE",
-          kind: MISSING,
-          action: `Wanted to ${decision.wanted}, but the needed element was not listed. Nothing ran`,
-          text: null,
-          url: page.url,
-          page_changed: false,
-        };
-        history.push(entry);
-        recorder.event("not_visible", {
-          attempt,
-          wanted: decision.wanted,
-          confidence: decision.confidence,
-          offered: offered(page),
-          ...(browser.unseen ? { unseen: await browser.unseen().catch(() => null) } : {}),
-          ...(page.frames_log ? { frames: page.frames_log } : {}),
-        });
+        await noteNotVisible(browser, recorder, history, page, decision, attempt);
         onChange(page);
         continue;
       }
@@ -382,26 +439,7 @@ export async function runAgent(
         page = await browser.observe();
         // Only a refused action is noted. A step that ran is already in history, whatever failed after it.
         if (decision !== null && decision.action !== null && history.length === executed) {
-          const entry = {
-            step: history.length + 1,
-            attempt,
-            operation: "STALE",
-            kind: STALE,
-            action: `${decision.operation} ${quote(decision.action.label)} did not run: ${error.message}`,
-            text: null,
-            url: observed.url,
-            // Unchanged: the same choice would be refused again, so it counts toward STUCK.
-            page_changed: !samePage(page, observed),
-          };
-          history.push(entry);
-          recorder.event("stale", {
-            attempt,
-            wanted: decision.operation,
-            target: decision.action.label,
-            reason: error.message,
-            changed: error.changed,
-            page_changed: entry.page_changed,
-          });
+          noteRefused(recorder, history, decision as Decision & { action: Action }, error, observed, page, attempt);
         }
         onChange(page);
       } else if (error instanceof PolicyError) {

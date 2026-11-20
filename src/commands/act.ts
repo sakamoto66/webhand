@@ -10,9 +10,8 @@ import { MutationUncertain, PolicyError, StalePage } from "../types.ts";
 import { BUDGET, FAILED, OK, print, STALE, UNCERTAIN } from "./context.ts";
 import { attach, browserView, requireSession } from "./shared.ts";
 
-/** Claude overrides Jev for one operation. */
-export async function commandAct(args: Args): Promise<number> {
-  const state = requireSession();
+/** Why `act` cannot run from the state's last outcome, as the exit code after saying so. null when it can. */
+function rejectAct(state: session.State): number | null {
   if (state.outcome === agent.NEEDS_HUMAN) {
     print("REJECTED: a person is acting. When they are done: run --human-done");
     return FAILED;
@@ -25,6 +24,11 @@ export async function commandAct(args: Args): Promise<number> {
     print("BUDGET EXHAUSTED for this attempt. Run replan or finish --status budget");
     return BUDGET;
   }
+  return null;
+}
+
+/** The one operation Claude named, resolved against the page; or the exit code after saying why it is refused. */
+function decideAct(args: Args, state: session.State): ReturnType<typeof resolve> | number {
   let decision: ReturnType<typeof resolve>;
   try {
     decision = resolve(state.page, args.operation, args.target);
@@ -42,8 +46,11 @@ export async function commandAct(args: Args): Promise<number> {
     return FAILED;
   }
   decision.text = decision.action.kind === "fill" ? args.text : null;
-  state.decisions += 1;
-  session.save(state);
+  return decision;
+}
+
+/** Runs the decision once. A stale page runs nothing; an uncertain result stops the run. */
+async function performAct(state: session.State, decision: ReturnType<typeof resolve>): Promise<number> {
   const browser = await attach(state, null, browserView(state));
   const recorder = new Recorder(state.log);
   try {
@@ -80,4 +87,16 @@ export async function commandAct(args: Args): Promise<number> {
     await browser.close();
     recorder.close();
   }
+}
+
+/** Claude overrides Jev for one operation. */
+export async function commandAct(args: Args): Promise<number> {
+  const state = requireSession();
+  const rejected = rejectAct(state);
+  if (rejected !== null) return rejected;
+  const decision = decideAct(args, state);
+  if (typeof decision === "number") return decision;
+  state.decisions += 1;
+  session.save(state);
+  return performAct(state, decision);
 }
