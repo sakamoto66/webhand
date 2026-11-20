@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import * as auth from "../src/auth.ts";
 import { parse, UsageError } from "../src/cli.ts";
+import { shellProbe } from "../src/engines/headless-shell.ts";
 import * as session from "../src/session.ts";
 import { cli, cliExit } from "./helpers.ts";
 
@@ -132,7 +133,7 @@ async function site(): Promise<string> {
 }
 
 function installed(engine: string): boolean {
-  if (engine === "headless-shell") return Boolean(session.probes.headlessShell());
+  if (engine === "headless-shell") return Boolean(shellProbe.binary());
   if (engine === "obscura") return existsSync(OBSCURA);
   try {
     execFileSync(engine, ["version"], { stdio: "ignore" });

@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Browser } from "../src/browser.ts";
 import * as cliModule from "../src/cli.ts";
+import { probes } from "../src/engines/chrome.ts";
 import { logOnce } from "../src/metrics.ts";
 import { actionSpace } from "../src/policies/base.ts";
 import * as session from "../src/session.ts";
@@ -558,7 +559,7 @@ test("replan --url gives the Windows Chrome a local file by its Windows path, as
   await begin();
   const state = session.load() as session.State;
   session.save({ ...state, chrome: "windows" });
-  vi.spyOn(session.probes, "toWindows").mockImplementation(
+  vi.spyOn(probes, "toWindows").mockImplementation(
     (path: string) => `\\\\wsl.localhost\\Ubuntu${path.replaceAll("/", "\\")}`,
   );
   const opened = vi.spyOn(Browser, "open").mockRejectedValue(new Error("stop here"));

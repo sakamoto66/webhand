@@ -13,6 +13,9 @@ import * as auth from "./auth.ts";
 import { Browser, type ViewChoice } from "./browser.ts";
 import { type Collected, type Collector, collectScan, MAX_COLLECTED } from "./collect.ts";
 import { type Compared, type Comparer, compareScan, MAX_PAGES, MAX_SCROLLS, type Reader } from "./compare.ts";
+import { browserUrl, CHROMES, listProfiles, chooseChrome as pickChrome, profileDir } from "./engines/chrome.ts";
+import { browserRunHeaders } from "./engines/cloudflare.ts";
+import { chooseEngine, ENGINE_CHOICES, engineFor, hostName } from "./engines/index.ts";
 import { describeError, quote, show, stamp, toJson } from "./format.ts";
 import { Knowledge } from "./knowledge.ts";
 import * as learn from "./learn.ts";
@@ -269,7 +272,7 @@ async function attach(
   view?: ViewChoice | null,
 ): Promise<Driver> {
   if (state.cdp) {
-    return await Browser.open(url, { endpoint: { url: state.cdp, headers: session.browserRunHeaders() }, view });
+    return await Browser.open(url, { endpoint: { url: state.cdp, headers: browserRunHeaders() }, view });
   }
   if (state.socket) {
     const remote = await RemoteBrowser.connect(state.socket, view ?? null);
@@ -382,7 +385,7 @@ async function commandCatalog(args: Args): Promise<number> {
     }
   }
   const [chrome, note] = chooseChrome(args.chrome);
-  const profiles = session.listProfiles(chrome);
+  const profiles = listProfiles(chrome);
   print(`CHROME: ${chrome}${note ? ` (${note})` : ""}`);
   print(`SAVED PROFILES: ${profiles.length ? profiles.join(", ") : "(none)"}`);
   const open = session.active();
@@ -395,7 +398,7 @@ async function commandCatalog(args: Args): Promise<number> {
 
 function chooseChrome(choice: string): [string, string | null] {
   try {
-    return session.chooseChrome(choice);
+    return pickChrome(choice);
   } catch (error) {
     if (error instanceof session.SessionError) throw new CliExit(error.message);
     throw error;
@@ -436,7 +439,7 @@ async function commandStart(args: Args): Promise<number> {
       }
       login = auth.load(args.auth);
     }
-    engine = session.chooseEngine(args.engine, { headed: args.headed, profile, chrome: args.chrome });
+    engine = chooseEngine(args.engine, { headed: args.headed, profile, chrome: args.chrome });
     // --chrome says where Chrome runs; the other engines have no such choice.
     [chrome, note] = engine === "chrome" ? chooseChrome(args.chrome) : ["linux", null];
   } catch (error) {
@@ -493,7 +496,7 @@ async function commandStart(args: Args): Promise<number> {
     view_claude: claudeView,
     view: runbook.view(learned, claudeView),
     task,
-    start_url: session.browserUrl(url, chrome),
+    start_url: browserUrl(url, chrome),
     plan,
     runbook: book ? { name: book.name, status: book.status, digest: book.digest, scope: book.scope } : null,
     service: serviceName,
@@ -567,16 +570,15 @@ async function commandStart(args: Args): Promise<number> {
   }
   session.save(state);
   if (note) print(`NOTE: ${note}`);
-  if (engine === "browser-run")
-    print("NOTE: Browser Run runs on Cloudflare: the pages this run opens are sent to Cloudflare");
+  const engineNotes = engineFor(engine).notes;
+  if (engineNotes?.start) print(`NOTE: ${engineNotes.start}`);
   if (args.auth) {
     print(`SIGNED IN with saved login ${args.auth}. Pages opened signed in are sent to Jev`);
-    if (engine === "browser-run")
-      print("NOTE: the saved login was also sent to Cloudflare, into the Browser Run session");
+    if (engineNotes?.auth) print(`NOTE: ${engineNotes.auth}`);
     if (skipped.length) print(`NOTE: localStorage of other sites was not restored: ${skipped.join(", ")}`);
   }
   print(
-    `${describePlan(plan, state.view)}\nSESSION: ${args.session} (${session.hostName(engine, chrome)})\n${headline(state.page)}`,
+    `${describePlan(plan, state.view)}\nSESSION: ${args.session} (${hostName(engine, chrome)})\n${headline(state.page)}`,
   );
   print("NEXT: webhand run");
   return OK;
@@ -852,7 +854,7 @@ async function commandAnswer(args: Args): Promise<number> {
       print("REJECTED: --url needs an http, https, or file URL, or a local file path");
       return FAILED;
     }
-    await openPage(state, session.browserUrl(url, state.chrome ?? "linux"), true);
+    await openPage(state, browserUrl(url, state.chrome ?? "linux"), true);
   }
   const values = parseValues(args.value);
   if (values.length) plan.values = mergeValues(plan.values, values);
@@ -911,7 +913,7 @@ async function commandReplan(args: Args): Promise<number> {
       return FAILED;
     }
     // As start does: the Windows Chrome on WSL opens a local file by its Windows path (round 19).
-    url = session.browserUrl(url, state.chrome ?? "linux");
+    url = browserUrl(url, state.chrome ?? "linux");
   }
   if (args.step.length) {
     const steps = parseSteps(args.step);
@@ -1216,7 +1218,7 @@ async function commandLearn(args: Args): Promise<number> {
     });
     counts = await learn.record(
       browser,
-      session.browserUrl(args.url, chrome),
+      browserUrl(args.url, chrome),
       recorder,
       () => signals.stopped() || performance.now() >= deadline,
     );
@@ -1254,12 +1256,12 @@ async function commandProfile(args: Args): Promise<number> {
     [chrome, note] = chooseChrome(args.chrome);
     if (note) print(`NOTE: ${note}`);
     if (args.action === "list") {
-      const profiles = session.listProfiles(chrome);
+      const profiles = listProfiles(chrome);
       print(`SAVED PROFILES (${chrome}): ${profiles.length ? profiles.join(", ") : "(none)"}`);
       return OK;
     }
     if (!args.name) throw new CliExit(`profile ${args.action} needs a NAME`);
-    const folder = session.profileDir(chrome, args.name);
+    const folder = profileDir(chrome, args.name);
     if (args.action === "delete") {
       if (!isDir(folder)) {
         print(`No saved profile ${args.name}`);
@@ -1281,7 +1283,7 @@ async function commandProfile(args: Args): Promise<number> {
   const deadline = performance.now() + args.max_minutes * 60_000;
   const signals = stopSignals();
   try {
-    await (await Browser.open(session.browserUrl(args.url, chrome), { port: chromeState.port })).close();
+    await (await Browser.open(browserUrl(args.url, chrome), { port: chromeState.port })).close();
     // stdout is buffered for the handoff count, so the person sees this on stderr right away.
     context.err(`OPENED profile ${args.name}. Sign in in the Chrome window, then close the window\n`);
     await session.waitUntilClosed(chromeState, () => signals.stopped() || performance.now() >= deadline);
@@ -1392,14 +1394,14 @@ function commands(): Record<string, CommandSpec> {
   const chromeOption: OptionSpec = {
     name: "chrome",
     type: "string",
-    choices: [...session.CHROMES].sort(),
+    choices: [...CHROMES].sort(),
     default: chromeDefault,
     help: "auto uses the Windows Chrome on WSL when it is reachable",
   };
   const engineOption: OptionSpec = {
     name: "engine",
     type: "string",
-    choices: [...session.ENGINE_CHOICES],
+    choices: [...ENGINE_CHOICES],
     default: process.env.WEBHAND_ENGINE ?? "auto",
     help: "What runs the browser. auto (default) uses the headless shell when it is installed and the run needs no window or saved profile, else Chrome. headless-shell, lightpanda, obscura, browser-run and kitesurf have no window and no saved profile, and --chrome does not apply to them. browser-run runs on Cloudflare (CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN; kitesurf is its stateless agent browser), so the pages it opens are sent there. Default: WEBHAND_ENGINE, else auto",
   };
