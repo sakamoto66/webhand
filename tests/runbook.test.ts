@@ -4,7 +4,7 @@ import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, expect, test } from "vitest";
-import { deps } from "../src/cli.ts";
+import { deps } from "../src/commands/context.ts";
 import * as runbook from "../src/runbook.ts";
 import * as session from "../src/session.ts";
 import { cli, cliExit, inDirectory, readEvents, research, researchExit, tmpPath } from "./helpers.ts";

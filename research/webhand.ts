@@ -9,7 +9,8 @@
 import { pathToFileURL } from "node:url";
 import type { Browser } from "../src/browser.ts";
 import { UsageError } from "../src/args.ts";
-import { CliExit, type Hooks, type IO, main } from "../src/cli.ts";
+import { type IO, main } from "../src/cli.ts";
+import { CliExit, type Hooks } from "../src/commands/context.ts";
 import * as session from "../src/session.ts";
 import { loadTask, TaskError } from "./tasks.ts";
 

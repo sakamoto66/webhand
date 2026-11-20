@@ -2,8 +2,8 @@
 
 import { join } from "node:path";
 import { vi } from "vitest";
-import { deps } from "../src/cli.ts";
 import type { Row } from "../src/collect.ts";
+import { deps } from "../src/commands/context.ts";
 import { type Best, type Candidate, KEEP, NONE } from "../src/compare.ts";
 import { actionSpace, modelState, resolve, valueChoices } from "../src/policies/base.ts";
 import * as session from "../src/session.ts";
