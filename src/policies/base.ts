@@ -111,15 +111,20 @@ export const NOT_VISIBLE_HELP = "The element the next step needs is not in this 
 export const VALUE = `Choose the value to type if the next operation is TYPE_TEXT. Claude wrote these values for this goal.
 Pick the one that belongs in the field you would type into. Choose NONE if no listed value belongs there.`;
 
+export const FILE = `Choose the file to upload if the next operation is UPLOAD_FILE. Claude named these files for this goal.
+Pick the one that belongs in the file field you would upload into. Choose NONE if no listed file belongs there.`;
+
 export const OPERATIONS: Record<string, string> = {
   click: "CLICK",
   fill: "TYPE_TEXT",
+  upload: "UPLOAD_FILE",
   select: "SELECT",
   reveal: "SCROLL_TO",
 };
 export const OPERATION_HELP: Record<string, string> = {
   CLICK: "Click an element, button, menu option, autocomplete suggestion, or calendar day.",
   TYPE_TEXT: "Enter or replace text in an editable field. Claude supplies the value.",
+  UPLOAD_FILE: "Give a file field one of Claude's files. Claude supplies the file.",
   SELECT: "Select an observed dropdown value.",
   SCROLL_TO: "Scroll an element beyond the viewport into view. Nothing is clicked.",
 };
@@ -193,6 +198,11 @@ export function planText(plan: Pick<Plan, "steps">): string[] {
 /** Claude's values, numbered. Jev chooses a number; the text is always Claude's. */
 export function valueChoices(plan: Pick<Plan, "values">): Map<string, Value> {
   return new Map((plan.values ?? []).map((value, i) => [String(i + 1), value]));
+}
+
+/** Claude's files, numbered. Jev chooses a number; the path is always Claude's. */
+export function fileChoices(plan: Pick<Plan, "files">): Map<string, Value> {
+  return new Map((plan.files ?? []).map((file, i) => [String(i + 1), file]));
 }
 
 /** Pixels of page outside the viewport. Only visible elements are offered, so this says more exists. */

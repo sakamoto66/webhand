@@ -9,7 +9,7 @@ import * as session from "../session.ts";
 import { FAILED, print } from "./context.ts";
 import { ANSWERABLE } from "./report.ts";
 import { commandRun } from "./run.ts";
-import { mergeValues, openableUrl, openPage, parseValues, requireSession } from "./shared.ts";
+import { mergeValues, openableUrl, openPage, parseFiles, parseValues, requireSession } from "./shared.ts";
 
 /** v2: Claude answers Jev's question. The same attempt continues: history and budget are kept. */
 export async function commandAnswer(args: Args): Promise<number> {
@@ -42,6 +42,7 @@ export async function commandAnswer(args: Args): Promise<number> {
   }
   const values = parseValues(args.value);
   if (values.length) plan.values = mergeValues(plan.values, values);
+  if (args.file.length) plan.files = mergeValues(plan.files ?? [], parseFiles(args.file));
   plan.instructions = [...(plan.instructions ?? []), args.note];
   // Not an action: it neither counts against the budget nor hides that the page did not change.
   state.history.push({

@@ -163,7 +163,7 @@ networkingMode=mirrored
 | コマンド | 担当 | 内容 |
 | --- | --- | --- |
 | `webhand catalog` | Claude | 学習済みのサービス、手順書、保存プロファイルを一覧する |
-| `webhand start --goal G --url U --step S ... --value L=V ... --session ...` | Claude | 計画を記録し、Chrome で開始 URL を開く |
+| `webhand start --goal G --url U --step S ... --value L=V ... [--file L=PATH ...] [--download-dir DIR] --session ...` | Claude | 計画を記録し、Chrome で開始 URL を開く |
 | `webhand run` | Jev | GOAL まで操作する |
 | `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | Claude | 計画を見直して、次の試行を始める。開始 URL から（`--restart`）、または別のページから（`--url`） |
 | `webhand answer --note N [--value L=V] [--url URL]` | Claude | 同じ試行の中で Jev に答える（flow v2 のみ）。履歴と予算は引き継ぐ。計画全体が違うときだけ `replan` を使う |
@@ -372,3 +372,8 @@ flow v1 では（文章は v2 でも）、Jev と Claude は、ふだんペー�
 
 成功判定は `run_end.verified` です。`status=done` は申告にすぎません。Claude Code のトークン数は取得しないため、`handoffs`（Claude に戻した回数）と `handoff_chars`（読ませた文字数）を代理指標にします。
 
+## アップロードとダウンロード
+
+- **アップロード**: 見えている `<input type="file">` を `UPLOAD_FILE` として出します。Jev が使ってよいファイルは、Claude が `--file "ラベル=パス"` で渡します（`start`、`run`、`answer`、`replan`）。Jev が選ぶのはラベルだけで、パスは見えません。ファイルはカレントディレクトリの下にあるものに限り、保存した状態と `.env` は拒否します。Claude 自身がやるときは `act UPLOAD_FILE N --file ラベル`。ページが隠している file 入力（ボタンから開くもの）は、まだ出しません。
+- **ダウンロード**: `start --download-dir DIR` で、クリックでダウンロードされたものを DIR に保存します（同名があれば ` (1)` を付けます）。`act` は `DOWNLOADED: 名前 (bytes)` を出し、ログと Jev の履歴のステップに `downloads` が残ります。中身の確認は Claude が行い、Jev には送りません。クリックから1.5秒より後に始まるダウンロードは、そのステップでは見えません。
+- どちらもローカルの Chrome が必要です（Linux の `--engine chrome`、または `headless-shell`）。ダウンロードは Windows の Chrome、`lightpanda`、`obscura`、Cloudflare の engine では使えません。

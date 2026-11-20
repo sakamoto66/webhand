@@ -163,7 +163,7 @@ If the CLI is not installed globally, read `webhand` in the table below as `npx 
 | Command | Used by | Description |
 | --- | --- | --- |
 | `webhand catalog` | Claude | Lists learned services, runbooks, and saved profiles |
-| `webhand start --goal G --url U --step S ... --value L=V ... --session ...` | Claude | Records the plan and opens the start URL in Chrome |
+| `webhand start --goal G --url U --step S ... --value L=V ... [--file L=PATH ...] [--download-dir DIR] --session ...` | Claude | Records the plan and opens the start URL in Chrome |
 | `webhand run` | Jev | Operates the page toward the GOAL |
 | `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | Claude | Revises the plan and starts the next attempt, from the start URL again (`--restart`) or from another page (`--url`) |
 | `webhand answer --note N [--value L=V] [--url URL]` | Claude | Answers Jev in the same attempt (flow v2 only): the history and the budget are kept. Use `replan` only when the whole plan is wrong |
@@ -372,3 +372,8 @@ Logs are written as JSONL to `runs/<timestamp>/` in the user folder (`~/.webhand
 
 Success is judged by `run_end.verified`; `status=done` is only a claim. Claude Code's token usage is not available, so `handoffs` (times control returned to Claude) and `handoff_chars` (characters Claude read) serve as proxies.
 
+## Upload and download
+
+- **Upload**: a visible `<input type="file">` is offered as `UPLOAD_FILE`. Claude names the files Jev may use with `--file "LABEL=PATH"` (on `start`, `run`, `answer`, `replan`); Jev chooses a label, never a path, and the label is the only thing it sees. A file must be under the current directory; saved state and `.env` files are refused. `act UPLOAD_FILE N --file LABEL` does it for Claude. A file input hidden by the page (an upload button that opens it) is not offered yet.
+- **Download**: `start --download-dir DIR` saves what a click downloads into DIR (an existing name gets ` (1)`). `act` prints `DOWNLOADED: name (bytes)`, and the step in the log and in Jev's history keeps `downloads`. Claude checks the file; its contents are never sent to Jev. A download that begins more than 1.5 s after the click is not seen by that step.
+- Both need a local Chrome (`--engine chrome` on Linux, or `headless-shell`); not the Windows Chrome for downloads, not `lightpanda`, `obscura`, or the Cloudflare engines.

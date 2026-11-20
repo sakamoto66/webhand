@@ -1,11 +1,14 @@
 /** Playwright launches an isolated Chrome or attaches to the session Chrome; observation and input go through one CDP session. */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import {
   type BrowserContext,
   type CDPSession,
   chromium,
+  type Download,
+  type ElementHandle,
   type Frame,
   type Browser as PlaywrightBrowser,
   type Page as PlaywrightPage,
@@ -29,7 +32,7 @@ import {
 } from "./browser-scripts.ts";
 import { sleep } from "./format.ts";
 import { home as sessionHome, tabPath } from "./session.ts";
-import { type Action, MutationUncertain, type Page, StalePage } from "./types.ts";
+import { type Action, MutationUncertain, type Page, PolicyError, StalePage } from "./types.ts";
 
 export function asset(name: string): string {
   return readFileSync(new URL(`../assets/${name}`, import.meta.url), "utf8");
@@ -91,6 +94,8 @@ function differing(current: unknown, observed: unknown, parts: string[]): string
   return [...new Set(names)];
 }
 const MAX_TAB_TITLE = 60;
+const DOWNLOAD_START_MS = 1500;
+const DOWNLOAD_DONE_MS = 60_000;
 
 // v2: elements inside frames are read where they are, one snapshot per visible frame. A node id carries its
 // frame: frame number times FRAME_BASE plus the id the frame's own snapshot gave. The main page is frame 0.
@@ -120,6 +125,8 @@ export interface OpenOptions {
   rememberTab?: boolean;
   /** Note the pages that ask for a new window. For an engine that opens none (Lightpanda, Obscura), so the log shows it. */
   trackWindows?: boolean;
+  /** Where Chrome saves files the page downloads. Absolute; made if missing. Local Chrome only. */
+  downloadDir?: string | null;
   /** Fill in what the engine lacks (Obscura: iterable select.selectedOptions) so snapshot.js reads the page as in Chrome. */
   compat?: boolean;
 }
@@ -130,6 +137,10 @@ export class Browser {
   private keepsTab = true;
   private tracksWindows = false;
   private compat = false;
+  private downloadDir: string | null = null;
+  /** Files that appeared in the download directory during the last act, by name. Taken once. */
+  private downloaded: { name: string; bytes: number }[] = [];
+  private saving: Promise<unknown>[] = [];
   browser!: PlaywrightBrowser;
   context!: BrowserContext;
   page!: PlaywrightPage;
@@ -150,6 +161,7 @@ export class Browser {
     instance.keepsTab = options.rememberTab ?? true;
     instance.tracksWindows = options.trackWindows ?? false;
     instance.compat = options.compat ?? false;
+    instance.downloadDir = options.downloadDir ?? null;
     try {
       if (port !== null || endpoint !== null) {
         instance.browser = endpoint
@@ -167,6 +179,7 @@ export class Browser {
           instance.page = await instance.rememberedTab();
         }
         instance.cdp = await instance.context.newCDPSession(instance.page);
+        await instance.allowDownloads();
         await instance.rememberTab();
         return instance;
       }
@@ -175,12 +188,55 @@ export class Browser {
       instance.context = await instance.browser.newContext({ viewport: { width: 1120, height: 780 } });
       instance.page = await instance.context.newPage();
       instance.cdp = await instance.context.newCDPSession(instance.page);
+      await instance.allowDownloads();
       if (url) await instance.page.goto(url, { waitUntil: "load" });
       return instance;
     } catch (error) {
       await instance.close();
       throw error;
     }
+  }
+
+  /** Saves what the pages download into the download directory. Playwright holds a download until it is saved. */
+  private async allowDownloads(): Promise<void> {
+    if (!this.downloadDir) return;
+    mkdirSync(this.downloadDir, { recursive: true });
+    const watch = (page: PlaywrightPage) => {
+      page.on("download", (download) => {
+        this.saving.push(this.save(download).catch(() => null));
+      });
+    };
+    for (const page of this.context.pages()) watch(page);
+    this.context.on("page", watch);
+  }
+
+  private async save(download: Download): Promise<void> {
+    const dir = this.downloadDir as string;
+    const wanted = basename(download.suggestedFilename()) || "download";
+    const dot = wanted.lastIndexOf(".");
+    const [stem, extension] = dot > 0 ? [wanted.slice(0, dot), wanted.slice(dot)] : [wanted, ""];
+    let name = wanted;
+    // Never over an existing file: a repeated name gets " (1)".
+    for (let n = 1; existsSync(join(dir, name)); n++) name = `${stem} (${n})${extension}`;
+    await download.saveAs(join(dir, name));
+    this.downloaded.push({ name, bytes: statSync(join(dir, name)).size });
+  }
+
+  /** The files the last act downloaded, once. */
+  takeDownloads(): { name: string; bytes: number }[] {
+    const found = this.downloaded;
+    this.downloaded = [];
+    return found;
+  }
+
+  /** After an input that may start a download: waits for one to begin, then for every one to be saved. */
+  private async collectDownloads(): Promise<void> {
+    if (!this.downloadDir) return;
+    const started = Date.now();
+    while (Date.now() - started < DOWNLOAD_START_MS && this.saving.length === 0) await sleep(100);
+    const saving = this.saving.splice(0);
+    if (!saving.length) return;
+    await Promise.race([Promise.all(saving), sleep(DOWNLOAD_DONE_MS)]);
   }
 
   /** Lightpanda lists a placeholder tab that is no page: nothing can attach to it and it hangs on close. It is never a tab. */
@@ -611,6 +667,7 @@ export class Browser {
       if (!found) throw new StalePage("Target changed", ["target_gone"]);
       return;
     }
+    if (kind === "upload") return await this.upload(action, text);
     let target: { x: number; y: number } | null = null;
     if (kind !== "scroll") target = await this.target(action);
     try {
@@ -632,6 +689,33 @@ export class Browser {
     } catch (error) {
       if (error instanceof MutationUncertain) throw error;
       throw new MutationUncertain(`${kind} was interrupted`);
+    }
+    if (kind === "click") await this.collectDownloads();
+  }
+
+  /** Gives a file input the file. The path is Claude's, checked when it was given; the model never wrote it. */
+  private async upload(action: Action, path: string | null): Promise<void> {
+    if (path === null) throw new PolicyError("No file was chosen for the upload");
+    if (!existsSync(path)) throw new MutationUncertain("The file to upload is gone");
+    const found = (await this.evaluateFor(action.node, `${RESOLVE_TARGET}(${JSON.stringify(action)})`)) as {
+      reason?: string;
+    } | null;
+    if (found === null || (found.reason && found.reason !== "covered" && found.reason !== "outside")) {
+      throw new StalePage(`Target is ${found?.reason ?? "gone"}`, [`target_${found?.reason ?? "gone"}`]);
+    }
+    const no = frameOf(action.node);
+    const frame = no === 0 ? this.page.mainFrame() : this.framesByNo.get(no);
+    if (!frame || frame.isDetached()) throw new StalePage("Target changed", ["target_gone"]);
+    const handle = await frame.evaluateHandle(`window.__browserLab.nodes.get(${JSON.stringify(action.node)}) ?? null`);
+    const element = handle.asElement() as ElementHandle | null;
+    try {
+      if (!element) throw new StalePage("Target changed", ["target_gone"]);
+      await element.setInputFiles(path);
+    } catch (error) {
+      if (error instanceof StalePage) throw error;
+      throw new MutationUncertain("The upload was interrupted");
+    } finally {
+      await handle.dispose().catch(() => {});
     }
   }
 

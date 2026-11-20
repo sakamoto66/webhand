@@ -8,7 +8,7 @@ import * as session from "../session.ts";
 import { MutationUncertain, PolicyError, StalePage } from "../types.ts";
 
 import { BUDGET, FAILED, OK, print, STALE, UNCERTAIN } from "./context.ts";
-import { attach, browserView, requireSession } from "./shared.ts";
+import { attach, browserView, loggable, requireSession } from "./shared.ts";
 
 /** Why `act` cannot run from the state's last outcome, as the exit code after saying so. null when it can. */
 function rejectAct(state: session.State): number | null {
@@ -45,6 +45,15 @@ function decideAct(args: Args, state: session.State): ReturnType<typeof resolve>
     print("REJECTED: TYPE_TEXT needs --text");
     return FAILED;
   }
+  if (decision.action.kind === "upload") {
+    const file = (state.plan.files ?? []).find((f: { label: string }) => f.label === args.file);
+    if (!file) {
+      print("REJECTED: UPLOAD_FILE needs --file with the label of one of the plan's files");
+      return FAILED;
+    }
+    decision.text = file.value;
+    return decision;
+  }
   decision.text = decision.action.kind === "fill" ? args.text : null;
   return decision;
 }
@@ -57,7 +66,7 @@ async function performAct(state: session.State, decision: ReturnType<typeof reso
     await execute(browser, state.page, decision, state.history, recorder, {
       decidedBy: "claude",
       attempt: state.plan.attempt,
-      values: state.plan.values,
+      values: loggable(state.plan),
       onChange: (page) => {
         state.page = page;
         session.save(state);
@@ -66,6 +75,10 @@ async function performAct(state: session.State, decision: ReturnType<typeof reso
     if (state.outcome !== agent.ATTEMPT_BUDGET) {
       state.outcome = null; // Claude stepped in, so Jev may continue this attempt with run.
       session.save(state);
+    }
+    const downloads = state.history.at(-1)?.downloads as { name: string; bytes: number }[] | undefined;
+    if (downloads?.length) {
+      print(`DOWNLOADED: ${downloads.map((d) => `${d.name} (${d.bytes} bytes)`).join(", ")} in ${state.download_dir}`);
     }
     print(render(state.page));
     return OK;

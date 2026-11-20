@@ -15,6 +15,7 @@ import {
   ESCALATE,
   ESCALATE_HELP,
   ESCALATE_RULES,
+  FILE,
   INSTRUCTION_RULES,
   jevGoal,
   MORE_RULES,
@@ -149,6 +150,7 @@ export function buildQuestions(
   values: Map<string, Value>,
   reading = false,
   tabbed = false,
+  files: Map<string, Value> = new Map(),
 ): [Record<string, unknown>, Record<string, string>] {
   const brief = taskBrief(plan);
   const next = plan.flow === "v2" ? NEXT_ACTION_WHOLE : NEXT_ACTION;
@@ -183,6 +185,17 @@ export function buildQuestions(
       type: "choice",
       criteria,
       instructions: { ...brief, operation: "TYPE_TEXT", rules: [VALUE] },
+    };
+  }
+  if (targets.has("UPLOAD_FILE")) {
+    // Only the label: the path may hold a name, and Jev does not need it to choose.
+    const criteria = new Map<string, string>();
+    for (const [key, f] of files) criteria.set(key, f.label);
+    criteria.set(NO_VALUE, "No listed file belongs in the field");
+    questions.upload_file_file = {
+      type: "choice",
+      criteria,
+      instructions: { ...brief, operation: "UPLOAD_FILE", rules: [FILE] },
     };
   }
   return [questions, operations];

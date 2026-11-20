@@ -1,6 +1,7 @@
 /** Helpers more than one command uses: values and steps, the session, attaching to the browser, opening a page. */
 
-import { join } from "node:path";
+import { realpathSync, statSync } from "node:fs";
+import { basename, join, relative, resolve } from "node:path";
 import * as agent from "../agent.ts";
 import { Browser, type ViewChoice } from "../browser.ts";
 import { browserRunHeaders } from "../engines/cloudflare.ts";
@@ -22,6 +23,49 @@ export function parseValues(pairs: string[]): Value[] {
     if (at < 0 || !label) throw new CliExit(`Expected --value LABEL=VALUE, got ${quote(pair)}`);
     return { label, value: pair.slice(at + 1) };
   });
+}
+
+/** Whether child is inside parent (or is it). Both real paths. */
+function inside(parent: string, child: string): boolean {
+  const path = relative(parent, child);
+  return path === "" || (!path.startsWith("..") && !path.startsWith("/"));
+}
+
+function realOrResolved(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
+/**
+ * --file LABEL=PATH: a file the run may upload. Only a file under the current directory, never the saved logins
+ * or an .env, so a plan cannot send the machine's secrets to a page. The path is made absolute and real here.
+ */
+export function parseFiles(pairs: string[]): Value[] {
+  return parseValues(pairs.map((pair) => pair.replace(/^--file=/, ""))).map(({ label, value }) => {
+    let real: string;
+    try {
+      real = realpathSync(resolve(value));
+      if (!statSync(real).isFile()) throw new Error("not a file");
+    } catch {
+      throw new CliExit(`--file ${quote(label)}: ${quote(value)} is not a file`);
+    }
+    if (!inside(realpathSync(process.cwd()), real)) {
+      throw new CliExit(`--file ${quote(label)}: only files under the current directory can be uploaded`);
+    }
+    if (inside(resolve(workspace.stateHome()), real) || inside(realOrResolved(workspace.stateHome()), real)) {
+      throw new CliExit(`--file ${quote(label)}: webhand's saved state cannot be uploaded`);
+    }
+    if (basename(real).startsWith(".env")) throw new CliExit(`--file ${quote(label)}: an .env file cannot be uploaded`);
+    return { label, value: real };
+  });
+}
+
+/** What a log may name for the values and files of a plan: labels, never the text or the path. */
+export function loggable(plan: { values: Value[]; files?: Value[] }): Value[] {
+  return [...plan.values, ...(plan.files ?? [])];
 }
 
 export function mergeValues(current: Value[], added: Value[]): Value[] {
@@ -47,7 +91,7 @@ export function requireSession(): session.State {
 
 /** The session's browser: Chrome by CDP port, or the daemon that holds an engine's page (Lightpanda, Obscura) by socket. Opens url when given. */
 export async function attach(
-  state: { port?: number; socket?: string; cdp?: string },
+  state: { port?: number; socket?: string; cdp?: string; download_dir?: string },
   url: string | null,
   view?: ViewChoice | null,
 ): Promise<Driver> {
@@ -64,7 +108,7 @@ export async function attach(
     }
     return remote;
   }
-  return await Browser.open(url, { port: state.port, view });
+  return await Browser.open(url, { port: state.port, view, downloadDir: state.download_dir ?? null });
 }
 
 export async function openPage(state: session.State, url: string | null = null, restart = false): Promise<void> {

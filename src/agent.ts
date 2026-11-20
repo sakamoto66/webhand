@@ -59,6 +59,8 @@ export interface Actor {
   unseen?(): Promise<Record<string, number>>;
   /** New windows the page asked for since the last call. A browser that cannot open one lists them, so the log shows it. */
   ignoredWindows?(): Promise<string[]>;
+  /** Files the last act downloaded, once. Only a local Chrome with a download directory has any. */
+  takeDownloads?(): { name: string; bytes: number }[];
 }
 
 /** What the observation offered when Jev found the element it needed missing: counts for the run log only. */
@@ -198,6 +200,8 @@ export async function execute(
     url: page.url,
     page_changed: null,
   };
+  const downloads = browser.takeDownloads?.() ?? [];
+  if (downloads.length) step.downloads = downloads;
   history.push(step);
   recorder.event("step", logged(step, action.region, options.values ?? []));
   onChange(page);
@@ -420,17 +424,18 @@ export async function runAgent(
           ({ DONE: GOAL_REPORTED, NEEDS_HUMAN, ESCALATE } as Record<string, string>)[decision.operation] ?? BLOCKED;
         return finish(outcome, `Jev chose ${decision.operation}`);
       }
-      if (decision.action.kind === "fill" && decision.text === null) {
+      if ((decision.action.kind === "fill" || decision.action.kind === "upload") && decision.text === null) {
         const field: Record<string, unknown> = {};
         for (const key of ["label", "role", "value"]) field[key] = decision.action[key] ?? null;
-        return finish(NEEDS_VALUE, "no value from the plan fits this field", { field });
+        const what = decision.action.kind === "upload" ? "file" : "value";
+        return finish(NEEDS_VALUE, `no ${what} from the plan fits this field`, { field });
       }
       if (decision.action.offscreen) ({ page, decision } = await intoView(browser, page, decision, recorder, attempt));
       page = await execute(browser, page, decision, history, recorder, {
         decidedBy: policy.name,
         attempt,
         onChange,
-        values: plan.values,
+        values: [...plan.values, ...(plan.files ?? [])],
         knowledge: options.knowledge,
       });
     } catch (error) {

@@ -102,6 +102,7 @@ export function describePlan(plan: Plan, view: runbook.View | null = null): stri
   const text = planText(plan);
   const lines = [`GOAL: ${plan.goal}`, "PLAN:", ...(text.length ? text : ["(goal only)"]).map((line) => `  ${line}`)];
   if (plan.values.length) lines.push(`VALUES: ${plan.values.map((value) => value.label).join(", ")}`);
+  if (plan.files?.length) lines.push(`FILES: ${plan.files.map((file) => file.label).join(", ")}`);
   for (const key of ["focus", "skip", "read"] as const) {
     if (view?.[key]?.length) lines.push(`${key.toUpperCase()}: ${view[key].join(", ")}`);
   }
@@ -115,11 +116,14 @@ export function describePlan(plan: Plan, view: runbook.View | null = null): stri
 // biome-ignore lint/suspicious/noExplicitAny: the session state.
 export function recentActions(state: Record<string, any>): string {
   const rows = (state.history as HistoryEntry[]).filter((h) => h.attempt === state.plan.attempt).slice(-RECENT);
+  const downloaded = (files: { name: string; bytes: number }[]): string =>
+    files.map((f) => `${f.name} (${f.bytes} bytes)`).join(", ");
   const lines = rows.map(
     (h) =>
       `  ${h.step}. ${h.kind !== "human" ? h.operation : "HUMAN"} ${quote(h.action)}` +
       (h.text ? ` text=${quote(h.text)}` : "") +
-      (h.page_changed ? "" : " (page unchanged)"),
+      (h.page_changed ? "" : " (page unchanged)") +
+      (h.downloads?.length ? ` DOWNLOADED: ${downloaded(h.downloads)}` : ""),
   );
   return `ACTIONS THIS ATTEMPT:\n${lines.length ? lines.join("\n") : "  (none)"}`;
 }
