@@ -124,7 +124,7 @@ Then restart WSL by running `wsl --shutdown` in PowerShell. Local file URLs are 
 
 ## Lightpanda
 
-`--engine lightpanda` runs the session on [Lightpanda](https://lightpanda.io) instead of Chrome (`--engine` is `chrome`, `lightpanda` or `obscura`; the default is `chrome`, or `WEBHAND_ENGINE`). `--chrome auto|linux|windows` says only where Chrome runs and does not apply to an engine. Lightpanda drops its pages when a CDP connection ends, and every webhand command connects anew, so webhand starts a small daemon (`src/daemon.ts`) that runs `lightpanda serve`, holds the one connection and page for the session, and answers the commands over an owner-only unix socket in the session's temporary folder (`state.socket`). The daemon runs the same `Browser`, so the freshness check and the no-retry rule apply as with Chrome. `finish` stops the daemon and Lightpanda together. Chrome sessions do not use the daemon.
+`--engine lightpanda` runs the session on [Lightpanda](https://lightpanda.io) instead of Chrome (`--engine` is `auto`, `chrome`, `headless-shell`, `lightpanda`, `obscura` or `browser-run`; the default is `auto`, or `WEBHAND_ENGINE`). `--chrome auto|linux|windows` says only where Chrome runs and does not apply to an engine. Lightpanda drops its pages when a CDP connection ends, and every webhand command connects anew, so webhand starts a small daemon (`src/daemon.ts`) that runs `lightpanda serve`, holds the one connection and page for the session, and answers the commands over an owner-only unix socket in the session's temporary folder (`state.socket`). The daemon runs the same `Browser`, so the freshness check and the no-retry rule apply as with Chrome. `finish` stops the daemon and Lightpanda together. Chrome sessions do not use the daemon.
 
 Limits:
 
@@ -144,6 +144,17 @@ Limits:
 - Tabs: Obscura has several pages and webhand switches between them (`TAB_n`), but nothing a page does opens a second tab (see above), so in practice a run has one. Its `Page.bringToFront` is not implemented, which webhand tolerates.
 - An inline element straight under `<body>` (not inside a paragraph, a block or a flex container) gets no size and is not offered; inside any block it is.
 - Obscura lacks some Web APIs that Chrome has. webhand adds these to the page for it (`compat`, in `src/browser.ts`; `assets/snapshot.js` is the same for every engine): an iterable `select.selectedOptions`, `isContentEditable` (so an editable div is a textbox), a form's controls by name (`form.guest`) and a form by id (`document.forms.id`). Without the last two, a page whose handler reads `form.guest.value` throws and the form is never submitted. Not covered: a cursor set by a stylesheet rule reads as `auto` (only an inline style gives `pointer`), so an element that is clickable only through a CSS cursor is not offered.
+
+## Browser Run
+
+`--engine browser-run` runs the session on Cloudflare [Browser Run](https://developers.cloudflare.com/browser-run/) (formerly Browser Rendering): a headless Chrome on Cloudflare's network, reached over CDP. Nothing runs locally and the session state has no pid. `start` creates the session (`POST .../browser-run/devtools/browser?keep_alive=1200000`), every command reconnects to it with Playwright's `connectOverCDP` and an `Authorization: Bearer` header, and `finish` deletes it. It is never chosen by `auto`.
+
+- Set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (the "Browser Rendering - Edit" permission) as environment variables. They are read from the environment only and never saved in the session state.
+- **The pages the run opens are sent to Cloudflare**, and with `--auth` the saved login is injected into the Browser Run session. `start` says so. Tell the user before running.
+- No saved profile (`--session new` only), no window (`--headed`, `[person]` steps, `learn`, `profile` are refused). `--auth` works.
+- A session closes after 60 seconds without a command unless `keep_alive` extends it; webhand asks for the longest, 20 minutes. If the session has gone, the next command fails (a change to the browser is never retried): `start` again.
+- Limits depend on the Cloudflare plan (Workers Free: 3 concurrent browsers and 10 minutes a day; Paid: 200 concurrent). Results have not been compared with Chrome; treat that as a separate experiment.
+- `--engine kitesurf` uses Cloudflare's other browser for the same API: Kitesurf, a stateless browser made for agents (beta, free behind per-account limits; not Chromium, so it reads some pages differently). Everything above applies, with one difference: Cloudflare does not allow `keep_alive` with it, so the session closes after the default 60 seconds without a command. Run the commands of a run without long pauses, or use `browser-run`. Checked with an example page and a form submit; not compared further. Not for video, WebGL, bot challenges, or long signed-in sessions (Cloudflare's own list).
 
 ## Commands
 

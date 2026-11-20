@@ -124,7 +124,7 @@ networkingMode=mirrored
 
 ## Lightpanda
 
-`--engine lightpanda` で、Chrome の代わりに [Lightpanda](https://lightpanda.io) でセッションを動かします（`--engine` は `chrome`、`lightpanda`、`obscura`。既定は `chrome`、または `WEBHAND_ENGINE`）。`--chrome auto|linux|windows` は Chrome をどこで動かすかだけを決め、エンジンには効きません。Lightpanda は CDP 接続が終わるとページを失い、webhand はコマンドごとに接続し直します。そこで webhand は小さな常駐プロセス（`src/daemon.ts`）を起動します。常駐が `lightpanda serve` を動かし、セッションの間、接続とページを1つ保ち、セッション用の一時フォルダにある所有者専用の unix ソケット（`state.socket`）でコマンドに応えます。常駐の中で動くのは同じ `Browser` なので、鮮度確認とリトライしない規則は Chrome と同じです。`finish` で常駐と Lightpanda をまとめて止めます。Chrome のセッションは常駐を使いません。
+`--engine lightpanda` で、Chrome の代わりに [Lightpanda](https://lightpanda.io) でセッションを動かします（`--engine` は `auto`、`chrome`、`headless-shell`、`lightpanda`、`obscura`、`browser-run`。既定は `auto`、または `WEBHAND_ENGINE`）。`--chrome auto|linux|windows` は Chrome をどこで動かすかだけを決め、エンジンには効きません。Lightpanda は CDP 接続が終わるとページを失い、webhand はコマンドごとに接続し直します。そこで webhand は小さな常駐プロセス（`src/daemon.ts`）を起動します。常駐が `lightpanda serve` を動かし、セッションの間、接続とページを1つ保ち、セッション用の一時フォルダにある所有者専用の unix ソケット（`state.socket`）でコマンドに応えます。常駐の中で動くのは同じ `Browser` なので、鮮度確認とリトライしない規則は Chrome と同じです。`finish` で常駐と Lightpanda をまとめて止めます。Chrome のセッションは常駐を使いません。
 
 制約:
 
@@ -144,6 +144,17 @@ networkingMode=mirrored
 - タブ: Obscura は複数のページを持ち、webhand はそれらを切り替えられます（`TAB_n`）。ただし、ページの操作で2つ目のタブが開くことはない（上記）ので、実際には1つです。`Page.bringToFront` は未実装で、webhand は、それがなくても切り替えます。
 - `<body>` の直下にある inline の要素（段落、ブロック、flex の中でないもの）は、大きさが 0 になり、Jev には出ません。ブロックの中にあれば出ます。
 - Chrome にある Web API の一部が、Obscura にはありません。webhand は、次のものをページ側に足します（`compat`。`src/browser.ts`。`assets/snapshot.js` はどのエンジンでも同じです）。反復できる `select.selectedOptions`、`isContentEditable`（編集できる div を `textbox` にするため）、フォームの子要素の名前での参照（`form.guest`）、id でのフォームの参照（`document.forms.id`）。後の2つがないと、ハンドラが `form.guest.value` と読むページは例外になり、フォームが送信されません。足せないもの: スタイルシートの規則で指定した cursor は `auto` と読めます（インラインの style だけが `pointer` になる）。CSS の cursor だけでクリックできる要素は、Jev に出ません。
+
+## Browser Run
+
+`--engine browser-run` で、Cloudflare の [Browser Run](https://developers.cloudflare.com/browser-run/)（旧 Browser Rendering）上でセッションを動かします。Cloudflare のネットワーク上のヘッドレス Chrome に CDP で接続します。手元では何も動かず、セッション状態に pid はありません。`start` がセッションを作り（`POST .../browser-run/devtools/browser?keep_alive=1200000`）、各コマンドは Playwright の `connectOverCDP` と `Authorization: Bearer` ヘッダで接続し直し、`finish` が削除します。`auto` では選ばれません。
+
+- 環境変数 `CLOUDFLARE_ACCOUNT_ID` と `CLOUDFLARE_API_TOKEN`（権限 "Browser Rendering - Edit"）を設定します。環境変数からだけ読み、セッション状態には保存しません。
+- **実行で開いたページは Cloudflare に送られます。** `--auth` を付けると、保存したログインも Browser Run のセッションに注入されます。`start` がそう表示します。実行前にユーザーへ伝えてください。
+- 保存プロファイルは使えず（`--session new` のみ）、窓もありません（`--headed`、`[person]` ステップ、`learn`、`profile` は拒否）。`--auth` は使えます。
+- コマンドが 60 秒来ないとセッションは閉じます。`keep_alive` で延ばせ、webhand は最長の 20 分を求めます。セッションが消えていれば次のコマンドは失敗します（ブラウザへの変更操作はリトライしません）。`start` からやり直してください。
+- 上限は Cloudflare のプランによります（Workers Free: 同時 3 ブラウザ、1 日 10 分。Paid: 同時 200）。Chrome との結果の比較はまだしていません。別の実験として扱ってください。
+- `--engine kitesurf` は、同じ API で Cloudflare のもう一つのブラウザ Kitesurf を使います。エージェント向けのステートレスなブラウザです（ベータ。アカウントごとの上限の範囲で無料。Chromium ではないので、ページの読み取りが違うことがあります）。上記はすべて当てはまりますが、一つだけ違います。Cloudflare は `keep_alive` との併用を認めないので、コマンドが 60 秒来ないとセッションが閉じます。コマンドの間を空けすぎないか、`browser-run` を使ってください。確認は、例のページとフォーム送信だけです。動画、WebGL、ボット対策のチャレンジ、長い、ログイン済みのセッションには向きません（Cloudflare の説明）。
 
 ## コマンド
 

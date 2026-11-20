@@ -376,6 +376,8 @@ export interface OpenOptions {
   headless?: boolean;
   /** Attach to the session Chrome on this port instead of launching a throwaway one. */
   port?: number | null;
+  /** Attach to a Chrome on another host (Browser Run) by its CDP URL, with the headers it asks for. Instead of port. */
+  endpoint?: { url: string; headers: Record<string, string> } | null;
   /** Claude's choice of regions to focus on or skip when observing. */
   view?: ViewChoice | null;
   /** Keep the current tab in the session's tab file so later commands return to it. Off for a browser that is never re-attached. */
@@ -407,14 +409,17 @@ export class Browser {
   /** Launch a throwaway Chrome for url, or attach to the session Chrome on port. */
   static async open(url: string | null = null, options: OpenOptions = {}): Promise<Browser> {
     const port = options.port ?? null;
-    const instance = new Browser(port !== null, options.view ?? null);
+    const endpoint = options.endpoint ?? null;
+    const instance = new Browser(port !== null || endpoint !== null, options.view ?? null);
     instance.keepsTab = options.rememberTab ?? true;
     instance.tracksWindows = options.trackWindows ?? false;
     instance.compat = options.compat ?? false;
     try {
-      if (port !== null) {
-        instance.browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-        instance.context = instance.browser.contexts()[0];
+      if (port !== null || endpoint !== null) {
+        instance.browser = endpoint
+          ? await chromium.connectOverCDP(endpoint.url, { headers: endpoint.headers })
+          : await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+        instance.context = instance.browser.contexts()[0] ?? (await instance.browser.newContext());
         await instance.findPlaceholder();
         if (url) {
           // A saved profile may restore old tabs. The run owns exactly one fresh tab.

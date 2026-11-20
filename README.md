@@ -76,7 +76,7 @@ Claude makes the judgment calls (the plan, the values, the check, the replan), a
 | Page stays between commands | Yes | Yes | Through a small daemon | Through a small daemon |
 | Saved login (`--auth`) | Yes | Yes | Yes | Yes |
 
-Chrome is the only engine with a window and saved profiles. Obscura and Lightpanda are much lighter but read some pages differently from Chrome, so compare results with Chrome before relying on them. Details and limits: [Headless shell](docs/reference.md#headless-shell), [Lightpanda](docs/reference.md#lightpanda), [Obscura](docs/reference.md#obscura), [Saved logins](docs/reference.md#saved-logins---auth).
+Chrome is the only engine with a window and saved profiles. Obscura and Lightpanda are much lighter but read some pages differently from Chrome, so compare results with Chrome before relying on them. `--engine browser-run` is different: the browser runs on Cloudflare ([Browser Run](docs/reference.md#browser-run)), so nothing runs locally, and the pages the run opens are sent to Cloudflare. Details and limits: [Headless shell](docs/reference.md#headless-shell), [Lightpanda](docs/reference.md#lightpanda), [Obscura](docs/reference.md#obscura), [Saved logins](docs/reference.md#saved-logins---auth).
 
 ## Safety and privacy
 

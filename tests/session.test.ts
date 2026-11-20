@@ -121,7 +121,15 @@ test("hostName reads as the engine or as Chrome", () => {
 
 test("an engine is never a --chrome choice", () => {
   expect(session.CHROMES).toEqual(["auto", "linux", "windows"]);
-  expect(session.ENGINE_CHOICES).toEqual(["auto", "chrome", "headless-shell", "lightpanda", "obscura"]);
+  expect(session.ENGINE_CHOICES).toEqual([
+    "auto",
+    "chrome",
+    "headless-shell",
+    "lightpanda",
+    "obscura",
+    "browser-run",
+    "kitesurf",
+  ]);
   expect(() => session.chooseChrome("obscura")).toThrow(session.SessionError);
 });
 
