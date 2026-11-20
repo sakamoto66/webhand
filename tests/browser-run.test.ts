@@ -4,8 +4,8 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Browser } from "../src/browser.ts";
-import { browserRunHeaders } from "../src/browser-run.ts";
-import { hostName } from "../src/engines.ts";
+import { browserRunHeaders } from "../src/engines/cloudflare.ts";
+import { chooseEngine, hostName } from "../src/engines/index.ts";
 import * as session from "../src/session.ts";
 
 const API = "https://api.cloudflare.com/client/v4/accounts/acct/browser-run/devtools/browser";
@@ -77,8 +77,8 @@ test("stop deletes the session and never throws", async () => {
 
 test("auto never chooses it, and a named engine is taken as asked", () => {
   const options = { headed: false, profile: null, chrome: "auto" };
-  expect(session.chooseEngine("browser-run", options)).toBe("browser-run");
-  expect(session.chooseEngine("auto", options)).not.toBe("browser-run");
+  expect(chooseEngine("browser-run", options)).toBe("browser-run");
+  expect(chooseEngine("auto", options)).not.toBe("browser-run");
   expect(hostName("browser-run", "linux")).toBe("Cloudflare Browser Run");
 });
 

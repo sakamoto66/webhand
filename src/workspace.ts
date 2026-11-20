@@ -30,6 +30,11 @@ export function home(): string {
   return resolve(expandUser(process.env.WEBHAND_HOME || join(homedir(), FOLDER)));
 }
 
+/** Where the session state and saved profiles live. */
+export function stateHome(): string {
+  return join(home(), "state");
+}
+
 function isDir(path: string): boolean {
   try {
     return statSync(path).isDirectory();

@@ -8,13 +8,16 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { chmodSync, rmSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
 import { Browser } from "./browser.ts";
+import { engineFor } from "./engines/index.ts";
+import type { Engine } from "./engines/types.ts";
 import { sleep } from "./format.ts";
 import { failure, lines, METHODS, type Reply, type Request } from "./remote.ts";
 
 const STARTUP_MS = 15_000;
+type Serve = NonNullable<Engine["serve"]>;
 
 /** Attaches once the engine accepts connections. */
-async function attach(engine: string, port: number, child: ChildProcess): Promise<Browser> {
+async function attach(serve: Serve, port: number, child: ChildProcess): Promise<Browser> {
   const deadline = performance.now() + STARTUP_MS;
   for (;;) {
     try {
@@ -23,7 +26,7 @@ async function attach(engine: string, port: number, child: ChildProcess): Promis
         port,
         rememberTab: false,
         trackWindows: true, // Neither engine opens a second window for target=_blank or window.open: the log should say so
-        compat: engine === "obscura",
+        compat: serve.compat,
       });
     } catch (error) {
       if (child.exitCode !== null || performance.now() > deadline) throw error;
@@ -32,19 +35,11 @@ async function attach(engine: string, port: number, child: ChildProcess): Promis
   }
 }
 
-/** The engine's own command line. Obscura refuses loopback and private addresses unless told otherwise (its SSRF guard). */
-function serveArguments(engine: string, port: number): string[] {
-  if (engine === "obscura") {
-    const open = process.env.WEBHAND_OBSCURA_ALLOW_PRIVATE === "1" ? ["--allow-private-network"] : [];
-    return ["serve", "--port", String(port), ...open];
-  }
-  return ["serve", "--host", "127.0.0.1", "--port", String(port)];
-}
-
 async function run(socketPath: string, engine: string, executable: string, port: number): Promise<void> {
-  const child = spawn(executable, serveArguments(engine, port), { stdio: "ignore" });
+  const serve = engineFor(engine).serve as Serve;
+  const child = spawn(executable, serve.arguments(port), { stdio: "ignore" });
   child.on("exit", () => process.exit(1));
-  const browser = await attach(engine, port, child);
+  const browser = await attach(serve, port, child);
   const server = createServer();
 
   const stop = async () => {
