@@ -4,7 +4,8 @@ import { loadTask } from "../research/tasks.ts";
 import { Browser } from "../src/browser.ts";
 import { type Best, type Candidate, type Comparer, compareScan, KEEP, NONE } from "../src/compare.ts";
 import { Recorder } from "../src/metrics.ts";
-import { buildCompare, JevPolicy } from "../src/policies/jev.ts";
+import { JevPolicy } from "../src/policies/jev.ts";
+import { buildCompare } from "../src/policies/jev-questions.ts";
 import { type Action, type ModelCall, type Plan, PolicyError } from "../src/types.ts";
 import { ROOT, tmpPath } from "./helpers.ts";
 
