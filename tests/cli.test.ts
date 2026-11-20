@@ -4,6 +4,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { UsageError } from "../src/args.ts";
 import { Browser } from "../src/browser.ts";
 import * as cliModule from "../src/cli.ts";
 import { probes } from "../src/engines/chrome.ts";
@@ -13,7 +14,7 @@ import * as session from "../src/session.ts";
 import { cli, cliExit, readEvents, research, researchExit, tmpPath } from "./helpers.ts";
 import { isolate, type Move, ScriptedJev } from "./jev.ts";
 
-const { OK, FAILED, UNCERTAIN, BUDGET, UsageError } = cliModule;
+const { OK, FAILED, UNCERTAIN, BUDGET } = cliModule;
 
 let log: string;
 let cleanup: () => Promise<void>;
@@ -424,7 +425,7 @@ test("usage errors name the problem", () => {
   expect(() => cliModule.parse(["finish"])).toThrow(/--status/);
   expect(() => cliModule.parse(["finish", "--status", "maybe"])).toThrow(/invalid choice/);
   expect(() => cliModule.parse(["start", "--max-attempts", "x"])).toThrow(/invalid int/);
-  expect(() => cliModule.parse(["nope"])).toThrow(cliModule.UsageError);
+  expect(() => cliModule.parse(["nope"])).toThrow(UsageError);
   const parsed = cliModule.parse(["start", "--step", "a", "--step=b", "--headed"]);
   expect("args" in parsed && parsed.args.step).toEqual(["a", "b"]);
   expect("args" in parsed && parsed.args.max_attempts).toBe(3);

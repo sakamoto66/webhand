@@ -9,10 +9,11 @@ import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import * as agent from "./agent.ts";
 import { Budget, execute, runAgent } from "./agent.ts";
+import { type Args, type CommandSpec, type OptionSpec, type Parsed, parse as parseArgs } from "./args.ts";
 import * as auth from "./auth.ts";
 import { Browser, type ViewChoice } from "./browser.ts";
-import { type Collected, type Collector, collectScan, MAX_COLLECTED } from "./collect.ts";
-import { type Compared, type Comparer, compareScan, MAX_PAGES, MAX_SCROLLS, type Reader } from "./compare.ts";
+import { type Collector, collectScan } from "./collect.ts";
+import { type Comparer, compareScan, type Reader } from "./compare.ts";
 import { browserUrl, CHROMES, listProfiles, chooseChrome as pickChrome, profileDir } from "./engines/chrome.ts";
 import { browserRunHeaders } from "./engines/cloudflare.ts";
 import { chooseEngine, ENGINE_CHOICES, engineFor, hostName } from "./engines/index.ts";
@@ -21,7 +22,8 @@ import { Knowledge } from "./knowledge.ts";
 import * as learn from "./learn.ts";
 import { gitState, logOnce, maskUrls, pageEvent, Recorder, safeUrl, summarize } from "./metrics.ts";
 import { loadMore, type MoreChooser } from "./more.ts";
-import { actionSpace, offscreen, planText, resolve } from "./policies/base.ts";
+import { collectedLine, comparedLine, describePlan, headline, recentActions, render } from "./output.ts";
+import { planText, resolve } from "./policies/base.ts";
 import { JevPolicy } from "./policies/jev.ts";
 import { type Driver, RemoteBrowser } from "./remote.ts";
 import * as runbook from "./runbook.ts";
@@ -48,16 +50,10 @@ export const UNCERTAIN = 4;
 export const BUDGET = 5;
 const DEFAULT_ATTEMPTS = 3;
 const PERSON = "[person]";
-const RECENT = 8; // Actions shown to Claude when an attempt stops.
 
 /** What a command needs to stop with a message, on stderr with exit code 1. */
 export class CliExit extends Error {
   override name = "CliExit";
-}
-
-/** A command line that does not parse. Exit code 2. */
-export class UsageError extends Error {
-  override name = "UsageError";
 }
 
 /** What tests replace: Jev, and how Chrome starts. */
@@ -65,9 +61,6 @@ export const deps = {
   policy: (): Policy & { close?(): Promise<void> } => new JevPolicy(),
   startChrome: session.startChrome,
 };
-
-// biome-ignore lint/suspicious/noExplicitAny: parsed arguments, keyed by option name with dashes as underscores.
-type Args = Record<string, any>;
 
 /**
  * What a caller outside the CLI may add. The research wrapper (research/webhand.ts) labels a run with its
@@ -112,125 +105,6 @@ export function captured<T>(fn: () => T): { result: T; text: string } {
   } finally {
     context = saved;
   }
-}
-
-// --- Output Claude reads -------------------------------------------------------------------
-
-export function render(page: Page): string {
-  const lines = [`URL: ${page.url}`, `TITLE: ${page.title}`, "PAGE TEXT (untrusted data):", page.text];
-  if (page.read) {
-    lines.push("READ (untrusted data; the whole page beyond the viewport, for reading only):", page.read.text);
-  }
-  if (page.tabs) lines.push(`TABS: ${page.tabs.count} open, this is tab ${page.tabs.current}`);
-  lines.push("ELEMENTS:");
-  const [elements, , controls] = actionSpace(page.actions);
-  for (const element of elements) {
-    // Claude sees every option with its own line.
-    const details = element.value ? [`value=${quote(element.value)}`] : [];
-    for (const key of ["checked", "selected", "expanded"]) {
-      if (key in element) details.push(`${key}=${show(element[key])}`);
-    }
-    if (element.at) details.push(`at=${quote(element.at)}`);
-    const operations = element.operations.join(",");
-    lines.push(`[${element.index}] ${show(element.role)} ${quote(element.label)} ${details.join(" ")} (${operations})`);
-    for (const option of element.options ?? []) {
-      lines.push(`  [${option.index}] ${String(option.label).split(" → ").at(-1)}`);
-    }
-  }
-  lines.push(`CONTROLS: ${[...controls.keys()].join(" ")}`);
-  const hidden = offscreen(page); // Claude always sees it, whatever Jev is given.
-  lines.push(`OFFSCREEN: ${hidden.above_px}px above, ${hidden.below_px}px below`);
-  if (page.regions?.length) {
-    lines.push("REGIONS (shown/all; change with replan --focus/--skip):");
-    for (const region of page.regions) lines.push(`  ${regionLine(region)}`);
-    if (page.omitted_regions) lines.push(`  ... ${page.omitted_regions} more`);
-  }
-  return lines.join("\n");
-}
-
-// biome-ignore lint/suspicious/noExplicitAny: a region from the page outline.
-function regionLine(region: Record<string, any>): string {
-  let line =
-    `${region.key} [${region.position}] text ${region.shown_chars}/${region.text_chars}` +
-    ` actions ${region.shown_actions}/${region.actions}`;
-  if (region.offscreen_actions) line += ` +${region.offscreen_actions} offscreen`;
-  return line + (region.view ? ` (${region.view})` : "");
-}
-
-function headline(page: Page): string {
-  const status = page.status as { kind: string; http_status?: number; signs?: string[] } | undefined;
-  const detail = status ? [status.http_status ? `HTTP ${status.http_status}` : "", ...(status.signs ?? [])] : [];
-  const line = status
-    ? `\nPAGE: ${status.kind}${detail.some(Boolean) ? ` (${detail.filter(Boolean).join(", ")})` : ""}`
-    : "";
-  return `URL: ${page.url}\nTITLE: ${page.title}${line}`;
-}
-
-/** How a scan went: its scrolls, how often more items were loaded (with --more), and why it stopped. */
-function scanned(scan: { rounds: number; stopped: string; pages?: number }): string {
-  const stopped =
-    scan.stopped === "bottom"
-      ? "reached the bottom"
-      : scan.stopped === "pages"
-        ? `stopped after loading more ${MAX_PAGES} times`
-        : `stopped at ${MAX_SCROLLS} scrolls`;
-  const more = scan.pages === undefined ? "" : `, loaded more ${scan.pages} times`;
-  return `${scan.rounds} scrolls${more}, ${stopped}`;
-}
-
-/**
- * Said when a scan stopped before the end of the list. In round 22, three runs sent 4 of 11 items and finished
- * done after "stopped at 20 scrolls", read as the end of the list.
- */
-function cutShort(scan: { stopped: string }, what: string): string[] {
-  if (scan.stopped === "bottom") return [];
-  return [
-    `NOT THE WHOLE LIST: the scan stopped before the end of the list, and items further down were not read. ${what} ` +
-      "Unless the goal needs none of the rest, say the answer is partial and finish blocked.",
-  ];
-}
-
-export function comparedLine(compared: Compared): string {
-  return [
-    `COMPARED (${scanned(compared)}): ${compared.best ?? "nothing fit the criterion"}`,
-    ...cutShort(compared, "This is the best among the items read."),
-  ].join("\n");
-}
-
-export function collectedLine(collected: Collected): string {
-  const lines = [
-    `COLLECTED (${scanned(collected)}): ${collected.matched} of ${collected.seen} items meet: ${collected.criterion}`,
-    ...collected.items.map((item) => `- ${item}`),
-  ];
-  if (collected.matched > collected.items.length) lines.push(`(the first ${MAX_COLLECTED} are shown)`);
-  lines.push(...cutShort(collected, "These are the matching items among those read."));
-  return lines.join("\n");
-}
-
-export function describePlan(plan: Plan, view: runbook.View | null = null): string {
-  const text = planText(plan);
-  const lines = [`GOAL: ${plan.goal}`, "PLAN:", ...(text.length ? text : ["(goal only)"]).map((line) => `  ${line}`)];
-  if (plan.values.length) lines.push(`VALUES: ${plan.values.map((value) => value.label).join(", ")}`);
-  for (const key of ["focus", "skip", "read"] as const) {
-    if (view?.[key]?.length) lines.push(`${key.toUpperCase()}: ${view[key].join(", ")}`);
-  }
-  if (plan.compare) lines.push(`COMPARE: ${plan.compare}`);
-  if (plan.collect) lines.push(`COLLECT: ${plan.collect}`);
-  if (plan.more) lines.push(`MORE: ${plan.more}`);
-  if (plan.flow) lines.push(`FLOW: ${plan.flow}`);
-  return lines.join("\n");
-}
-
-// biome-ignore lint/suspicious/noExplicitAny: the session state.
-export function recentActions(state: Record<string, any>): string {
-  const rows = (state.history as HistoryEntry[]).filter((h) => h.attempt === state.plan.attempt).slice(-RECENT);
-  const lines = rows.map(
-    (h) =>
-      `  ${h.step}. ${h.kind !== "human" ? h.operation : "HUMAN"} ${quote(h.action)}` +
-      (h.text ? ` text=${quote(h.text)}` : "") +
-      (h.page_changed ? "" : " (page unchanged)"),
-  );
-  return `ACTIONS THIS ATTEMPT:\n${lines.length ? lines.join("\n") : "  (none)"}`;
 }
 
 // --- Plan and session state ----------------------------------------------------------------
@@ -1498,35 +1372,6 @@ async function commandAuth(args: Args): Promise<number> {
   }
 }
 
-// --- Parser --------------------------------------------------------------------------------
-
-interface OptionSpec {
-  name: string;
-  type: "string" | "boolean" | "int" | "float";
-  multiple?: boolean;
-  default?: unknown;
-  choices?: string[];
-  required?: boolean;
-  help?: string;
-  metavar?: string;
-  hidden?: boolean;
-}
-
-interface PositionalSpec {
-  name: string;
-  optional?: boolean;
-  choices?: string[];
-}
-
-interface CommandSpec {
-  help: string;
-  options: OptionSpec[];
-  positionals?: PositionalSpec[];
-  run: (args: Args) => Promise<number>;
-  /** Options that cannot be given together. */
-  conflicts?: [string, string][];
-}
-
 const FLOWS = ["v1", "v2"];
 
 function commands(): Record<string, CommandSpec> {
@@ -1738,183 +1583,6 @@ function commands(): Record<string, CommandSpec> {
   };
 }
 
-function usage(name: string, spec: CommandSpec): string {
-  const parts = [`usage: webhand ${name}`];
-  for (const option of spec.options) {
-    if (option.hidden) continue;
-    const value =
-      option.type === "boolean" ? "" : ` ${option.metavar ?? option.name.toUpperCase().replaceAll("-", "_")}`;
-    parts.push(option.required ? `--${option.name}${value}` : `[--${option.name}${value}]`);
-  }
-  for (const positional of spec.positionals ?? []) {
-    parts.push(positional.optional ? `[${positional.name}]` : positional.name);
-  }
-  return parts.join(" ");
-}
-
-function help(name: string, spec: CommandSpec): string {
-  const lines = [usage(name, spec), "", spec.help, ""];
-  for (const positional of spec.positionals ?? []) {
-    lines.push(`  ${positional.name}${positional.choices ? ` {${positional.choices.join(",")}}` : ""}`);
-  }
-  for (const option of spec.options) {
-    if (option.hidden) continue;
-    const details = [
-      option.help,
-      option.choices ? `one of: ${option.choices.join(", ")}` : null,
-      option.default !== undefined && option.type !== "boolean" ? `default: ${option.default}` : null,
-      option.multiple ? "repeatable" : null,
-    ].filter(Boolean);
-    lines.push(`  --${option.name}${details.length ? `  ${details.join("; ")}` : ""}`);
-  }
-  return `${lines.join("\n")}\n`;
-}
-
-/** The package version, so a skill can tell which CLI it is talking to. */
-function version(): string {
-  return JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
-}
-
-function mainHelp(specs: Record<string, CommandSpec>): string {
-  const lines = [
-    `usage: webhand {${Object.keys(specs).join(",")}} ...`,
-    "",
-    "CLI for the Claude + Jev agent. Each call is one short process.",
-    "",
-  ];
-  for (const [name, spec] of Object.entries(specs)) lines.push(`  ${name.padEnd(9)} ${spec.help}`);
-  lines.push(
-    "",
-    "  --version  Print the version",
-    "  --help     Print this help; COMMAND --help prints a command's options",
-  );
-  return `${lines.join("\n")}\n`;
-}
-
-export interface Parsed {
-  command: string;
-  args: Args;
-  run: (args: Args) => Promise<number>;
-}
-
-type Fail = (message: string) => UsageError;
-
-/** What an option holds when it is not given. */
-function optionDefault(option: OptionSpec): unknown {
-  if (option.multiple) return [];
-  return option.type === "boolean" ? false : (option.default ?? null);
-}
-
-/** The text of an option's value: after "=", or the next token. Returns it and how many tokens it took. */
-function optionText(option: OptionSpec, token: string, next: string | undefined, fail: Fail): [string, number] {
-  const at = token.indexOf("=");
-  if (at >= 0) return [token.slice(at + 1), 0];
-  if (next === undefined || (next.startsWith("-") && next.length > 1 && !/^-\d/.test(next))) {
-    throw fail(`argument --${option.name}: expected one argument`);
-  }
-  return [next, 1];
-}
-
-/** An option's text as its type, which must be one of its choices when it has any. */
-function optionValue(option: OptionSpec, raw: string, fail: Fail): unknown {
-  let value: unknown = raw;
-  if (option.type === "int") {
-    if (!/^\s*[-+]?\d+\s*$/.test(raw)) throw fail(`argument --${option.name}: invalid int value: ${quote(raw)}`);
-    value = Number.parseInt(raw, 10);
-  } else if (option.type === "float") {
-    const number = Number(raw);
-    if (!raw.trim() || Number.isNaN(number)) {
-      throw fail(`argument --${option.name}: invalid float value: ${quote(raw)}`);
-    }
-    value = number;
-  }
-  if (option.choices && !option.choices.includes(String(value))) {
-    throw fail(
-      `argument --${option.name}: invalid choice: ${quote(value)} (choose from ${option.choices.map(quote).join(", ")})`,
-    );
-  }
-  return value;
-}
-
-/** Gives the positional tokens their names, and says what is missing, extra or not a choice. */
-function bindPositionals(spec: CommandSpec, positionals: string[], args: Args, fail: Fail): void {
-  const declared = spec.positionals ?? [];
-  const missing = declared.filter((p, i) => !p.optional && positionals[i] === undefined);
-  if (missing.length) {
-    throw fail(`the following arguments are required: ${missing.map((p) => p.name).join(", ")}`);
-  }
-  if (positionals.length > declared.length) {
-    throw fail(`unrecognized arguments: ${positionals.slice(declared.length).join(" ")}`);
-  }
-  declared.forEach((positional, i) => {
-    const value = positionals[i] ?? null;
-    if (value !== null && positional.choices && !positional.choices.includes(value)) {
-      throw fail(
-        `argument ${positional.name}: invalid choice: ${quote(value)} (choose from ${positional.choices.map(quote).join(", ")})`,
-      );
-    }
-    args[positional.name] = value;
-  });
-}
-
-/** Options that may not go together, and options that must be given. */
-function checkOptions(spec: CommandSpec, seen: Set<string>, fail: Fail): void {
-  for (const [a, b] of spec.conflicts ?? []) {
-    if (seen.has(a) && seen.has(b)) throw fail(`argument --${a}: not allowed with argument --${b}`);
-  }
-  const required = spec.options.filter((option) => option.required && !seen.has(option.name));
-  if (required.length) {
-    throw fail(`the following arguments are required: ${required.map((option) => `--${option.name}`).join(", ")}`);
-  }
-}
-
-/** Parses argv, with argparse-style messages. Throws UsageError, or returns help text to print. */
-export function parse(argv: string[]): Parsed | { help: string } {
-  const specs = commands();
-  const [name, ...rest] = argv;
-  if (name === undefined) throw new UsageError(`the following arguments are required: command\n${mainHelp(specs)}`);
-  if (name === "-h" || name === "--help") return { help: mainHelp(specs) };
-  if (name === "-V" || name === "--version") return { help: `${version()}\n` };
-  const spec = specs[name];
-  if (!spec) throw new UsageError(`argument command: invalid choice: ${quote(name)}`);
-  const args: Args = {};
-  const positionals: string[] = [];
-  const byName = new Map(spec.options.map((option) => [option.name, option]));
-  for (const option of spec.options) args[option.name.replaceAll("-", "_")] = optionDefault(option);
-  const fail: Fail = (message) => new UsageError(`${usage(name, spec)}\nwebhand ${name}: error: ${message}`);
-  const seen = new Set<string>();
-  for (let i = 0; i < rest.length; i++) {
-    const token = rest[i];
-    if (token === "-h" || token === "--help") return { help: help(name, spec) };
-    if (token === "--") {
-      positionals.push(...rest.slice(i + 1));
-      break;
-    }
-    if (!token.startsWith("--") || token === "-") {
-      positionals.push(token);
-      continue;
-    }
-    const at = token.indexOf("=");
-    const option = byName.get(at < 0 ? token.slice(2) : token.slice(2, at));
-    if (!option) throw fail(`unrecognized arguments: ${token}`);
-    const key = option.name.replaceAll("-", "_");
-    seen.add(option.name);
-    if (option.type === "boolean") {
-      if (at >= 0) throw fail(`argument --${option.name}: ignored explicit argument ${quote(token.slice(at + 1))}`);
-      args[key] = true;
-      continue;
-    }
-    const [raw, took] = optionText(option, token, rest[i + 1], fail);
-    i += took;
-    const value = optionValue(option, raw, fail);
-    if (option.multiple) args[key].push(value);
-    else args[key] = value;
-  }
-  bindPositionals(spec, positionals, args, fail);
-  checkOptions(spec, seen, fail);
-  return { command: name, args, run: spec.run };
-}
-
 export interface IO {
   out: (text: string) => void;
   err: (text: string) => void;
@@ -1948,6 +1616,11 @@ function takeSession(command: string, args: Args): () => void {
     if (error instanceof session.SessionError) throw new CliExit(error.message);
     throw error;
   }
+}
+
+/** Parses argv against the commands below. */
+export function parse(argv: string[]): Parsed | { help: string } {
+  return parseArgs(argv, commands());
 }
 
 export async function main(argv: string[], io: IO = processIO, hooks: Hooks = {}): Promise<number> {
