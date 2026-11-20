@@ -121,6 +121,26 @@
 
   const isFileInput = element => element.tagName === 'INPUT' && element.type === 'file';
 
+  // A file input the page hides (display:none behind a styled label or button) is still given its file directly.
+  // It is offered only through a trigger the person can see: a visible label, or the one visible button, link or
+  // label next to it. One inside a hidden dialog has no such trigger and is not offered.
+  const boxOf = element => {
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 ? rect : null;
+  };
+  const fileTrigger = input => {
+    for (const label of input.labels || []) {
+      if (isVisible(label) && boxOf(label)) {
+        return {rect: boxOf(label), label: accessibleName(input) || accessibleName(label)};
+      }
+    }
+    const scope = input.parentElement;
+    if (!scope || !isVisible(scope)) return null;
+    const near = [...scope.querySelectorAll('button,[role="button"],a[href],label')]
+      .filter(item => item !== input && !item.contains(input) && isVisible(item) && boxOf(item));
+    return near.length === 1 ? {rect: boxOf(near[0]), label: accessibleName(near[0]) || accessibleName(input)} : null;
+  };
+
   const isVisible = element => !closestDeep(element, HIDDEN_SELECTOR) &&
     element.checkVisibility({checkOpacity: true, checkVisibilityCSS: true});
 
@@ -258,7 +278,7 @@
 
   // What must still hold for an action on element to mean what it meant when observed.
   state.guard = element => {
-    if (!element?.isConnected || !isVisible(element)) return null;
+    if (!element?.isConnected || !(isVisible(element) || isFileInput(element))) return null;
     const scope = closestDeep(element, GUARD_SCOPE_SELECTOR) || element.parentElement || element.getRootNode().host;
     return [
       nodeId(element), targetRole(element), accessibleName(element),
@@ -334,8 +354,13 @@
     const actions = [];
     for (const element of walkDeep(document, NodeFilter.SHOW_ELEMENT)) {
       const role = targetRole(element);
-      if (!role || !(isObservableInput(element) || isFileInput(element)) || !isVisible(element) || isDisabled(element)) continue;
-      const rect = element.getBoundingClientRect();
+      const file = isFileInput(element);
+      if (!role || !(isObservableInput(element) || file) || isDisabled(element)) continue;
+      let rect;
+      let hidden = null;
+      if (isVisible(element)) rect = element.getBoundingClientRect();
+      else if (file && (hidden = fileTrigger(element))) rect = hidden.rect;
+      else continue;
       if (!isTarget(element, role, rect)) continue;
       const region = regionOf(element);
       if (!centerInViewport(rect)) {
@@ -363,6 +388,7 @@
         continue;
       }
       const base = baseAction(element, role, rect);
+      if (hidden) Object.assign(base, {hidden: true, label: hidden.label || role});
       const found = element.tagName === 'SELECT' ? selectActions(element, base) : otherActions(element, role, base);
       for (const action of found) actionRegions.set(action, region);
       region.actions += found.length;

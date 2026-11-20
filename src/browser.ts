@@ -570,7 +570,7 @@ export class Browser {
 
   private async differingParts(page: Page, action: Action | null): Promise<string[]> {
     // v2 checks typing against its field too, instead of against the whole viewport's text.
-    const targeted = ["click", "select", "reveal", ...(this.view?.whole ? ["fill"] : [])];
+    const targeted = ["click", "select", "reveal", "upload", ...(this.view?.whole ? ["fill"] : [])];
     if (action !== null && targeted.includes(action.kind)) {
       const node = action.node;
       if (!Number.isInteger(node)) return ["target_unknown"];
@@ -697,11 +697,14 @@ export class Browser {
   private async upload(action: Action, path: string | null): Promise<void> {
     if (path === null) throw new PolicyError("No file was chosen for the upload");
     if (!existsSync(path)) throw new MutationUncertain("The file to upload is gone");
-    const found = (await this.evaluateFor(action.node, `${RESOLVE_TARGET}(${JSON.stringify(action)})`)) as {
-      reason?: string;
-    } | null;
-    if (found === null || (found.reason && found.reason !== "covered" && found.reason !== "outside")) {
-      throw new StalePage(`Target is ${found?.reason ?? "gone"}`, [`target_${found?.reason ?? "gone"}`]);
+    // A file input the page hides is given its file where it is; its visible trigger was checked when observed.
+    if (!action.hidden) {
+      const found = (await this.evaluateFor(action.node, `${RESOLVE_TARGET}(${JSON.stringify(action)})`)) as {
+        reason?: string;
+      } | null;
+      if (found === null || (found.reason && found.reason !== "covered" && found.reason !== "outside")) {
+        throw new StalePage(`Target is ${found?.reason ?? "gone"}`, [`target_${found?.reason ?? "gone"}`]);
+      }
     }
     const no = frameOf(action.node);
     const frame = no === 0 ? this.page.mainFrame() : this.framesByNo.get(no);
