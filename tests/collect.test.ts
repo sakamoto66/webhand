@@ -4,7 +4,8 @@ import { loadTask } from "../research/tasks.ts";
 import { Browser } from "../src/browser.ts";
 import { type Collector, collectScan, MATCH, NO, type Row } from "../src/collect.ts";
 import { Recorder } from "../src/metrics.ts";
-import { buildCollect, JevPolicy } from "../src/policies/jev.ts";
+import { JevPolicy } from "../src/policies/jev.ts";
+import { buildCollect } from "../src/policies/jev-questions.ts";
 import { type Action, type ModelCall, type Plan, PolicyError } from "../src/types.ts";
 import { ROOT, tmpPath } from "./helpers.ts";
 

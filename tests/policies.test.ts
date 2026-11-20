@@ -3,7 +3,8 @@
 import { expect, test, vi } from "vitest";
 import { summarize } from "../src/metrics.ts";
 import { actionSpace, modelState, resolve } from "../src/policies/base.ts";
-import { buildQuestions, estimateTokens, type Fetch, JevPolicy, validateChoice } from "../src/policies/jev.ts";
+import { type Fetch, JevPolicy, validateChoice } from "../src/policies/jev.ts";
+import { buildQuestions, estimateTokens } from "../src/policies/jev-questions.ts";
 import { ScriptedPolicy } from "../src/policies/scripted.ts";
 import { modelCall, type Plan, PolicyError } from "../src/types.ts";
 
