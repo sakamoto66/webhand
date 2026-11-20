@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { UsageError } from "./args.ts";
-import { CliExit, main } from "./cli.ts";
+import { main } from "./cli.ts";
+import { CliExit } from "./commands/context.ts";
 
 let code: number;
 try {

@@ -2,7 +2,8 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "../research/webhand.ts";
-import { CliExit, type IO, main } from "../src/cli.ts";
+import { type IO, main } from "../src/cli.ts";
+import { CliExit } from "../src/commands/context.ts";
 
 export const ROOT = process.cwd();
 

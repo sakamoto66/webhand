@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, vi } from "vitest";
-import { deps } from "../src/cli.ts";
+import { deps } from "../src/commands/context.ts";
 
 const original = { ...deps };
 

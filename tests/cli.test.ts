@@ -7,14 +7,13 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { UsageError } from "../src/args.ts";
 import { Browser } from "../src/browser.ts";
 import * as cliModule from "../src/cli.ts";
+import { BUDGET, FAILED, OK, UNCERTAIN } from "../src/commands/context.ts";
 import { probes } from "../src/engines/chrome.ts";
 import { logOnce } from "../src/metrics.ts";
 import { actionSpace } from "../src/policies/base.ts";
 import * as session from "../src/session.ts";
 import { cli, cliExit, readEvents, research, researchExit, tmpPath } from "./helpers.ts";
 import { isolate, type Move, ScriptedJev } from "./jev.ts";
-
-const { OK, FAILED, UNCERTAIN, BUDGET } = cliModule;
 
 let log: string;
 let cleanup: () => Promise<void>;
