@@ -71,10 +71,10 @@ Claude makes the judgment calls (the plan, the values, the check, the replan), a
 | --- | --- | --- | --- | --- | --- | --- |
 | Window (`--headed`), `[person]` steps, `learn`, saved profile | Yes | No | No | No | No | No |
 | Memory for one page | about 350–470 MB (`--headless=new`) | about 240–260 MB | about 23–33 MB | about 23–33 MB | None here (runs on Cloudflare) | None here (runs on Cloudflare) |
-| Real layout and screenshots | Yes | Yes | Yes | No (simulated) | Yes (Chromium; screenshots not checked) | Not pixel-perfect (Cloudflare's own browser); screenshots not checked |
-| Several tabs | Yes | Yes | In practice one (a new window opens nothing or loads in the same tab) | No | Yes | Not checked (Cloudflare says it has no tabs) |
+| Real layout and screenshots | Yes | Yes | Yes | No (simulated) | Yes (Chromium) | Screenshots work; not pixel-perfect (Cloudflare's own browser) |
+| Several tabs | Yes | Yes | In practice one (a new window opens nothing or loads in the same tab) | No | Yes | No: a link that opens a new window closes the page and the command fails |
 | Page stays between commands | Yes | Yes | Through a small daemon | Through a small daemon | While the session lives (idle limit 20 min) | Idle limit 60 s |
-| Saved login (`--auth`) | Yes | Yes | Yes | Yes | Yes | Not checked |
+| Saved login (`--auth`) | Yes | Yes | Yes | Yes | Yes | Yes |
 
 Chrome is the only engine with a window and saved profiles. Obscura and Lightpanda are much lighter but read some pages differently from Chrome, so compare results with Chrome before relying on them. `--engine browser-run` and `--engine kitesurf` are different: the browser runs on Cloudflare ([Browser Run](docs/reference.md#browser-run)), so nothing runs locally, and the pages the run opens are sent to Cloudflare. Kitesurf is Cloudflare's own stateless agent browser (beta, not Chromium) and its session closes after 60 seconds without a command. Details and limits: [Headless shell](docs/reference.md#headless-shell), [Lightpanda](docs/reference.md#lightpanda), [Obscura](docs/reference.md#obscura), [Saved logins](docs/reference.md#saved-logins---auth).
 
