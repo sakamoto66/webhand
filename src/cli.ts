@@ -405,49 +405,62 @@ function chooseChrome(choice: string): [string, string | null] {
   }
 }
 
-async function commandStart(args: Args): Promise<number> {
-  if (session.load()) {
-    throw new CliExit(named("A session is active. Run: webhand finish --status abandoned, or start another with --id"));
-  }
-  const task = context.hooks.task ?? null;
-  let book: runbook.Runbook | null = null;
-  let service: runbook.ServiceInfo | null = null;
-  let serviceName: string | null = null;
-  let profile: string | null;
-  let chrome: string;
-  let engine: string;
-  let note: string | null;
-  let login: auth.SavedLogin | null = null;
+/** What `start` resolves from its arguments before anything is opened. */
+interface StartTarget {
+  book: runbook.Runbook | null;
+  service: runbook.ServiceInfo | null;
+  serviceName: string | null;
+  /** The saved profile, or null for a new session. */
+  profile: string | null;
+  /** Where Chrome runs, and the note for the person when auto fell back. */
+  chrome: string;
+  note: string | null;
+  engine: string;
+  login: auth.SavedLogin | null;
+}
+
+/** The runbook, service, saved login, engine and Chrome the arguments ask for. Nothing is opened. */
+function resolveTarget(args: Args): StartTarget {
   try {
+    let book: runbook.Runbook | null = null;
     if (args.runbook) {
       book = runbook.load(args.runbook, runbook.parseValues(args.param));
       if (book.status !== "approved" && !args.allow_draft) {
         throw new CliExit(`Runbook ${args.runbook} is a draft. Trial it with --allow-draft, then get it approved`);
       }
     }
-    serviceName = args.service || (book ? book.service : null);
-    service = serviceName ? runbook.loadService(serviceName) : null;
-    profile = session.parseSession(args.session);
-    if (args.auth) {
-      if (profile) throw new CliExit("--auth is for a new session: a saved profile already keeps its own sign-in");
-      auth.checkName(args.auth);
-      if (!auth.exists(args.auth)) {
-        const known = auth.names();
-        throw new CliExit(
-          `No saved login ${args.auth}. Saved: ${known.length ? known.join(", ") : "(none)"}. Save one with: webhand auth save NAME`,
-        );
-      }
-      login = auth.load(args.auth);
-    }
-    engine = chooseEngine(args.engine, { headed: args.headed, profile, chrome: args.chrome });
+    const serviceName = args.service || (book ? book.service : null);
+    const service = serviceName ? runbook.loadService(serviceName) : null;
+    const profile = session.parseSession(args.session);
+    const login = args.auth ? loadLogin(args.auth, profile) : null;
+    const engine = chooseEngine(args.engine, { headed: args.headed, profile, chrome: args.chrome });
     // --chrome says where Chrome runs; the other engines have no such choice.
-    [chrome, note] = engine === "chrome" ? chooseChrome(args.chrome) : ["linux", null];
+    const [chrome, note] = engine === "chrome" ? pickChrome(args.chrome) : ["linux", null];
+    return { book, service, serviceName, profile, chrome, note, engine, login };
   } catch (error) {
     if (error instanceof runbook.RunbookError || error instanceof session.SessionError) {
       throw new CliExit(error.message);
     }
     throw error;
   }
+}
+
+/** The saved login --auth names. It is for a new session: a saved profile already keeps its own sign-in. */
+function loadLogin(name: string, profile: string | null): auth.SavedLogin {
+  if (profile) throw new CliExit("--auth is for a new session: a saved profile already keeps its own sign-in");
+  auth.checkName(name);
+  if (!auth.exists(name)) {
+    const known = auth.names();
+    throw new CliExit(
+      `No saved login ${name}. Saved: ${known.length ? known.join(", ") : "(none)"}. Save one with: webhand auth save NAME`,
+    );
+  }
+  return auth.load(name);
+}
+
+/** The goal, start URL, steps and values for the run, checked before a browser is started. */
+function planStart(args: Args, target: StartTarget): { plan: Plan; goal: string; url: string; values: Value[] } {
+  const { book, service } = target;
   const goal: string | null = args.goal || (book ? book.goal : null);
   const url: string | null = args.url || (book ? book.start_url : null);
   if (!(goal && url)) throw new CliExit("Give --runbook, or both --goal and --url");
@@ -481,23 +494,28 @@ async function commandStart(args: Args): Promise<number> {
   };
   if (plan.compare && plan.collect) throw new CliExit("Use --compare or --collect, not both");
   if (plan.more && !plan.compare && !plan.collect) throw new CliExit("--more needs --compare or --collect");
-  let chromeState: session.State;
-  try {
-    chromeState = await deps.startChrome({ headed: args.headed, profile, chrome, engine });
-  } catch (error) {
-    if (error instanceof session.SessionError) throw new CliExit(error.message);
-    throw error;
-  }
+  return { plan, goal, url, values };
+}
+
+/** The session state `start` saves: the browser's, the run's limits, and what Claude and the service taught it. */
+function initialState(
+  args: Args,
+  target: StartTarget,
+  planned: { plan: Plan; url: string },
+  chromeState: session.State,
+): session.State {
+  const { book, service, serviceName, chrome } = target;
+  const task = context.hooks.task ?? null;
   const learned = runbook.view(runbook.serviceView(service), book);
   const claudeView = { focus: args.focus, skip: args.skip, read: args.read };
-  const state: session.State = {
+  return {
     ...chromeState,
     view_learned: learned,
     view_claude: claudeView,
     view: runbook.view(learned, claudeView),
     task,
-    start_url: browserUrl(url, chrome),
-    plan,
+    start_url: browserUrl(planned.url, chrome),
+    plan: planned.plan,
     runbook: book ? { name: book.name, status: book.status, digest: book.digest, scope: book.scope } : null,
     service: serviceName,
     history: [],
@@ -511,7 +529,22 @@ async function commandStart(args: Args): Promise<number> {
     started: Date.now() / 1000,
     log: defaultLog(task || "adhoc"),
   };
-  context.log = state.log;
+}
+
+/**
+ * Opens the start page (restoring the saved login first), observes it, and records the start in the log. A failed
+ * start is a run too: it keeps why it failed, and the browser is stopped. Returns the sites whose localStorage a
+ * saved login could not restore.
+ */
+async function openStartPage(
+  args: Args,
+  target: StartTarget,
+  planned: { plan: Plan; goal: string; values: Value[] },
+  chromeState: session.State,
+  state: session.State,
+): Promise<string[]> {
+  const { book, serviceName, profile, chrome, engine, login } = target;
+  const { plan, goal, values } = planned;
   const recorder = new Recorder(state.log);
   let browser: Driver | null = null;
   let skipped: string[] = [];
@@ -524,7 +557,7 @@ async function commandStart(args: Args): Promise<number> {
     }
     state.page = await browser.observe();
     recorder.event("run_start", {
-      task,
+      task: state.task,
       goal,
       chrome: browser.version,
       chrome_host: chrome,
@@ -553,7 +586,6 @@ async function commandStart(args: Args): Promise<number> {
     await agent.checkPage(browser, recorder, "start", 1, state.page.url);
     await agent.captureScreenshot(browser, recorder, 0, 1, "start", state.page.url);
   } catch (error) {
-    // A failed start is a run too: keep why it failed, not only the empty handoff.
     recorder.event("start_failed", {
       error: maskUrls(describeError(error).split("\n")[0]),
       url: safeUrl(state.start_url),
@@ -568,9 +600,14 @@ async function commandStart(args: Args): Promise<number> {
     await browser?.close();
     recorder.close();
   }
-  session.save(state);
-  if (note) print(`NOTE: ${note}`);
+  return skipped;
+}
+
+/** What `start` tells the person once the page is open. */
+function printStarted(args: Args, target: StartTarget, plan: Plan, state: session.State, skipped: string[]): void {
+  const { note, engine, chrome } = target;
   const engineNotes = engineFor(engine).notes;
+  if (note) print(`NOTE: ${note}`);
   if (engineNotes?.start) print(`NOTE: ${engineNotes.start}`);
   if (args.auth) {
     print(`SIGNED IN with saved login ${args.auth}. Pages opened signed in are sent to Jev`);
@@ -581,6 +618,31 @@ async function commandStart(args: Args): Promise<number> {
     `${describePlan(plan, state.view)}\nSESSION: ${args.session} (${hostName(engine, chrome)})\n${headline(state.page)}`,
   );
   print("NEXT: webhand run");
+}
+
+async function commandStart(args: Args): Promise<number> {
+  if (session.load()) {
+    throw new CliExit(named("A session is active. Run: webhand finish --status abandoned, or start another with --id"));
+  }
+  const target = resolveTarget(args);
+  const planned = planStart(args, target);
+  let chromeState: session.State;
+  try {
+    chromeState = await deps.startChrome({
+      headed: args.headed,
+      profile: target.profile,
+      chrome: target.chrome,
+      engine: target.engine,
+    });
+  } catch (error) {
+    if (error instanceof session.SessionError) throw new CliExit(error.message);
+    throw error;
+  }
+  const state = initialState(args, target, planned, chromeState);
+  context.log = state.log;
+  const skipped = await openStartPage(args, target, planned, chromeState, state);
+  session.save(state);
+  printStarted(args, target, planned.plan, state, skipped);
   return OK;
 }
 
