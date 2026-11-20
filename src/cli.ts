@@ -1401,7 +1401,7 @@ function commands(): Record<string, CommandSpec> {
     type: "string",
     choices: [...session.ENGINE_CHOICES],
     default: process.env.WEBHAND_ENGINE ?? "auto",
-    help: "What runs the browser. auto (default) uses the headless shell when it is installed and the run needs no window or saved profile, else Chrome. headless-shell, lightpanda, obscura and browser-run have no window and no saved profile, and --chrome does not apply to them. browser-run runs on Cloudflare (CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN), so the pages it opens are sent there. Default: WEBHAND_ENGINE, else auto",
+    help: "What runs the browser. auto (default) uses the headless shell when it is installed and the run needs no window or saved profile, else Chrome. headless-shell, lightpanda, obscura, browser-run and kitesurf have no window and no saved profile, and --chrome does not apply to them. browser-run runs on Cloudflare (CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN; kitesurf is its stateless agent browser), so the pages it opens are sent there. Default: WEBHAND_ENGINE, else auto",
   };
   const viewOptions: OptionSpec[] = [
     {

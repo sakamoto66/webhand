@@ -38,10 +38,11 @@ export const CHROMES = ["auto", "linux", "windows"];
 /** Engines that run as `serve` behind a daemon: no window, no saved profile, and pages that end with a CDP connection. */
 const ENGINES = ["lightpanda", "obscura"];
 /** What runs the browser (--engine). auto is the default: see chooseEngine. */
-export const ENGINE_CHOICES = ["auto", "chrome", "headless-shell", ...ENGINES, "browser-run"];
+export const ENGINE_CHOICES = ["auto", "chrome", "headless-shell", ...ENGINES, "browser-run", "kitesurf"];
 
 const ENGINE_NAMES: Record<string, string> = {
   "browser-run": "Cloudflare Browser Run",
+  kitesurf: "Cloudflare Browser Run (Kitesurf)",
   "headless-shell": "Chrome headless shell",
   lightpanda: "Lightpanda",
   obscura: "Obscura",
@@ -433,6 +434,11 @@ const BROWSER_RUN_API = "https://api.cloudflare.com/client/v4/accounts";
 /** The longest idle time Browser Run allows (20 minutes), so a session outlives the gaps between commands. */
 const BROWSER_RUN_KEEP_ALIVE_MS = 1_200_000;
 
+/** Browser Run's two browsers: its Chromium (browser-run) and Cloudflare's own stateless one for agents (kitesurf). */
+function isBrowserRun(engine: string | undefined): boolean {
+  return engine === "browser-run" || engine === "kitesurf";
+}
+
 /** Where Browser Run's account and key come from: the environment only, never a file or the session state. */
 function browserRunAccount(): { id: string; token: string } {
   const id = process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -455,21 +461,20 @@ export function browserRunHeaders(): Record<string, string> {
  * saved profile, and what a run opens (pages, a restored login) is sent to Cloudflare. Nothing runs locally, so the state
  * has no pid and no folder.
  */
-async function startBrowserRun(options: { headed: boolean; profile: string | null }): Promise<State> {
-  const name = hostName("browser-run", "linux");
+async function startBrowserRun(engine: string, options: { headed: boolean; profile: string | null }): Promise<State> {
+  const name = hostName(engine, "linux");
   if (options.profile) throw new SessionError(`${name} has no saved profile. Use --session new`);
   if (options.headed) throw new SessionError(`${name} has no window, so --headed is not available`);
   const { id } = browserRunAccount();
+  // Kitesurf takes no keep_alive (Cloudflare: it cannot be combined), so its session closes after the default idle time.
+  const query = engine === "kitesurf" ? "browser=kitesurf" : `keep_alive=${BROWSER_RUN_KEEP_ALIVE_MS}`;
   let response: Response;
   try {
-    response = await fetch(
-      `${BROWSER_RUN_API}/${id}/browser-run/devtools/browser?keep_alive=${BROWSER_RUN_KEEP_ALIVE_MS}`,
-      {
-        method: "POST",
-        headers: browserRunHeaders(),
-        signal: AbortSignal.timeout(STARTUP_MS),
-      },
-    );
+    response = await fetch(`${BROWSER_RUN_API}/${id}/browser-run/devtools/browser?${query}`, {
+      method: "POST",
+      headers: browserRunHeaders(),
+      signal: AbortSignal.timeout(STARTUP_MS),
+    });
   } catch {
     throw new SessionError(`${name} did not start: the API could not be reached`);
   }
@@ -492,7 +497,7 @@ async function startBrowserRun(options: { headed: boolean; profile: string | nul
     profile: "",
     saved_profile: null,
     chrome: "linux",
-    engine: "browser-run",
+    engine,
     headed: false,
     session_id: body.sessionId,
     cdp: body.webSocketDebuggerUrl,
@@ -524,7 +529,7 @@ export async function startChrome(
   const headed = options.headed ?? false;
   const profile = options.profile ?? null;
   const chrome = options.chrome ?? "linux";
-  if (options.engine === "browser-run") return startBrowserRun({ headed, profile });
+  if (isBrowserRun(options.engine)) return startBrowserRun(options.engine as string, { headed, profile });
   if (options.engine && ENGINES.includes(options.engine)) return startEngine(options.engine, { headed, profile });
   const shell = options.engine === "headless-shell";
   if (shell) {
@@ -610,7 +615,7 @@ async function closeOverCdp(port: number): Promise<boolean> {
 }
 
 export async function stopChrome(state: State): Promise<void> {
-  if (state.engine === "browser-run") return stopBrowserRun(state);
+  if (isBrowserRun(state.engine)) return stopBrowserRun(state);
   // A saved profile closes over CDP too, so Chrome writes its cookies before it exits.
   if ((state.chrome === "windows" || state.saved_profile) && state.port) {
     if (await closeOverCdp(state.port)) await exited(state.pid, 10_000); // Let Chrome finish writing first.

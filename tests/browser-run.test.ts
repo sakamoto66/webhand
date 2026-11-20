@@ -105,3 +105,16 @@ test("a rate-limited start says to wait", async () => {
   );
   await expect(session.startChrome({ engine: "browser-run" })).rejects.toThrow(/answered 429.*wait 20 seconds/);
 });
+
+test("kitesurf asks for browser=kitesurf and no keep_alive, and is stopped like Browser Run", async () => {
+  const fetchMock = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(reply({ sessionId: "k1", webSocketDebuggerUrl: "wss://x/k1" }));
+  const state = await session.startChrome({ engine: "kitesurf" });
+  expect(String(fetchMock.mock.calls[0][0])).toBe(`${API}?browser=kitesurf`);
+  expect(state).toMatchObject({ engine: "kitesurf", cdp: "wss://x/k1" });
+  await expect(session.startChrome({ engine: "kitesurf", profile: "work" })).rejects.toThrow(/no saved profile/);
+  await session.stopChrome(state);
+  expect(fetchMock.mock.calls.at(-1)?.[1]?.method).toBe("DELETE");
+  expect(session.hostName("kitesurf", "linux")).toContain("Kitesurf");
+});
