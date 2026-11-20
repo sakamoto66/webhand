@@ -662,6 +662,26 @@ export class Browser {
     }
   }
 
+  /**
+   * Reads one frame: seeds it, observes it, and says whether it sits directly in the main frame. A frame that
+   * changes or goes while it is read is left out (reason "error"); the page's own elements stand.
+   */
+  private async readFrame(
+    frame: Frame,
+    main: Frame,
+  ): Promise<{ no: number; inner: Page; direct: boolean } | { skip: string }> {
+    try {
+      if (!(await this.frameOffset(frame))) return { skip: "no_size" };
+      const no = this.frameNo(frame);
+      await frame.evaluate(seedFrame(no));
+      const inner = (await frame.evaluate(readState(this.view))) as Page | null;
+      if (!inner) return { skip: "no_page" };
+      return { no, inner, direct: frame.parentFrame() === main };
+    } catch {
+      return { skip: "error" };
+    }
+  }
+
   /** v2: the elements of the frames in the page, appended to the page's own, before its scroll and wait controls. */
   private async observeFrames(state: Page): Promise<void> {
     if (!this.view?.whole || this.compat) return;
@@ -680,34 +700,24 @@ export class Browser {
         skip("over_limit");
         continue;
       }
-      try {
-        if (!(await this.frameOffset(frame))) {
-          skip("no_size");
-          continue;
-        }
-        const no = this.frameNo(frame);
-        await frame.evaluate(seedFrame(no));
-        const inner = (await frame.evaluate(readState(this.view))) as Page | null;
-        if (!inner) {
-          skip("no_page");
-          continue;
-        }
-        keys[String(no)] = inner.page_key;
-        markers[String(no)] = inner.marker;
-        Object.assign(state.guards, inner.guards);
-        for (const action of inner.actions) {
-          if (["scroll", "wait", "tab"].includes(action.kind)) continue;
-          added.push({ ...action, frame: no, region: `frame_${no}` });
-        }
-        const text = String(inner.text ?? "")
-          .trim()
-          .slice(0, FRAME_TEXT_LIMIT);
-        if (text) state.text = `${state.text}\n[frame ${no}] ${text}`;
-        if (frame.parentFrame() === main) direct++;
-      } catch {
-        // A frame that changes or goes while it is read is left out; the page's own elements stand.
-        skip("error");
+      const read = await this.readFrame(frame, main);
+      if ("skip" in read) {
+        skip(read.skip);
+        continue;
       }
+      const { no, inner } = read;
+      keys[String(no)] = inner.page_key;
+      markers[String(no)] = inner.marker;
+      Object.assign(state.guards, inner.guards);
+      for (const action of inner.actions) {
+        if (["scroll", "wait", "tab"].includes(action.kind)) continue;
+        added.push({ ...action, frame: no, region: `frame_${no}` });
+      }
+      const text = String(inner.text ?? "")
+        .trim()
+        .slice(0, FRAME_TEXT_LIMIT);
+      if (text) state.text = `${state.text}\n[frame ${no}] ${text}`;
+      if (read.direct) direct++;
     }
     // For the run log (counts only): the frames read and why the others were not.
     if (frames.length) {
