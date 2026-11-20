@@ -264,10 +264,13 @@ function requireSession(): session.State {
 
 /** The session's browser: Chrome by CDP port, or the daemon that holds an engine's page (Lightpanda, Obscura) by socket. Opens url when given. */
 async function attach(
-  state: { port?: number; socket?: string },
+  state: { port?: number; socket?: string; cdp?: string },
   url: string | null,
   view?: ViewChoice | null,
 ): Promise<Driver> {
+  if (state.cdp) {
+    return await Browser.open(url, { endpoint: { url: state.cdp, headers: session.browserRunHeaders() }, view });
+  }
   if (state.socket) {
     const remote = await RemoteBrowser.connect(state.socket, view ?? null);
     try {
@@ -564,8 +567,12 @@ async function commandStart(args: Args): Promise<number> {
   }
   session.save(state);
   if (note) print(`NOTE: ${note}`);
+  if (engine === "browser-run")
+    print("NOTE: Browser Run runs on Cloudflare: the pages this run opens are sent to Cloudflare");
   if (args.auth) {
     print(`SIGNED IN with saved login ${args.auth}. Pages opened signed in are sent to Jev`);
+    if (engine === "browser-run")
+      print("NOTE: the saved login was also sent to Cloudflare, into the Browser Run session");
     if (skipped.length) print(`NOTE: localStorage of other sites was not restored: ${skipped.join(", ")}`);
   }
   print(
@@ -1394,7 +1401,7 @@ function commands(): Record<string, CommandSpec> {
     type: "string",
     choices: [...session.ENGINE_CHOICES],
     default: process.env.WEBHAND_ENGINE ?? "auto",
-    help: "What runs the browser. auto (default) uses the headless shell when it is installed and the run needs no window or saved profile, else Chrome. headless-shell, lightpanda and obscura have no window and no saved profile, and --chrome does not apply to them. Default: WEBHAND_ENGINE, else auto",
+    help: "What runs the browser. auto (default) uses the headless shell when it is installed and the run needs no window or saved profile, else Chrome. headless-shell, lightpanda, obscura and browser-run have no window and no saved profile, and --chrome does not apply to them. browser-run runs on Cloudflare (CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN), so the pages it opens are sent there. Default: WEBHAND_ENGINE, else auto",
   };
   const viewOptions: OptionSpec[] = [
     {
