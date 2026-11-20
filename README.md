@@ -72,7 +72,7 @@ Claude makes the judgment calls (the plan, the values, the check, the replan), a
 | Window (`--headed`), `[person]` steps, `learn`, saved profile | Yes | No | No | No | No | No |
 | Memory for one page | about 350–470 MB (`--headless=new`) | about 240–260 MB | about 23–33 MB | about 23–33 MB | None here (runs on Cloudflare) | None here (runs on Cloudflare) |
 | Real layout and screenshots | Yes | Yes | Yes | No (simulated) | Yes (Chromium) | Screenshots work; not pixel-perfect (Cloudflare's own browser) |
-| Several tabs | Yes | Yes | In practice one (a new window opens nothing or loads in the same tab) | No | Yes | No: a link that opens a new window closes the page and the command fails |
+| Several tabs | Yes | Yes | In practice one (a new window opens nothing or loads in the same tab) | No | Yes | Unreliable: a link that opens a new window can end the session a few seconds later (2 of 3 tries); switching to the new tab worked once |
 | Page stays between commands | Yes | Yes | Through a small daemon | Through a small daemon | While the session lives (idle limit 20 min) | Idle limit 60 s |
 | Saved login (`--auth`) | Yes | Yes | Yes | Yes | Yes | Yes |
 
