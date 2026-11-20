@@ -405,49 +405,62 @@ function chooseChrome(choice: string): [string, string | null] {
   }
 }
 
-async function commandStart(args: Args): Promise<number> {
-  if (session.load()) {
-    throw new CliExit(named("A session is active. Run: webhand finish --status abandoned, or start another with --id"));
-  }
-  const task = context.hooks.task ?? null;
-  let book: runbook.Runbook | null = null;
-  let service: runbook.ServiceInfo | null = null;
-  let serviceName: string | null = null;
-  let profile: string | null;
-  let chrome: string;
-  let engine: string;
-  let note: string | null;
-  let login: auth.SavedLogin | null = null;
+/** What `start` resolves from its arguments before anything is opened. */
+interface StartTarget {
+  book: runbook.Runbook | null;
+  service: runbook.ServiceInfo | null;
+  serviceName: string | null;
+  /** The saved profile, or null for a new session. */
+  profile: string | null;
+  /** Where Chrome runs, and the note for the person when auto fell back. */
+  chrome: string;
+  note: string | null;
+  engine: string;
+  login: auth.SavedLogin | null;
+}
+
+/** The runbook, service, saved login, engine and Chrome the arguments ask for. Nothing is opened. */
+function resolveTarget(args: Args): StartTarget {
   try {
+    let book: runbook.Runbook | null = null;
     if (args.runbook) {
       book = runbook.load(args.runbook, runbook.parseValues(args.param));
       if (book.status !== "approved" && !args.allow_draft) {
         throw new CliExit(`Runbook ${args.runbook} is a draft. Trial it with --allow-draft, then get it approved`);
       }
     }
-    serviceName = args.service || (book ? book.service : null);
-    service = serviceName ? runbook.loadService(serviceName) : null;
-    profile = session.parseSession(args.session);
-    if (args.auth) {
-      if (profile) throw new CliExit("--auth is for a new session: a saved profile already keeps its own sign-in");
-      auth.checkName(args.auth);
-      if (!auth.exists(args.auth)) {
-        const known = auth.names();
-        throw new CliExit(
-          `No saved login ${args.auth}. Saved: ${known.length ? known.join(", ") : "(none)"}. Save one with: webhand auth save NAME`,
-        );
-      }
-      login = auth.load(args.auth);
-    }
-    engine = chooseEngine(args.engine, { headed: args.headed, profile, chrome: args.chrome });
+    const serviceName = args.service || (book ? book.service : null);
+    const service = serviceName ? runbook.loadService(serviceName) : null;
+    const profile = session.parseSession(args.session);
+    const login = args.auth ? loadLogin(args.auth, profile) : null;
+    const engine = chooseEngine(args.engine, { headed: args.headed, profile, chrome: args.chrome });
     // --chrome says where Chrome runs; the other engines have no such choice.
-    [chrome, note] = engine === "chrome" ? chooseChrome(args.chrome) : ["linux", null];
+    const [chrome, note] = engine === "chrome" ? pickChrome(args.chrome) : ["linux", null];
+    return { book, service, serviceName, profile, chrome, note, engine, login };
   } catch (error) {
     if (error instanceof runbook.RunbookError || error instanceof session.SessionError) {
       throw new CliExit(error.message);
     }
     throw error;
   }
+}
+
+/** The saved login --auth names. It is for a new session: a saved profile already keeps its own sign-in. */
+function loadLogin(name: string, profile: string | null): auth.SavedLogin {
+  if (profile) throw new CliExit("--auth is for a new session: a saved profile already keeps its own sign-in");
+  auth.checkName(name);
+  if (!auth.exists(name)) {
+    const known = auth.names();
+    throw new CliExit(
+      `No saved login ${name}. Saved: ${known.length ? known.join(", ") : "(none)"}. Save one with: webhand auth save NAME`,
+    );
+  }
+  return auth.load(name);
+}
+
+/** The goal, start URL, steps and values for the run, checked before a browser is started. */
+function planStart(args: Args, target: StartTarget): { plan: Plan; goal: string; url: string; values: Value[] } {
+  const { book, service } = target;
   const goal: string | null = args.goal || (book ? book.goal : null);
   const url: string | null = args.url || (book ? book.start_url : null);
   if (!(goal && url)) throw new CliExit("Give --runbook, or both --goal and --url");
@@ -481,23 +494,28 @@ async function commandStart(args: Args): Promise<number> {
   };
   if (plan.compare && plan.collect) throw new CliExit("Use --compare or --collect, not both");
   if (plan.more && !plan.compare && !plan.collect) throw new CliExit("--more needs --compare or --collect");
-  let chromeState: session.State;
-  try {
-    chromeState = await deps.startChrome({ headed: args.headed, profile, chrome, engine });
-  } catch (error) {
-    if (error instanceof session.SessionError) throw new CliExit(error.message);
-    throw error;
-  }
+  return { plan, goal, url, values };
+}
+
+/** The session state `start` saves: the browser's, the run's limits, and what Claude and the service taught it. */
+function initialState(
+  args: Args,
+  target: StartTarget,
+  planned: { plan: Plan; url: string },
+  chromeState: session.State,
+): session.State {
+  const { book, service, serviceName, chrome } = target;
+  const task = context.hooks.task ?? null;
   const learned = runbook.view(runbook.serviceView(service), book);
   const claudeView = { focus: args.focus, skip: args.skip, read: args.read };
-  const state: session.State = {
+  return {
     ...chromeState,
     view_learned: learned,
     view_claude: claudeView,
     view: runbook.view(learned, claudeView),
     task,
-    start_url: browserUrl(url, chrome),
-    plan,
+    start_url: browserUrl(planned.url, chrome),
+    plan: planned.plan,
     runbook: book ? { name: book.name, status: book.status, digest: book.digest, scope: book.scope } : null,
     service: serviceName,
     history: [],
@@ -511,7 +529,22 @@ async function commandStart(args: Args): Promise<number> {
     started: Date.now() / 1000,
     log: defaultLog(task || "adhoc"),
   };
-  context.log = state.log;
+}
+
+/**
+ * Opens the start page (restoring the saved login first), observes it, and records the start in the log. A failed
+ * start is a run too: it keeps why it failed, and the browser is stopped. Returns the sites whose localStorage a
+ * saved login could not restore.
+ */
+async function openStartPage(
+  args: Args,
+  target: StartTarget,
+  planned: { plan: Plan; goal: string; values: Value[] },
+  chromeState: session.State,
+  state: session.State,
+): Promise<string[]> {
+  const { book, serviceName, profile, chrome, engine, login } = target;
+  const { plan, goal, values } = planned;
   const recorder = new Recorder(state.log);
   let browser: Driver | null = null;
   let skipped: string[] = [];
@@ -524,7 +557,7 @@ async function commandStart(args: Args): Promise<number> {
     }
     state.page = await browser.observe();
     recorder.event("run_start", {
-      task,
+      task: state.task,
       goal,
       chrome: browser.version,
       chrome_host: chrome,
@@ -553,7 +586,6 @@ async function commandStart(args: Args): Promise<number> {
     await agent.checkPage(browser, recorder, "start", 1, state.page.url);
     await agent.captureScreenshot(browser, recorder, 0, 1, "start", state.page.url);
   } catch (error) {
-    // A failed start is a run too: keep why it failed, not only the empty handoff.
     recorder.event("start_failed", {
       error: maskUrls(describeError(error).split("\n")[0]),
       url: safeUrl(state.start_url),
@@ -568,9 +600,14 @@ async function commandStart(args: Args): Promise<number> {
     await browser?.close();
     recorder.close();
   }
-  session.save(state);
-  if (note) print(`NOTE: ${note}`);
+  return skipped;
+}
+
+/** What `start` tells the person once the page is open. */
+function printStarted(args: Args, target: StartTarget, plan: Plan, state: session.State, skipped: string[]): void {
+  const { note, engine, chrome } = target;
   const engineNotes = engineFor(engine).notes;
+  if (note) print(`NOTE: ${note}`);
   if (engineNotes?.start) print(`NOTE: ${engineNotes.start}`);
   if (args.auth) {
     print(`SIGNED IN with saved login ${args.auth}. Pages opened signed in are sent to Jev`);
@@ -581,6 +618,31 @@ async function commandStart(args: Args): Promise<number> {
     `${describePlan(plan, state.view)}\nSESSION: ${args.session} (${hostName(engine, chrome)})\n${headline(state.page)}`,
   );
   print("NEXT: webhand run");
+}
+
+async function commandStart(args: Args): Promise<number> {
+  if (session.load()) {
+    throw new CliExit(named("A session is active. Run: webhand finish --status abandoned, or start another with --id"));
+  }
+  const target = resolveTarget(args);
+  const planned = planStart(args, target);
+  let chromeState: session.State;
+  try {
+    chromeState = await deps.startChrome({
+      headed: args.headed,
+      profile: target.profile,
+      chrome: target.chrome,
+      engine: target.engine,
+    });
+  } catch (error) {
+    if (error instanceof session.SessionError) throw new CliExit(error.message);
+    throw error;
+  }
+  const state = initialState(args, target, planned, chromeState);
+  context.log = state.log;
+  const skipped = await openStartPage(args, target, planned, chromeState, state);
+  session.save(state);
+  printStarted(args, target, planned.plan, state, skipped);
   return OK;
 }
 
@@ -659,8 +721,8 @@ export function report(state: session.State, result: agent.AgentResult): number 
 }
 
 /** Jev works toward the goal until it needs Claude or a person. */
-async function commandRun(args: Args): Promise<number> {
-  const state = requireSession();
+/** Why `run` cannot go on from the state's last outcome, as the exit code after saying so. null when it can. */
+function rejectRun(args: Args, state: session.State): number | null {
   const outcome = state.outcome;
   if (outcome === agent.UNCERTAIN) {
     print("REJECTED: the last action may have happened. Run: webhand finish --status error");
@@ -680,6 +742,11 @@ async function commandRun(args: Args): Promise<number> {
     );
     return FAILED;
   }
+  return null;
+}
+
+/** Takes in what the person or Claude brought to this `run`: values, and a person's finished step. null when accepted. */
+async function acceptRunInputs(args: Args, state: session.State): Promise<number | null> {
   if (args.value.length) {
     state.plan.values = mergeValues(state.plan.values, parseValues(args.value));
     logOnce(state.log, "values", {
@@ -688,7 +755,7 @@ async function commandRun(args: Args): Promise<number> {
     });
   }
   if (args.human_done) {
-    if (outcome !== agent.NEEDS_HUMAN) {
+    if (state.outcome !== agent.NEEDS_HUMAN) {
       print("REJECTED: no person was asked to act");
       return FAILED;
     }
@@ -705,88 +772,93 @@ async function commandRun(args: Args): Promise<number> {
       page_changed: true,
     });
   }
-  state.outcome = null;
-  session.save(state);
+  return null;
+}
 
-  const policy = deps.policy();
-  const browser = await attach(state, null, browserView(state));
-  const recorder = new Recorder(state.log);
-  let result: agent.AgentResult;
-  // With --more, a scan presses Claude's control for more items when the list ends.
-  const more = () => {
-    const control = state.plan.more;
-    if (!control) return null;
-    if (!("more" in policy)) throw new CliExit("This chooser cannot find a control for more items");
-    const chooser = policy as unknown as MoreChooser;
-    return loadMore(browser as Reader, chooser, state.plan, control, recorder, state.plan.attempt);
-  };
-  // Pressing the control is an action: when its result is uncertain, the run stops as UNCERTAIN.
-  const uncertain = (error: MutationUncertain, scan: string) => {
-    recorder.event(`${scan}_failed`, { attempt: state.plan.attempt, error: error.message, uncertain: true });
-    state.outcome = agent.UNCERTAIN;
-    session.save(state);
-    print(
-      `OUTCOME ${agent.UNCERTAIN}: ${error.message} while loading more items. Do not repeat or replan. Run: webhand finish --status error`,
-    );
-    return UNCERTAIN;
-  };
+/** What the scans before the agent loop (compare, collect) work with. */
+interface RunScan {
+  state: session.State;
+  browser: Driver;
+  policy: Policy;
+  recorder: Recorder;
+  /** With --more, a scan presses Claude's control for more items when the list ends. */
+  more: () => ReturnType<typeof loadMore> | null;
+  /** Pressing the control is an action: when its result is uncertain, the run stops as UNCERTAIN. */
+  uncertain: (error: MutationUncertain, scan: string) => number;
+}
+
+/** With a criterion, compares the whole list once per attempt before anything is acted on. null when the run goes on. */
+async function compareStep(ctx: RunScan): Promise<number | null> {
+  const { state, browser, policy, recorder } = ctx;
+  if (!state.plan.compare || state.plan.compared) return null;
+  if (!("compare" in policy)) throw new CliExit("This chooser cannot compare items");
+  let scan: Awaited<ReturnType<typeof compareScan>>;
   try {
-    // With a criterion, compare the whole list once per attempt before anything is acted on.
-    if (state.plan.compare && !state.plan.compared) {
-      if (!("compare" in policy)) throw new CliExit("This chooser cannot compare items");
-      let scan: Awaited<ReturnType<typeof compareScan>>;
-      try {
-        scan = await compareScan(browser, policy as unknown as Comparer, state.plan, state.plan.compare, recorder, {
-          loadMore: more(),
-        });
-      } catch (error) {
-        if (error instanceof MutationUncertain) return uncertain(error, "compare");
-        if (!(error instanceof PolicyError || error instanceof StalePage)) throw error;
-        // Only scrolls happened. The attempt goes on; run again, or replan.
-        recorder.event("compare_failed", {
-          attempt: state.plan.attempt,
-          error: error.message,
-          ...jevDiagnostic(error),
-        });
-        print(`COMPARE FAILED: ${error.message} Nothing was clicked or typed. Run again, or replan`);
-        return FAILED;
-      }
-      state.plan.compared = scan.compared;
-      state.page = scan.page;
-      session.save(state);
-      print(comparedLine(scan.compared));
-    }
-    // With a condition, collect the matching items once per attempt and give them to Claude; nothing is acted on.
-    if (state.plan.collect && !state.plan.collected) {
-      if (!("collect" in policy)) throw new CliExit("This chooser cannot collect items");
-      let scan: Awaited<ReturnType<typeof collectScan>>;
-      try {
-        scan = await collectScan(browser, policy as unknown as Collector, state.plan, state.plan.collect, recorder, {
-          loadMore: more(),
-        });
-      } catch (error) {
-        if (error instanceof MutationUncertain) return uncertain(error, "collect");
-        if (!(error instanceof PolicyError || error instanceof StalePage)) throw error;
-        recorder.event("collect_failed", {
-          attempt: state.plan.attempt,
-          error: error.message,
-          ...jevDiagnostic(error),
-        });
-        print(`COLLECT FAILED: ${error.message} Nothing was clicked or typed. Run again, or replan`);
-        return FAILED;
-      }
-      state.plan.collected = scan.collected;
-      state.page = scan.page;
-      session.save(state);
-      print(collectedLine(scan.collected));
-      print(
-        "Nothing was clicked or typed, and the page is back where it was. Check these items against the goal and " +
-          "write the answer from them. To put the answer into the page, give it as a value: run --value " +
-          "'LABEL=VALUE' (Jev types only values). Otherwise: finish",
-      );
-      return OK;
-    }
-    result = await runAgent(browser, policy, state.plan, recorder, new Budget(state.max_actions, state.max_decisions), {
+    scan = await compareScan(browser, policy as unknown as Comparer, state.plan, state.plan.compare, recorder, {
+      loadMore: ctx.more(),
+    });
+  } catch (error) {
+    if (error instanceof MutationUncertain) return ctx.uncertain(error, "compare");
+    if (!(error instanceof PolicyError || error instanceof StalePage)) throw error;
+    // Only scrolls happened. The attempt goes on; run again, or replan.
+    recorder.event("compare_failed", {
+      attempt: state.plan.attempt,
+      error: error.message,
+      ...jevDiagnostic(error),
+    });
+    print(`COMPARE FAILED: ${error.message} Nothing was clicked or typed. Run again, or replan`);
+    return FAILED;
+  }
+  state.plan.compared = scan.compared;
+  state.page = scan.page;
+  session.save(state);
+  print(comparedLine(scan.compared));
+  return null;
+}
+
+/** With a condition, collects the matching items once per attempt and gives them to Claude; nothing is acted on. */
+async function collectStep(ctx: RunScan): Promise<number | null> {
+  const { state, browser, policy, recorder } = ctx;
+  if (!state.plan.collect || state.plan.collected) return null;
+  if (!("collect" in policy)) throw new CliExit("This chooser cannot collect items");
+  let scan: Awaited<ReturnType<typeof collectScan>>;
+  try {
+    scan = await collectScan(browser, policy as unknown as Collector, state.plan, state.plan.collect, recorder, {
+      loadMore: ctx.more(),
+    });
+  } catch (error) {
+    if (error instanceof MutationUncertain) return ctx.uncertain(error, "collect");
+    if (!(error instanceof PolicyError || error instanceof StalePage)) throw error;
+    recorder.event("collect_failed", {
+      attempt: state.plan.attempt,
+      error: error.message,
+      ...jevDiagnostic(error),
+    });
+    print(`COLLECT FAILED: ${error.message} Nothing was clicked or typed. Run again, or replan`);
+    return FAILED;
+  }
+  state.plan.collected = scan.collected;
+  state.page = scan.page;
+  session.save(state);
+  print(collectedLine(scan.collected));
+  print(
+    "Nothing was clicked or typed, and the page is back where it was. Check these items against the goal and " +
+      "write the answer from them. To put the answer into the page, give it as a value: run --value " +
+      "'LABEL=VALUE' (Jev types only values). Otherwise: finish",
+  );
+  return OK;
+}
+
+/** One attempt of the agent loop, and what the log and the state keep of how it ended. */
+async function runAttempt(ctx: RunScan): Promise<agent.AgentResult> {
+  const { state, browser, policy, recorder } = ctx;
+  const result = await runAgent(
+    browser,
+    policy,
+    state.plan,
+    recorder,
+    new Budget(state.max_actions, state.max_decisions),
+    {
       history: state.history,
       page: state.page,
       decisions: state.attempt_decisions,
@@ -803,22 +875,69 @@ async function commandRun(args: Args): Promise<number> {
         state.attempt_decisions = count;
         state.decisions += 1;
       },
-    });
-    state.page = result.page;
-    state.outcome = result.outcome;
-    recorder.event("escalation", {
-      reason: result.outcome,
-      attempt: state.plan.attempt,
-      detail: result.detail,
-      ...(result.jev ? { jev: result.jev } : {}),
-    });
-    if (agent.CHECKED_OUTCOMES.includes(result.outcome)) {
-      await agent.checkPage(browser, recorder, "escalation", state.plan.attempt, result.page.url);
-    }
-    if (result.outcome === agent.NEEDS_HUMAN) {
-      recorder.event("human_step", { status: "requested", attempt: state.plan.attempt });
-    }
-    session.save(state);
+    },
+  );
+  state.page = result.page;
+  state.outcome = result.outcome;
+  recorder.event("escalation", {
+    reason: result.outcome,
+    attempt: state.plan.attempt,
+    detail: result.detail,
+    ...(result.jev ? { jev: result.jev } : {}),
+  });
+  if (agent.CHECKED_OUTCOMES.includes(result.outcome)) {
+    await agent.checkPage(browser, recorder, "escalation", state.plan.attempt, result.page.url);
+  }
+  if (result.outcome === agent.NEEDS_HUMAN) {
+    recorder.event("human_step", { status: "requested", attempt: state.plan.attempt });
+  }
+  session.save(state);
+  return result;
+}
+
+async function commandRun(args: Args): Promise<number> {
+  const state = requireSession();
+  const rejected = rejectRun(args, state) ?? (await acceptRunInputs(args, state));
+  if (rejected !== null) return rejected;
+  state.outcome = null;
+  session.save(state);
+
+  const policy = deps.policy();
+  const browser = await attach(state, null, browserView(state));
+  const recorder = new Recorder(state.log);
+  const ctx: RunScan = {
+    state,
+    browser,
+    policy,
+    recorder,
+    more: () => {
+      const control = state.plan.more;
+      if (!control) return null;
+      if (!("more" in policy)) throw new CliExit("This chooser cannot find a control for more items");
+      return loadMore(
+        browser as Reader,
+        policy as unknown as MoreChooser,
+        state.plan,
+        control,
+        recorder,
+        state.plan.attempt,
+      );
+    },
+    uncertain: (error, scan) => {
+      recorder.event(`${scan}_failed`, { attempt: state.plan.attempt, error: error.message, uncertain: true });
+      state.outcome = agent.UNCERTAIN;
+      session.save(state);
+      print(
+        `OUTCOME ${agent.UNCERTAIN}: ${error.message} while loading more items. Do not repeat or replan. Run: webhand finish --status error`,
+      );
+      return UNCERTAIN;
+    },
+  };
+  let result: agent.AgentResult;
+  try {
+    const stopped = (await compareStep(ctx)) ?? (await collectStep(ctx));
+    if (stopped !== null) return stopped;
+    result = await runAttempt(ctx);
   } finally {
     await browser.close();
     recorder.close();
@@ -883,72 +1002,73 @@ async function commandAnswer(args: Args): Promise<number> {
 }
 
 /** Claude revises the plan after an attempt fell short, and starts the next attempt. */
-async function commandReplan(args: Args): Promise<number> {
-  const state = requireSession();
+/** A `replan` that cannot be taken: the message after "REJECTED: ". Nothing has been saved yet. */
+class ReplanRejected extends Error {}
+
+/** The page --url names, as the browser opens it. null without --url. */
+function replanUrl(args: Args, state: session.State): string | null {
+  if (!args.url) return null;
+  // A path without a scheme is a local file, as the catalog shows a learned page (tasks/fixtures/...).
+  let url: string;
+  try {
+    url = runbook.resolveUrl(args.url);
+  } catch (error) {
+    if (!(error instanceof runbook.RunbookError)) throw error;
+    throw new ReplanRejected(error.message.replace("start_url", "--url"));
+  }
+  if (!openableUrl(url)) {
+    throw new ReplanRejected("--url needs an http, https, or file URL, or a local file path");
+  }
+  // As start does: the Windows Chrome on WSL opens a local file by its Windows path (round 19).
+  return browserUrl(url, state.chrome ?? "linux");
+}
+
+/** A value of --compare, --collect or --more: "none" turns it off. */
+function switched(value: string): string | null {
+  return value === "none" ? null : value;
+}
+
+/** Applies the steps, values, compare, collect and more Claude gave to the plan. */
+function applyReplanPlan(args: Args, state: session.State): void {
   const plan = state.plan;
-  if (state.outcome === agent.UNCERTAIN) {
-    print("REJECTED: the last action may have happened, so the run cannot continue. Run: finish --status error");
-    return UNCERTAIN;
-  }
-  if (plan.attempt >= state.max_attempts) {
-    print(`ATTEMPTS EXHAUSTED (${state.max_attempts}). Run: webhand finish --status blocked`);
-    return BUDGET;
-  }
-  if (args.url && args.restart) {
-    print("REJECTED: use --url or --restart, not both");
-    return FAILED;
-  }
-  let url: string | null = null;
-  if (args.url) {
-    // A path without a scheme is a local file, as the catalog shows a learned page (tasks/fixtures/...).
-    try {
-      url = runbook.resolveUrl(args.url);
-    } catch (error) {
-      if (!(error instanceof runbook.RunbookError)) throw error;
-      print(`REJECTED: ${error.message.replace("start_url", "--url")}`);
-      return FAILED;
-    }
-    if (!openableUrl(url)) {
-      print("REJECTED: --url needs an http, https, or file URL, or a local file path");
-      return FAILED;
-    }
-    // As start does: the Windows Chrome on WSL opens a local file by its Windows path (round 19).
-    url = browserUrl(url, state.chrome ?? "linux");
-  }
   if (args.step.length) {
     const steps = parseSteps(args.step);
     if (steps.some((step) => step.actor === "human") && !state.headed) {
-      print("REJECTED: [person] steps need a visible window, and this run is headless");
-      return FAILED;
+      throw new ReplanRejected("[person] steps need a visible window, and this run is headless");
     }
     plan.steps = steps;
   }
   plan.values = mergeValues(plan.values, parseValues(args.value));
-  if (args.compare) plan.compare = args.compare === "none" ? null : args.compare;
+  if (args.compare) plan.compare = switched(args.compare);
   plan.compared = null; // Each attempt compares again from the top.
-  if (args.collect) plan.collect = args.collect === "none" ? null : args.collect;
+  if (args.collect) plan.collect = switched(args.collect);
   plan.collected = null; // and collects again.
-  if (args.more) plan.more = args.more === "none" ? null : args.more;
+  if (args.more) plan.more = switched(args.more);
   if (plan.compare && plan.collect) {
-    print("REJECTED: use --compare or --collect, not both (turn one off with none)");
-    return FAILED;
+    throw new ReplanRejected("use --compare or --collect, not both (turn one off with none)");
   }
   if (plan.more && !plan.compare && !plan.collect) {
-    print("REJECTED: --more needs --compare or --collect (turn it off with --more none)");
-    return FAILED;
+    throw new ReplanRejected("--more needs --compare or --collect (turn it off with --more none)");
   }
-  const viewChanged = args.focus.length || args.skip.length || args.read.length;
-  if (viewChanged) {
-    // Claude's region choice is replaced, on top of what was learned. --read alone keeps the regions.
-    const regions = args.focus.length || args.skip.length;
-    const earlier = state.view_claude ?? { focus: [], skip: [] };
-    state.view_claude = {
-      focus: regions ? args.focus : earlier.focus,
-      skip: regions ? args.skip : earlier.skip,
-      read: args.read.length ? args.read : earlier.read,
-    };
-    state.view = runbook.view(state.view_learned, state.view_claude);
-  }
+}
+
+/** Replaces Claude's region choice, on top of what was learned (--read alone keeps the regions). Whether it changed. */
+function applyReplanView(args: Args, state: session.State): boolean {
+  if (!(args.focus.length || args.skip.length || args.read.length)) return false;
+  const regions = args.focus.length || args.skip.length;
+  const earlier = state.view_claude ?? { focus: [], skip: [] };
+  state.view_claude = {
+    focus: regions ? args.focus : earlier.focus,
+    skip: regions ? args.skip : earlier.skip,
+    read: args.read.length ? args.read : earlier.read,
+  };
+  state.view = runbook.view(state.view_learned, state.view_claude);
+  return true;
+}
+
+/** Closes the attempt that ended and opens the next: the outcome, Claude's reason, and the new plan, saved and logged. */
+function startNextAttempt(args: Args, state: session.State, url: string | null): void {
+  const plan = state.plan;
   const ended = state.outcome || "CLAUDE_STOPPED";
   state.outcomes.push({ attempt: plan.attempt, outcome: ended, reason: args.reason });
   plan.notes.push(`Attempt ${plan.attempt} ended with ${ended}. Claude: ${args.reason}`);
@@ -969,6 +1089,32 @@ async function commandReplan(args: Args): Promise<number> {
     ...(url ? { url: safeUrl(url) } : {}),
     source: "claude",
   });
+}
+
+async function commandReplan(args: Args): Promise<number> {
+  const state = requireSession();
+  const plan = state.plan;
+  if (state.outcome === agent.UNCERTAIN) {
+    print("REJECTED: the last action may have happened, so the run cannot continue. Run: finish --status error");
+    return UNCERTAIN;
+  }
+  if (plan.attempt >= state.max_attempts) {
+    print(`ATTEMPTS EXHAUSTED (${state.max_attempts}). Run: webhand finish --status blocked`);
+    return BUDGET;
+  }
+  let url: string | null;
+  let viewChanged: boolean;
+  try {
+    if (args.url && args.restart) throw new ReplanRejected("use --url or --restart, not both");
+    url = replanUrl(args, state);
+    applyReplanPlan(args, state);
+    viewChanged = applyReplanView(args, state);
+  } catch (error) {
+    if (!(error instanceof ReplanRejected)) throw error;
+    print(`REJECTED: ${error.message}`);
+    return FAILED;
+  }
+  startNextAttempt(args, state, url);
   // Navigation only; no earlier mutation is repeated.
   if (url) await openPage(state, url, true);
   else if (args.restart) await openPage(state, state.start_url, true);
@@ -1651,75 +1797,47 @@ export interface Parsed {
   run: (args: Args) => Promise<number>;
 }
 
-/** Parses argv, with argparse-style messages. Throws UsageError, or returns help text to print. */
-export function parse(argv: string[]): Parsed | { help: string } {
-  const specs = commands();
-  const [name, ...rest] = argv;
-  if (name === undefined) throw new UsageError(`the following arguments are required: command\n${mainHelp(specs)}`);
-  if (name === "-h" || name === "--help") return { help: mainHelp(specs) };
-  if (name === "-V" || name === "--version") return { help: `${version()}\n` };
-  const spec = specs[name];
-  if (!spec) throw new UsageError(`argument command: invalid choice: ${quote(name)}`);
-  const args: Args = {};
-  const positionals: string[] = [];
-  const byName = new Map(spec.options.map((option) => [option.name, option]));
-  for (const option of spec.options) {
-    const key = option.name.replaceAll("-", "_");
-    args[key] = option.multiple ? [] : option.type === "boolean" ? false : (option.default ?? null);
+type Fail = (message: string) => UsageError;
+
+/** What an option holds when it is not given. */
+function optionDefault(option: OptionSpec): unknown {
+  if (option.multiple) return [];
+  return option.type === "boolean" ? false : (option.default ?? null);
+}
+
+/** The text of an option's value: after "=", or the next token. Returns it and how many tokens it took. */
+function optionText(option: OptionSpec, token: string, next: string | undefined, fail: Fail): [string, number] {
+  const at = token.indexOf("=");
+  if (at >= 0) return [token.slice(at + 1), 0];
+  if (next === undefined || (next.startsWith("-") && next.length > 1 && !/^-\d/.test(next))) {
+    throw fail(`argument --${option.name}: expected one argument`);
   }
-  const fail = (message: string) => new UsageError(`${usage(name, spec)}\nwebhand ${name}: error: ${message}`);
-  const seen = new Set<string>();
-  for (let i = 0; i < rest.length; i++) {
-    const token = rest[i];
-    if (token === "-h" || token === "--help") return { help: help(name, spec) };
-    if (token === "--") {
-      positionals.push(...rest.slice(i + 1));
-      break;
+  return [next, 1];
+}
+
+/** An option's text as its type, which must be one of its choices when it has any. */
+function optionValue(option: OptionSpec, raw: string, fail: Fail): unknown {
+  let value: unknown = raw;
+  if (option.type === "int") {
+    if (!/^\s*[-+]?\d+\s*$/.test(raw)) throw fail(`argument --${option.name}: invalid int value: ${quote(raw)}`);
+    value = Number.parseInt(raw, 10);
+  } else if (option.type === "float") {
+    const number = Number(raw);
+    if (!raw.trim() || Number.isNaN(number)) {
+      throw fail(`argument --${option.name}: invalid float value: ${quote(raw)}`);
     }
-    if (!token.startsWith("--") || token === "-") {
-      positionals.push(token);
-      continue;
-    }
-    const at = token.indexOf("=");
-    const optionName = at < 0 ? token.slice(2) : token.slice(2, at);
-    const option = byName.get(optionName);
-    if (!option) throw fail(`unrecognized arguments: ${token}`);
-    const key = option.name.replaceAll("-", "_");
-    seen.add(option.name);
-    if (option.type === "boolean") {
-      if (at >= 0) throw fail(`argument --${option.name}: ignored explicit argument ${quote(token.slice(at + 1))}`);
-      args[key] = true;
-      continue;
-    }
-    let raw: string;
-    if (at >= 0) raw = token.slice(at + 1);
-    else {
-      const next = rest[i + 1];
-      if (next === undefined || (next.startsWith("-") && next.length > 1 && !/^-\d/.test(next))) {
-        throw fail(`argument --${option.name}: expected one argument`);
-      }
-      raw = next;
-      i++;
-    }
-    let value: unknown = raw;
-    if (option.type === "int") {
-      if (!/^\s*[-+]?\d+\s*$/.test(raw)) throw fail(`argument --${option.name}: invalid int value: ${quote(raw)}`);
-      value = Number.parseInt(raw, 10);
-    } else if (option.type === "float") {
-      const number = Number(raw);
-      if (!raw.trim() || Number.isNaN(number)) {
-        throw fail(`argument --${option.name}: invalid float value: ${quote(raw)}`);
-      }
-      value = number;
-    }
-    if (option.choices && !option.choices.includes(String(value))) {
-      throw fail(
-        `argument --${option.name}: invalid choice: ${quote(value)} (choose from ${option.choices.map(quote).join(", ")})`,
-      );
-    }
-    if (option.multiple) args[key].push(value);
-    else args[key] = value;
+    value = number;
   }
+  if (option.choices && !option.choices.includes(String(value))) {
+    throw fail(
+      `argument --${option.name}: invalid choice: ${quote(value)} (choose from ${option.choices.map(quote).join(", ")})`,
+    );
+  }
+  return value;
+}
+
+/** Gives the positional tokens their names, and says what is missing, extra or not a choice. */
+function bindPositionals(spec: CommandSpec, positionals: string[], args: Args, fail: Fail): void {
   const declared = spec.positionals ?? [];
   const missing = declared.filter((p, i) => !p.optional && positionals[i] === undefined);
   if (missing.length) {
@@ -1737,6 +1855,10 @@ export function parse(argv: string[]): Parsed | { help: string } {
     }
     args[positional.name] = value;
   });
+}
+
+/** Options that may not go together, and options that must be given. */
+function checkOptions(spec: CommandSpec, seen: Set<string>, fail: Fail): void {
   for (const [a, b] of spec.conflicts ?? []) {
     if (seen.has(a) && seen.has(b)) throw fail(`argument --${a}: not allowed with argument --${b}`);
   }
@@ -1744,6 +1866,52 @@ export function parse(argv: string[]): Parsed | { help: string } {
   if (required.length) {
     throw fail(`the following arguments are required: ${required.map((option) => `--${option.name}`).join(", ")}`);
   }
+}
+
+/** Parses argv, with argparse-style messages. Throws UsageError, or returns help text to print. */
+export function parse(argv: string[]): Parsed | { help: string } {
+  const specs = commands();
+  const [name, ...rest] = argv;
+  if (name === undefined) throw new UsageError(`the following arguments are required: command\n${mainHelp(specs)}`);
+  if (name === "-h" || name === "--help") return { help: mainHelp(specs) };
+  if (name === "-V" || name === "--version") return { help: `${version()}\n` };
+  const spec = specs[name];
+  if (!spec) throw new UsageError(`argument command: invalid choice: ${quote(name)}`);
+  const args: Args = {};
+  const positionals: string[] = [];
+  const byName = new Map(spec.options.map((option) => [option.name, option]));
+  for (const option of spec.options) args[option.name.replaceAll("-", "_")] = optionDefault(option);
+  const fail: Fail = (message) => new UsageError(`${usage(name, spec)}\nwebhand ${name}: error: ${message}`);
+  const seen = new Set<string>();
+  for (let i = 0; i < rest.length; i++) {
+    const token = rest[i];
+    if (token === "-h" || token === "--help") return { help: help(name, spec) };
+    if (token === "--") {
+      positionals.push(...rest.slice(i + 1));
+      break;
+    }
+    if (!token.startsWith("--") || token === "-") {
+      positionals.push(token);
+      continue;
+    }
+    const at = token.indexOf("=");
+    const option = byName.get(at < 0 ? token.slice(2) : token.slice(2, at));
+    if (!option) throw fail(`unrecognized arguments: ${token}`);
+    const key = option.name.replaceAll("-", "_");
+    seen.add(option.name);
+    if (option.type === "boolean") {
+      if (at >= 0) throw fail(`argument --${option.name}: ignored explicit argument ${quote(token.slice(at + 1))}`);
+      args[key] = true;
+      continue;
+    }
+    const [raw, took] = optionText(option, token, rest[i + 1], fail);
+    i += took;
+    const value = optionValue(option, raw, fail);
+    if (option.multiple) args[key].push(value);
+    else args[key] = value;
+  }
+  bindPositionals(spec, positionals, args, fail);
+  checkOptions(spec, seen, fail);
   return { command: name, args, run: spec.run };
 }
 
