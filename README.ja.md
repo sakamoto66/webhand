@@ -67,16 +67,16 @@ flowchart LR
 
 `--engine` で、ブラウザを動かすものを選びます。既定の `auto` は、窓も保存プロファイルも要らない実行で、headless shell が入っていればそれを使い、そうでなければ Chrome を使います。
 
-| | Chrome | headless shell | Obscura | Lightpanda |
-| --- | --- | --- | --- | --- |
-| 窓（`--headed`）、`[person]` ステップ、`learn`、保存プロファイル | 使える | 使えない | 使えない | 使えない |
-| 1 ページのメモリ | 約 350〜470 MB（`--headless=new`） | 約 240〜260 MB | 約 23〜33 MB | 約 23〜33 MB |
-| 実際のレイアウトとスクリーンショット | ある | ある | ある | ない（疑似） |
-| 複数タブ | 使える | 使える | 実際には 1 つ（新しいウィンドウは開かないか、同じタブで開く） | 使えない |
-| コマンドの間でページが残る | 残る | 残る | 小さな常駐プロセスで保つ | 小さな常駐プロセスで保つ |
-| 保存したログイン（`--auth`） | 使える | 使える | 使える | 使える |
+| | Chrome | headless shell | Obscura | Lightpanda | Browser Run | Kitesurf |
+| --- | --- | --- | --- | --- | --- | --- |
+| 窓（`--headed`）、`[person]` ステップ、`learn`、保存プロファイル | 使える | 使えない | 使えない | 使えない | 使えない | 使えない |
+| 1 ページのメモリ | 約 350〜470 MB（`--headless=new`） | 約 240〜260 MB | 約 23〜33 MB | 約 23〜33 MB | 手元では使わない（Cloudflare 上で動く） | 手元では使わない（Cloudflare 上で動く） |
+| 実際のレイアウトとスクリーンショット | ある | ある | ある | ない（疑似） | ある（Chromium） | スクリーンショットは撮れる。ピクセル単位では一致しない（Cloudflare 独自のブラウザ） |
+| 複数タブ | 使える | 使える | 実際には 1 つ（新しいウィンドウは開かないか、同じタブで開く） | 使えない | 使える | 不安定（新しいウィンドウを開くリンクを押すと、数秒後にセッションが終わることがある。3 回中 2 回。新しいタブへの切り替えが通ったのは 1 回） |
+| コマンドの間でページが残る | 残る | 残る | 小さな常駐プロセスで保つ | 小さな常駐プロセスで保つ | セッションの間は残る（無操作の上限 20 分） | 無操作の上限 60 秒 |
+| 保存したログイン（`--auth`） | 使える | 使える | 使える | 使える | 使える | 使える |
 
-窓と保存プロファイルが使えるのは Chrome だけです。Obscura と Lightpanda はずっと軽いものの、ページの読み取りが Chrome と違うことがあるので、頼る前に Chrome と結果を比べてください。`--engine browser-run` だけは別で、ブラウザを Cloudflare 上で動かします（[Browser Run](docs/reference.ja.md#browser-run)）。手元では何も動きませんが、実行で開いたページは Cloudflare に送られます。詳しい制限は、[ヘッドレスシェル](docs/reference.ja.md#ヘッドレスシェル)、[Lightpanda](docs/reference.ja.md#lightpanda)、[Obscura](docs/reference.ja.md#obscura)、[保存したログイン](docs/reference.ja.md#保存したログインauth) を見てください。
+窓と保存プロファイルが使えるのは Chrome だけです。Obscura と Lightpanda はずっと軽いものの、ページの読み取りが Chrome と違うことがあるので、頼る前に Chrome と結果を比べてください。`--engine browser-run` と `--engine kitesurf` は別で、ブラウザを Cloudflare 上で動かします（[Browser Run](docs/reference.ja.md#browser-run)）。手元では何も動きませんが、実行で開いたページは Cloudflare に送られます。Kitesurf は Cloudflare 独自のステートレスなエージェント向けブラウザ（ベータ。Chromium ではない）で、コマンドが 60 秒来ないとセッションが閉じます。詳しい制限は、[ヘッドレスシェル](docs/reference.ja.md#ヘッドレスシェル)、[Lightpanda](docs/reference.ja.md#lightpanda)、[Obscura](docs/reference.ja.md#obscura)、[保存したログイン](docs/reference.ja.md#保存したログインauth) を見てください。
 
 ## 安全とプライバシー
 
