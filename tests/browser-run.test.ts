@@ -98,3 +98,10 @@ test("a connection carries the key in the handshake, built from the environment"
   }
   expect(seen).toEqual(["Bearer secret-token"]);
 });
+
+test("a rate-limited start says to wait", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response("{}", { status: 429, headers: { "retry-after": "20" } }),
+  );
+  await expect(session.startChrome({ engine: "browser-run" })).rejects.toThrow(/answered 429.*wait 20 seconds/);
+});

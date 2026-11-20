@@ -475,7 +475,11 @@ async function startBrowserRun(options: { headed: boolean; profile: string | nul
   }
   if (!response.ok) {
     await response.body?.cancel();
-    throw new SessionError(`${name} did not start: the API answered ${response.status}`);
+    const wait =
+      response.status === 429
+        ? ` Cloudflare is limiting new sessions (Workers Free: one every 20 seconds); wait${response.headers.get("retry-after") ? ` ${response.headers.get("retry-after")} seconds` : ""} and run start again.`
+        : "";
+    throw new SessionError(`${name} did not start: the API answered ${response.status}.${wait}`);
   }
   const body = (await response.json().catch(() => null)) as {
     sessionId?: unknown;
