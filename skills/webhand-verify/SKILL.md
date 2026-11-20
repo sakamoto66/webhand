@@ -41,7 +41,7 @@ Ask with AskUserQuestion whether the URL is a **test** environment or a **real s
 
 ## 3. Sessions
 
-Use a **new session per check** by default (temporary profile, signed out), so one check's state cannot help or hurt another. Checks that depend on an earlier check's state go into one scenario in one session, with `replan`-free steps in order. Sign-in, `profile:NAME` and `--auth NAME` work as in `/webhand`: tell the user before using a signed-in profile that the signed-in pages are sent to Jev (TypeSafe). Add `--headed` when there are `[person]` steps.
+Use a **new session per check** by default (temporary profile, signed out), so one check's state cannot help or hurt another. A check that needs the state an earlier check reached (an order placed after a total was calculated) does not continue that session: it gets its own new session, and its GOAL and steps repeat the earlier operations (set the values, press calculate, then press order). `replan` cannot change the GOAL, and Jev reports DONE when the GOAL it holds is already met, so an operation added by `replan` after the GOAL was reached is often never done. Sign-in, `profile:NAME` and `--auth NAME` work as in `/webhand`: tell the user before using a signed-in profile that the signed-in pages are sent to Jev (TypeSafe). Add `--headed` when there are `[person]` steps.
 
 ## 4. Operate
 
