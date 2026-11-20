@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import * as agent from "../agent.ts";
 import type { Args } from "../args.ts";
 import * as auth from "../auth.ts";
@@ -11,9 +12,8 @@ import type { Driver } from "../remote.ts";
 import * as runbook from "../runbook.ts";
 import * as session from "../session.ts";
 import type { Plan, Step, Value } from "../types.ts";
-
 import { CliExit, deps, getContext, named, OK, print } from "./context.ts";
-import { attach, browserView, defaultLog, FLOWS, mergeValues, parseSteps, parseValues } from "./shared.ts";
+import { attach, browserView, defaultLog, FLOWS, mergeValues, parseFiles, parseSteps, parseValues } from "./shared.ts";
 
 export function chooseChrome(choice: string): [string, string | null] {
   try {
@@ -55,6 +55,12 @@ function resolveTarget(args: Args): StartTarget {
     const engine = chooseEngine(args.engine, { headed: args.headed, profile, chrome: args.chrome });
     // --chrome says where Chrome runs; the other engines have no such choice.
     const [chrome, note] = engine === "chrome" ? pickChrome(args.chrome) : ["linux", null];
+    if ((args.download_dir || args.file.length) && !["chrome", "headless-shell"].includes(engine)) {
+      throw new CliExit("--file and --download-dir need a local Chrome (--engine chrome or headless-shell)");
+    }
+    if (args.download_dir && chrome !== "linux") {
+      throw new CliExit("--download-dir needs Chrome on this machine: the Windows Chrome cannot save to its paths");
+    }
     return { book, service, serviceName, profile, chrome, note, engine, login };
   } catch (error) {
     if (error instanceof runbook.RunbookError || error instanceof session.SessionError) {
@@ -87,6 +93,7 @@ function planStart(args: Args, target: StartTarget): { plan: Plan; goal: string;
   if (args.step.length) steps = parseSteps(args.step);
   else if (book) steps = book.steps;
   let values = parseValues(args.value);
+  const files = parseFiles(args.file);
   if (book) {
     // Runbook parameters are Claude's values too, unless Claude labelled them itself.
     const params = Object.entries(runbook.parseValues(args.param)).map(([label, value]) => ({ label, value }));
@@ -103,6 +110,7 @@ function planStart(args: Args, target: StartTarget): { plan: Plan; goal: string;
     goal,
     steps,
     values,
+    ...(files.length ? { files } : {}),
     notes: [],
     attempt: 1,
     service: service ? { description: service.description, facts: service.facts } : null,
@@ -134,6 +142,7 @@ function initialState(
     view: runbook.view(learned, claudeView),
     task,
     start_url: browserUrl(planned.url, chrome),
+    ...(args.download_dir ? { download_dir: resolve(args.download_dir) } : {}),
     plan: planned.plan,
     runbook: book ? { name: book.name, status: book.status, digest: book.digest, scope: book.scope } : null,
     service: serviceName,
@@ -195,6 +204,7 @@ async function openStartPage(
       attempt: 1,
       steps: planText(plan),
       values: values.map((v) => v.label),
+      ...(plan.files ? { files: plan.files.map((f) => f.label) } : {}),
       view: state.view,
       ...(plan.compare ? { compare: plan.compare } : {}),
       ...(plan.collect ? { collect: plan.collect } : {}),

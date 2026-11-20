@@ -19,7 +19,7 @@ import {
   PolicyError,
   type Value,
 } from "../types.ts";
-import { actionSpace, modelState, NOT_VISIBLE, resolve, valueChoices } from "./base.ts";
+import { actionSpace, fileChoices, modelState, NOT_VISIBLE, resolve, valueChoices } from "./base.ts";
 import {
   buildCollect,
   buildCompare,
@@ -211,6 +211,7 @@ export class JevPolicy implements Policy {
 
   async choose(whole: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {
     const values = valueChoices(plan);
+    const files = fileChoices(plan);
     const build = (page: Page) => {
       const [, targets, controls] = actionSpace(page.actions);
       const [questions, operations] = buildQuestions(
@@ -220,6 +221,7 @@ export class JevPolicy implements Policy {
         values,
         Boolean(page.read),
         Boolean(page.tabs),
+        files,
       );
       return {
         targets,
@@ -276,6 +278,11 @@ export class JevPolicy implements Policy {
       const valueAnswer = validateChoice(answers.type_text_value ?? {}, [...values.keys(), NO_VALUE]);
       confidences.push(valueAnswer.confidence);
       if (valueAnswer.choice !== NO_VALUE) decision.text = (values.get(valueAnswer.choice) as Value).value;
+    }
+    if (operation === "UPLOAD_FILE") {
+      const fileAnswer = validateChoice(answers.upload_file_file ?? {}, [...files.keys(), NO_VALUE]);
+      confidences.push(fileAnswer.confidence);
+      if (fileAnswer.choice !== NO_VALUE) decision.text = (files.get(fileAnswer.choice) as Value).value;
     }
     decision.confidence = Math.min(...confidences);
     return decision;

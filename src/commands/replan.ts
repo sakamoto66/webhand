@@ -9,7 +9,7 @@ import * as session from "../session.ts";
 import type { Value } from "../types.ts";
 
 import { BUDGET, FAILED, OK, print, UNCERTAIN } from "./context.ts";
-import { mergeValues, openableUrl, openPage, parseSteps, parseValues, requireSession } from "./shared.ts";
+import { mergeValues, openableUrl, openPage, parseFiles, parseSteps, parseValues, requireSession } from "./shared.ts";
 
 /** Claude revises the plan after an attempt fell short, and starts the next attempt. */
 /** A `replan` that cannot be taken: the message after "REJECTED: ". Nothing has been saved yet. */
@@ -49,6 +49,7 @@ function applyReplanPlan(args: Args, state: session.State): void {
     plan.steps = steps;
   }
   plan.values = mergeValues(plan.values, parseValues(args.value));
+  if (args.file.length) plan.files = mergeValues(plan.files ?? [], parseFiles(args.file));
   if (args.compare) plan.compare = switched(args.compare);
   plan.compared = null; // Each attempt compares again from the top.
   if (args.collect) plan.collect = switched(args.collect);

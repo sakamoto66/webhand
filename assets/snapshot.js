@@ -25,10 +25,11 @@
     button: 'button', submit: 'button', reset: 'button', image: 'button',
     search: 'searchbox', number: 'spinbutton',
     text: 'textbox', email: 'textbox', url: 'textbox', tel: 'textbox',
+    file: 'button',
   };
   const TEXT_ROLES = ['textbox', 'searchbox', 'spinbutton'];
   const BUTTON_INPUT_TYPES = ['button', 'submit', 'reset'];
-  // Values of these inputs are never read.
+  // Values of these inputs are never read. A file input is still offered, to be given a file, but never read.
   const UNOBSERVED_INPUT_TYPES = ['password', 'file', 'hidden'];
   const HIDDEN_SELECTOR = '[aria-hidden="true"],[inert]';
   const FORM_FIELD_SELECTOR = 'input,textarea,select';
@@ -117,6 +118,8 @@
   // ---- Element properties ----
 
   const isObservableInput = element => !UNOBSERVED_INPUT_TYPES.includes(element.type);
+
+  const isFileInput = element => element.tagName === 'INPUT' && element.type === 'file';
 
   const isVisible = element => !closestDeep(element, HIDDEN_SELECTOR) &&
     element.checkVisibility({checkOpacity: true, checkVisibilityCSS: true});
@@ -308,6 +311,8 @@
 
   // A fill for editable fields (plus a click to open them), otherwise a click.
   const otherActions = (element, role, base) => {
+    // A file input is given a file by the run; what it holds is never read.
+    if (isFileInput(element)) return [{...base, kind: 'upload'}];
     const editable = isEditable(element, role);
     let value = '';
     if ('value' in element) value = String(element.value);
@@ -329,7 +334,7 @@
     const actions = [];
     for (const element of walkDeep(document, NodeFilter.SHOW_ELEMENT)) {
       const role = targetRole(element);
-      if (!role || !isObservableInput(element) || !isVisible(element) || isDisabled(element)) continue;
+      if (!role || !(isObservableInput(element) || isFileInput(element)) || !isVisible(element) || isDisabled(element)) continue;
       const rect = element.getBoundingClientRect();
       if (!isTarget(element, role, rect)) continue;
       const region = regionOf(element);

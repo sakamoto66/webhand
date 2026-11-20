@@ -15,7 +15,16 @@ import { MutationUncertain, type Policy, PolicyError, StalePage } from "../types
 
 import { CliExit, deps, FAILED, OK, print, UNCERTAIN } from "./context.ts";
 import { report } from "./report.ts";
-import { attach, browserView, jevDiagnostic, mergeValues, openPage, parseValues, requireSession } from "./shared.ts";
+import {
+  attach,
+  browserView,
+  jevDiagnostic,
+  mergeValues,
+  openPage,
+  parseFiles,
+  parseValues,
+  requireSession,
+} from "./shared.ts";
 
 /** Jev works toward the goal until it needs Claude or a person. */
 /** Why `run` cannot go on from the state's last outcome, as the exit code after saying so. null when it can. */
@@ -51,6 +60,7 @@ async function acceptRunInputs(args: Args, state: session.State): Promise<number
       labels: parseValues(args.value).map((v) => v.label),
     });
   }
+  if (args.file.length) state.plan.files = mergeValues(state.plan.files ?? [], parseFiles(args.file));
   if (args.human_done) {
     if (state.outcome !== agent.NEEDS_HUMAN) {
       print("REJECTED: no person was asked to act");

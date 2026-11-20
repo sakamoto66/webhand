@@ -72,7 +72,7 @@ export class Decision {
   action: Action | null;
   /** Lowest confidence behind this choice, when the chooser reports one */
   confidence: number | null;
-  /** For TYPE_TEXT: one of Claude's values, never model-written. null: no value fits */
+  /** For TYPE_TEXT: one of Claude's values; for UPLOAD_FILE: one of Claude's file paths. Never model-written. null: none fits */
   text: string | null;
   /** For NOT_VISIBLE: the operation whose target was not observed */
   wanted: string | null;
@@ -94,6 +94,8 @@ export interface Plan {
   goal: string;
   steps: Step[];
   values: Value[];
+  /** Files Claude allows the run to upload: label and absolute path. Jev chooses a label, never a path. */
+  files?: Value[];
   notes?: string[];
   /** v2: Claude's answers to Jev's questions (`webhand answer`). They continue the same attempt, so Jev sees them. */
   instructions?: string[];
