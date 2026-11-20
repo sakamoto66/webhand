@@ -11,8 +11,10 @@ import * as agent from "./agent.ts";
 import { Budget, execute, runAgent } from "./agent.ts";
 import * as auth from "./auth.ts";
 import { Browser, type ViewChoice } from "./browser.ts";
+import { browserRunHeaders } from "./browser-run.ts";
 import { type Collected, type Collector, collectScan, MAX_COLLECTED } from "./collect.ts";
 import { type Compared, type Comparer, compareScan, MAX_PAGES, MAX_SCROLLS, type Reader } from "./compare.ts";
+import { ENGINE_CHOICES, hostName } from "./engines.ts";
 import { describeError, quote, show, stamp, toJson } from "./format.ts";
 import { Knowledge } from "./knowledge.ts";
 import * as learn from "./learn.ts";
@@ -269,7 +271,7 @@ async function attach(
   view?: ViewChoice | null,
 ): Promise<Driver> {
   if (state.cdp) {
-    return await Browser.open(url, { endpoint: { url: state.cdp, headers: session.browserRunHeaders() }, view });
+    return await Browser.open(url, { endpoint: { url: state.cdp, headers: browserRunHeaders() }, view });
   }
   if (state.socket) {
     const remote = await RemoteBrowser.connect(state.socket, view ?? null);
@@ -576,7 +578,7 @@ async function commandStart(args: Args): Promise<number> {
     if (skipped.length) print(`NOTE: localStorage of other sites was not restored: ${skipped.join(", ")}`);
   }
   print(
-    `${describePlan(plan, state.view)}\nSESSION: ${args.session} (${session.hostName(engine, chrome)})\n${headline(state.page)}`,
+    `${describePlan(plan, state.view)}\nSESSION: ${args.session} (${hostName(engine, chrome)})\n${headline(state.page)}`,
   );
   print("NEXT: webhand run");
   return OK;
@@ -1399,7 +1401,7 @@ function commands(): Record<string, CommandSpec> {
   const engineOption: OptionSpec = {
     name: "engine",
     type: "string",
-    choices: [...session.ENGINE_CHOICES],
+    choices: [...ENGINE_CHOICES],
     default: process.env.WEBHAND_ENGINE ?? "auto",
     help: "What runs the browser. auto (default) uses the headless shell when it is installed and the run needs no window or saved profile, else Chrome. headless-shell, lightpanda, obscura, browser-run and kitesurf have no window and no saved profile, and --chrome does not apply to them. browser-run runs on Cloudflare (CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN; kitesurf is its stateless agent browser), so the pages it opens are sent there. Default: WEBHAND_ENGINE, else auto",
   };

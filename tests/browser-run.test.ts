@@ -4,6 +4,8 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Browser } from "../src/browser.ts";
+import { browserRunHeaders } from "../src/browser-run.ts";
+import { hostName } from "../src/engines.ts";
 import * as session from "../src/session.ts";
 
 const API = "https://api.cloudflare.com/client/v4/accounts/acct/browser-run/devtools/browser";
@@ -77,7 +79,7 @@ test("auto never chooses it, and a named engine is taken as asked", () => {
   const options = { headed: false, profile: null, chrome: "auto" };
   expect(session.chooseEngine("browser-run", options)).toBe("browser-run");
   expect(session.chooseEngine("auto", options)).not.toBe("browser-run");
-  expect(session.hostName("browser-run", "linux")).toBe("Cloudflare Browser Run");
+  expect(hostName("browser-run", "linux")).toBe("Cloudflare Browser Run");
 });
 
 test("a connection carries the key in the handshake, built from the environment", async () => {
@@ -91,7 +93,7 @@ test("a connection carries the key in the handshake, built from the environment"
   const { port } = server.address() as AddressInfo;
   try {
     await expect(
-      Browser.open(null, { endpoint: { url: `ws://127.0.0.1:${port}/x`, headers: session.browserRunHeaders() } }),
+      Browser.open(null, { endpoint: { url: `ws://127.0.0.1:${port}/x`, headers: browserRunHeaders() } }),
     ).rejects.toThrow();
   } finally {
     server.close();
@@ -116,5 +118,5 @@ test("kitesurf asks for browser=kitesurf and no keep_alive, and is stopped like 
   await expect(session.startChrome({ engine: "kitesurf", profile: "work" })).rejects.toThrow(/no saved profile/);
   await session.stopChrome(state);
   expect(fetchMock.mock.calls.at(-1)?.[1]?.method).toBe("DELETE");
-  expect(session.hostName("kitesurf", "linux")).toContain("Kitesurf");
+  expect(hostName("kitesurf", "linux")).toContain("Kitesurf");
 });

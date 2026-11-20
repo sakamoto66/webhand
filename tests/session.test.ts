@@ -2,6 +2,7 @@
 
 import { mkdirSync } from "node:fs";
 import { expect, test, vi } from "vitest";
+import { ENGINE_CHOICES, hostName } from "../src/engines.ts";
 import * as session from "../src/session.ts";
 import { tmpPath } from "./helpers.ts";
 
@@ -114,14 +115,14 @@ test.each(["lightpanda", "obscura"])("a missing %s is an error, not a crash", as
 });
 
 test("hostName reads as the engine or as Chrome", () => {
-  expect(session.hostName("obscura", "linux")).toBe("Obscura");
-  expect(session.hostName("chrome", "linux")).toBe("linux Chrome");
-  expect(session.hostName("chrome", "windows")).toBe("windows Chrome");
+  expect(hostName("obscura", "linux")).toBe("Obscura");
+  expect(hostName("chrome", "linux")).toBe("linux Chrome");
+  expect(hostName("chrome", "windows")).toBe("windows Chrome");
 });
 
 test("an engine is never a --chrome choice", () => {
   expect(session.CHROMES).toEqual(["auto", "linux", "windows"]);
-  expect(session.ENGINE_CHOICES).toEqual([
+  expect(ENGINE_CHOICES).toEqual([
     "auto",
     "chrome",
     "headless-shell",
