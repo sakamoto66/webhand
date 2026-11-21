@@ -82,8 +82,12 @@ export function clip(text: string): string {
   return flat.length > DETAIL_MAX ? `${flat.slice(0, DETAIL_MAX)}…` : flat;
 }
 
-/** The page offers nothing to do: no action other than waiting or switching tabs. */
+/**
+ * The page offers nothing to do: no action other than waiting or switching tabs. The browser's own error page (where a
+ * refused or failed navigation lands) is not the app's dead end: the refusal is already noted as out_of_scope.
+ */
 export function isDeadEnd(page: Page): boolean {
+  if (String(page.url ?? "").startsWith("chrome-error:")) return false;
   return !page.actions.some((action: { kind: string }) => !["wait", "tab"].includes(action.kind));
 }
 

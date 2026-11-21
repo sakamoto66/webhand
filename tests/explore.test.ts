@@ -43,6 +43,8 @@ test("a page with nothing to do but wait or switch tabs is a dead end", () => {
   expect(isDeadEnd({ actions: [{ kind: "wait" }] })).toBe(true);
   expect(isDeadEnd({ actions: [{ kind: "tab" }, { kind: "wait" }] })).toBe(true);
   expect(isDeadEnd({ actions: [{ kind: "click" }, { kind: "wait" }] })).toBe(false);
+  // Where a refused navigation lands is the browser's error page, not the app's dead end.
+  expect(isDeadEnd({ url: "chrome-error://chromewebdata/", actions: [{ kind: "wait" }] })).toBe(false);
 });
 
 test("the same signal on the same address with the same message is one finding", () => {
