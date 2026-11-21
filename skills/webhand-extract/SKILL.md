@@ -44,12 +44,13 @@ Signed-in pages are sent to Jev (TypeSafe): tell the user before using `profile:
 When the data is on the page:
 
 ```
-webhand extract table [--table N] [--columns "A,B"] [--within main] [--expect-count N]
+webhand extract table [--table N] [--columns "A,B"] [--rows raw|data] [--within main] [--expect-count N]
 webhand extract list | link | fields | text [--within REGION]
 ```
 
 - It reads the whole page's DOM at once: nothing is clicked or scrolled, so rows below the fold are included. It does not see what the page has not loaded (an infinite scroll, a list behind "Show more"): reach it first with `--more`, or `--collect`, then extract.
 - `--columns` takes the header names exactly as the page writes them. A column the page does not have is reported as missing; it is never filled with a blank.
+- `--rows` is `raw` by default: every row as the page has it, and a row that is one cell spanning the whole table (a footnote, a section title, a total) is marked `spans the whole table: a note or title, not a record`. Do not put a marked row in the data. `--rows data` leaves those rows out and names each one in a `NOTE`, so you can use it when the user wants records only; say in the report that rows were left out and which.
 - `--expect-count N` is the number you agreed on in step 1, not one you derived from the output. A different number is `COUNT_MISMATCH`: report both numbers.
 - `--format json|csv` for files; the default table is for reading. Values keep the page's own notation (`1,980` stays `1,980`). If the user needs a normalized form, convert after extraction and say in the report which values you converted.
 - Exit codes: 0 `COMPLETE`, 6 `COUNT_MISMATCH`, 7 `INCONCLUSIVE` (still loading, nothing found, no such region), 8 `PARTIAL` (a missing column, merged cells expanded, hidden rows left out, a frame, canvas or plugin whose content cannot be read).

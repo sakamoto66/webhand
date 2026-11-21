@@ -131,4 +131,5 @@ webhand start --read-only --goal "..." --url "..." [--allow-control "NAME" ...]
 - **`extract` の読み方**: スナップショットの read layer とは別のページスクリプト（`assets/extract.js`）。セルを切り詰めず、結合セルを展開し、非表示の行を数えて注記する。ページ全体の DOM を1回で読むので、画面外の行も入る。読み込み前の行（無限スクロール、「もっと見る」の先）は読めないので、先に `--more` / `--collect` で到達する。
 - **`--within`**: 領域の名前（`main`、`nav`、`header`、`footer`、`aside`、`form`、`dialog`、`search`、`table`）。ない領域は `INCONCLUSIVE`。
 - **複数の表**: `--expect-count` を付けて表が複数あるときは `INCONCLUSIVE ambiguous`。`--table N` で1つに決める。
+- **行のモード（r58 のあとの追加）**: r58 で、表全体にまたがる脚注行がデータ行として出て、Claude が混ぜた回があった（x 9/10）。`extract table --rows raw|data` を足した。`raw`（既定、今までどおり）は全行を出し、1つのセルが全幅にまたがる行に印を付ける。`data` はその行を除き、除いた行を注記に名指しする。件数の期待（`--expect-count`）は、モードで残った行に対して数える。行の番号はページのまま。合計行などの意味での判別はしない（言語に依存するため）。
 - **ログ**: `extract` イベントは種類、結果、件数、期待件数、足りない列、注記の数だけ。値は書かない。

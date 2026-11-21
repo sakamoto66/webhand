@@ -9,6 +9,8 @@ import {
   KINDS,
   type Kind,
   type Raw,
+  ROWS,
+  type Rows,
   WITHIN,
 } from "../extract.ts";
 import { logOnce } from "../metrics.ts";
@@ -52,6 +54,7 @@ export async function commandExtract(args: Args): Promise<number> {
       index: args.table ?? null,
       expectCount: args.expect_count ?? null,
       within,
+      rows: (args.rows ?? "raw") as Rows,
     });
   } catch (error) {
     if (error instanceof ExtractError) throw new CliExit(error.message);

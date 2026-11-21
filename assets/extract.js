@@ -73,16 +73,20 @@
               take();
             }
           }
-          grid.push({cells: out.map(value => value === undefined ? '' : value), th: cells.length > 0 &&
+          const lone = cells.length === 1 && (Number(cells[0].getAttribute('colspan')) || 1) > 1;
+          grid.push({cells: out.map(value => value === undefined ? '' : value), lone, th: !lone && cells.length > 0 &&
             cells.every(cell => cell.tagName === 'TH' || cell.getAttribute('role') === 'columnheader'), y});
         });
+        const width = Math.max(0, ...grid.map(row => row.cells.length));
+        // A row with one cell that spans the whole table: a note, a section title or a total, not a record.
+        grid.forEach(row => { row.full = row.lone && row.cells.length >= width; });
         const headIndex = grid.findIndex(row => row.th);
         const header = headIndex >= 0 ? grid[headIndex].cells : null;
         const body = grid.filter((_, i) => i !== headIndex && grid[i].cells.some(value => value !== ''));
         items.push({
           kind: 'table', at: at + 1, region: regionOf(table), shown: shownTable,
           caption: squash((table.querySelector('caption') || {}).textContent || table.getAttribute('aria-label')),
-          header, rows: body.map(row => row.cells), spans, hidden_rows: hiddenRows,
+          header, rows: body.map(row => row.cells), spanning: body.map(row => row.full), spans, hidden_rows: hiddenRows,
         });
       });
     },

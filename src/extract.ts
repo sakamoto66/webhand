@@ -13,6 +13,9 @@ export type Kind = (typeof KINDS)[number];
 export const FORMATS = ["table", "json", "csv"] as const;
 export type Format = (typeof FORMATS)[number];
 
+export const ROWS = ["raw", "data"] as const;
+export type Rows = (typeof ROWS)[number];
+
 export const WITHIN = ["main", "nav", "header", "footer", "aside", "form", "dialog", "search", "table"] as const;
 
 const SCRIPT = readFileSync(new URL("../assets/extract.js", import.meta.url), "utf8").trim();
@@ -72,6 +75,7 @@ function tableRecords(
   items: Item[],
   columns: string[] | null,
   index: number | null,
+  mode: Rows,
 ): {
   records: Extraction["records"];
   columns: string[];
@@ -88,7 +92,18 @@ function tableRecords(
   const missing: string[] = [];
   for (const table of chosen) {
     const header = (table.header as string[] | null) ?? null;
-    const rows = table.rows as string[][];
+    const spanning = ((table.spanning as boolean[] | undefined) ?? []).map(Boolean);
+    const allRows = table.rows as string[][];
+    const kept = allRows.map((_, i) => i).filter((i) => mode !== "data" || !spanning[i]);
+    const rows = kept.map((i) => allRows[i]);
+    if (mode === "data") {
+      const left = allRows.filter((_, at) => spanning[at]);
+      if (left.length) {
+        notes.push(
+          `table ${table.at}: ${left.length} row(s) that span the whole table were left out (--rows data): ${left.map((row) => quote(row[0])).join(", ")}`,
+        );
+      }
+    }
     if (table.spans) notes.push(`table ${table.at} has merged cells: they were expanded (spanned values repeated)`);
     if ((table.hidden_rows as number) > 0)
       notes.push(`table ${table.at}: ${table.hidden_rows} row(s) the page hides were left out`);
@@ -117,7 +132,11 @@ function tableRecords(
       names.forEach((name, position) => {
         values[name] = row[indices[position]] ?? "";
       });
-      records.push({ source: `${table.region}, table ${table.at}, row ${at + 1}`, values });
+      const place = kept[at] + 1;
+      records.push({
+        source: `${table.region}, table ${table.at}, row ${place}${spanning[place - 1] ? ", spans the whole table: a note or title, not a record (--rows data leaves it out)" : ""}`,
+        values,
+      });
     });
   }
   return { records, columns: shownColumns, missing, notes };
@@ -151,6 +170,8 @@ export interface Options {
   index: number | null;
   expectCount: number | null;
   within: string | null;
+  /** raw: every row as the page has it (rows that span the whole table are marked); data: those rows are left out and named. */
+  rows: Rows;
 }
 
 /** Builds the extraction from what the page script returned. */
@@ -187,7 +208,7 @@ export function build(kind: Kind, raw: Raw, options: Options, at = new Date().to
     ) {
       return inconclusive("ambiguous", "the page has several tables: give --table N to count one");
     }
-    const found = tableRecords(raw.items, options.columns, options.index);
+    const found = tableRecords(raw.items, options.columns, options.index, options.rows);
     if (found.reason === "none") return inconclusive("none", "no table found");
     if (found.reason === "no_header")
       return inconclusive("no_header", "the table has no header row, so --columns cannot name a column");
