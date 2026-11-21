@@ -8,14 +8,7 @@ import { OK, print, UNCERTAIN } from "./context.ts";
 import { attemptLabel } from "./shared.ts";
 
 /** Outcomes after which `answer` continues the same attempt (v2). */
-export const ANSWERABLE: string[] = [
-  agent.ESCALATE,
-  agent.STUCK,
-  agent.BLOCKED,
-  agent.GOAL_REPORTED,
-  agent.JEV_FAILED,
-  agent.READ_ONLY,
-];
+export const ANSWERABLE: string[] = [agent.ESCALATE, agent.STUCK, agent.BLOCKED, agent.GOAL_REPORTED, agent.JEV_FAILED];
 
 /** v2: parts of the page webhand cannot see into, said plainly so that Claude looks for another way. */
 function unseenHint(page: Page): string {
@@ -44,9 +37,6 @@ function diagnose(state: session.State, outcome: string): string {
     if (count("stale")) return "the last choices were refused as stale: the page keeps changing under the target";
     if (count("missing")) return `Jev could not find the element it needs in what was offered${unseenHint(state.page)}`;
     return "the last three actions did not change the page";
-  }
-  if (outcome === agent.READ_ONLY) {
-    return "the session is read-only and Jev chose an action it refuses; nothing ran. Answer with another way that only reads, or finish";
   }
   if (outcome === agent.GOAL_REPORTED) return "Jev thinks the goal is met and asks Claude to check the page";
   if (outcome === agent.JEV_FAILED) return "Jev gave no usable decision; nothing was executed";
