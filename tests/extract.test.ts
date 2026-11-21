@@ -28,7 +28,7 @@ async function read(html: string, kind: Kind, within: string | null = null): Pro
   return (await page.evaluate(expression(kind, within))) as Raw;
 }
 
-const options = { columns: null, index: null, expectCount: null, within: null };
+const options = { columns: null, index: null, expectCount: null, within: null, rows: "raw" as const };
 
 const PLANS = `<main><table><caption>Plans</caption>
 <tr><th>Plan</th><th>Monthly price</th></tr>
@@ -179,4 +179,33 @@ test("read-only refuses by that mark, allows named buttons, and checks the label
   expect(why("A link")).toBeNull();
   expect(refusal({ kind: "upload", label: "File" }, rule)).toContain("attaches a file");
   expect(refusal({ kind: "scroll", label: "Scroll", change: "control" }, rule)).toBeNull();
+});
+
+const NOTE = `<table><tr><th>Plan</th><th>Price</th></tr><tr><td>Basic</td><td>980</td></tr>
+<tr><td colspan="2">Prices include tax</td></tr><tr><td>Pro</td><td>1,980</td></tr></table>`;
+
+test("raw keeps a row that spans the whole table and marks it; data leaves it out, names it, and counts without it", async () => {
+  const raw = await read(NOTE, "table");
+  const asIs = build("table", raw, options);
+  expect(asIs.count).toBe(3);
+  expect(asIs.records[1].source).toContain("row 2, spans the whole table: a note or title, not a record");
+  expect(asIs.records[0].source).not.toContain("spans the whole table");
+  const data = build("table", raw, { ...options, rows: "data", expectCount: 2 });
+  expect(data.records.map((r) => r.values.Plan)).toEqual(["Basic", "Pro"]);
+  expect(data.records[1].source).toContain("row 3"); // the number is the page's, not renumbered
+  expect(data.notes.join()).toContain(
+    '1 row(s) that span the whole table were left out (--rows data): "Prices include tax"',
+  );
+  expect(data.result).toBe("COMPLETE");
+  expect(build("table", raw, { ...options, expectCount: 2 }).result).toBe("COUNT_MISMATCH");
+});
+
+test("a section title that spans the table is not taken for the header", async () => {
+  const raw = await read(
+    `<table><tr><th colspan="2">Plans</th></tr><tr><th>Plan</th><th>Price</th></tr><tr><td>A</td><td>1</td></tr></table>`,
+    "table",
+  );
+  const result = build("table", raw, { ...options, rows: "data" });
+  expect(result.columns).toEqual(["Plan", "Price"]);
+  expect(result.records.map((r) => r.values.Plan)).toEqual(["A"]);
 });

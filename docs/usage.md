@@ -127,6 +127,8 @@ After `/webhand-verify`, you can save its checks (`.webhand/checks/`, as a `draf
 
 Jev only brings the page to the data (a search, a filter, the next page). `webhand extract` then reads the table, list, links, fields or text from the page itself, so every value is the page's own text and not Claude's transcription. The session is started with `--read-only`: it refuses a submit of a form that is not a plain GET, a file upload, and a button outside any form unless `--allow-control` names it. That is a refusal of what webhand can tell, not a guarantee about every script on the page.
 
+For a table, `--rows raw` (the default) shows every row and marks a row that is one cell spanning the whole table (a footnote or a section title); `--rows data` leaves those rows out and names them.
+
 The report is a table with the URL, the time, the count, and what could not be read. `webhand extract` ends `COMPLETE`, `PARTIAL` (a missing column, merged cells expanded, hidden rows left out, a frame or canvas it cannot read), `INCONCLUSIVE` (still loading, nothing found) or `COUNT_MISMATCH` (against `--expect-count`). It never fills in a gap.
 
 ### `/webhand-verify` — check acceptance criteria

@@ -28,7 +28,7 @@ import { FLOWS } from "./commands/shared.ts";
 import { commandStart } from "./commands/start.ts";
 import { CHROMES } from "./engines/chrome.ts";
 import { ENGINE_CHOICES } from "./engines/index.ts";
-import { FORMATS, KINDS, WITHIN } from "./extract.ts";
+import { FORMATS, KINDS, ROWS, WITHIN } from "./extract.ts";
 import { logOnce } from "./metrics.ts";
 import * as runbook from "./runbook.ts";
 import * as session from "./session.ts";
@@ -271,6 +271,13 @@ function commands(): Record<string, CommandSpec> {
           type: "int",
           metavar: "N",
           help: "The number of rows or items expected; a different count is COUNT_MISMATCH",
+        },
+        {
+          name: "rows",
+          type: "string",
+          default: "raw",
+          choices: [...ROWS],
+          help: "Table only: raw (every row as the page has it; a row spanning the whole table is marked) or data (those rows are left out and named)",
         },
         {
           name: "format",
