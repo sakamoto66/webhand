@@ -38,12 +38,13 @@ Requirements: Node.js 22 or later and Google Chrome (on Linux, or the Windows si
 
 ## Using the skills
 
-There are two skills.
+There are three skills.
 
 | Skill | Purpose |
 | --- | --- |
 | `/webhand` | Get something done on a web page |
 | `/webhand-learn` | Learn how to use a service and write its service information and runbooks |
+| `/webhand-verify` | Check acceptance criteria on a real page and report PASS / FAIL / INCONCLUSIVE with quoted evidence |
 
 ### Typical flow
 
@@ -109,6 +110,28 @@ It writes to one of two places. Claude asks when it is unclear which one you wan
 | User | `~/.webhand/runbooks/` | Services only you use |
 
 Keep secrets and personal data out of runbooks and service information. Put values that vary into `params`.
+
+---
+
+### `/webhand-verify` — check acceptance criteria
+
+```text
+/webhand-verify On https://staging.example.com, check: results are sorted by price ascending / the total includes tax
+/webhand-verify Check the acceptance criteria of issue #123 on https://staging.example.com
+```
+
+1. **Split**: Claude turns the criteria into checks (precondition, operation, expected result), shows the list, and gets your agreement. Criteria with nothing observable on the page ("feels fast") are left out.
+2. **Environment**: it always asks whether the URL is a test environment or a real service. On a real service it runs only checks that change nothing; checks that register, send, buy or delete are not run (`INCONCLUSIVE`).
+3. **Operate**: one new session per check; Jev only operates. Jev's completion report (`GOAL_REPORTED`) is never evidence of a pass.
+4. **Judge**: after the operation, Claude reads the page and compares it with the expected result.
+
+| Verdict | Meaning |
+| --- | --- |
+| `PASS` | The operation was carried out as the check says, and the page shows the expected result (quoted) |
+| `FAIL` | The operation was carried out as the check says, and the page shows something else (expected, seen, and the operations that ran) |
+| `INCONCLUSIVE` | The operation did not get done, or was not run. It is not treated as a product failure |
+
+Nothing is loosened after the result is seen. The overall result is `ACCEPT` only when every check is `PASS`; any `FAIL` is `REJECT`; a leftover `INCONCLUSIVE` is `NOT CONFIRMED`. Posting to an issue or PR happens only when you ask.
 
 ---
 
