@@ -15,6 +15,12 @@ export const UNCERTAIN = 4;
 
 export const BUDGET = 5;
 
+/** `check`: at least one expectation failed. */
+export const CHECK_FAIL = 6;
+
+/** `check`: none failed, but at least one could not be judged. */
+export const CHECK_INCONCLUSIVE = 7;
+
 /** What a command needs to stop with a message, on stderr with exit code 1. */
 export class CliExit extends Error {
   override name = "CliExit";

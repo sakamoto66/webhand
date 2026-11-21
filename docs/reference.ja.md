@@ -169,6 +169,7 @@ networkingMode=mirrored
 | `webhand answer --note N [--value L=V] [--url URL]` | Claude | 同じ試行の中で Jev に答える（flow v2 のみ）。履歴と予算は引き継ぐ。計画全体が違うときだけ `replan` を使う |
 | `webhand act OP [TARGET]` | Claude | Jev の代わりに操作を1つ実行する |
 | `webhand observe` | Claude | 現在のページを表示する |
+| `webhand check --expect KIND:ARGS ...` | Claude | 期待を今のページと照合する（読み取り専用、モデルなし）。KIND は `text:S`、`no-text:S`、`field:ラベル=値`、`checked:ラベル=true\|false`、`count:ROLE=N`、`url:/path`、`title:S`。期待ごとに `PASS`/`FAIL`/`INCONCLUSIVE` と観測値の引用を出す。終了コードは 0、6（FAIL あり）、7（FAIL なし、INCONCLUSIVE あり）。ページ全体を見ていないときの否定の結果は `INCONCLUSIVE not_visible` |
 | `webhand finish --status STATUS` | Claude | 独立検証、ログ記録、Chrome の終了 |
 | `webhand learn --name NAME --url URL [--scope project\|user]` | 人 | 操作を記録する |
 | `webhand profile login/list/delete` | 人 | 保存プロファイルを管理する |
