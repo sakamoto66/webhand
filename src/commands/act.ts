@@ -9,7 +9,7 @@ import * as session from "../session.ts";
 import { MutationUncertain, PolicyError, StalePage } from "../types.ts";
 
 import { BUDGET, FAILED, OK, print, STALE, UNCERTAIN } from "./context.ts";
-import { attach, browserView, loggable, requireSession } from "./shared.ts";
+import { attach, browserView, exploreActionsLeft, loggable, recordFindings, requireSession } from "./shared.ts";
 
 /** Why `act` cannot run from the state's last outcome, as the exit code after saying so. null when it can. */
 function rejectAct(state: session.State): number | null {
@@ -20,6 +20,10 @@ function rejectAct(state: session.State): number | null {
   if (state.outcome === agent.UNCERTAIN) {
     print("REJECTED: the last action may have happened. Run: webhand finish --status error");
     return UNCERTAIN;
+  }
+  if (exploreActionsLeft(state) === 0) {
+    print("BUDGET EXHAUSTED for this exploring session. Run findings, then finish --status budget");
+    return BUDGET;
   }
   if (agent.actionsIn(state.history, state.plan.attempt).length >= state.max_actions) {
     print("BUDGET EXHAUSTED for this attempt. Run replan or finish --status budget");
@@ -77,6 +81,7 @@ async function performAct(state: session.State, decision: ReturnType<typeof reso
       onChange: (page) => {
         state.page = page;
         session.save(state);
+        recordFindings(state, browser, recorder);
       },
     });
     if (state.outcome !== agent.ATTEMPT_BUDGET) {
@@ -87,6 +92,7 @@ async function performAct(state: session.State, decision: ReturnType<typeof reso
     if (downloads?.length) {
       print(`DOWNLOADED: ${downloads.map((d) => `${d.name} (${d.bytes} bytes)`).join(", ")} in ${state.download_dir}`);
     }
+    recordFindings(state, browser, recorder);
     print(render(state.page));
     return OK;
   } catch (error) {

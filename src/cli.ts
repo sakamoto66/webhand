@@ -17,6 +17,7 @@ import { commandCheck } from "./commands/check.ts";
 import { commandCheckLast } from "./commands/checklast.ts";
 import { CliExit, getContext, type Hooks, OK, setContext } from "./commands/context.ts";
 import { commandExtract } from "./commands/extract.ts";
+import { commandFindings } from "./commands/findings.ts";
 import { commandFinish } from "./commands/finish.ts";
 import { commandKnowledge } from "./commands/knowledge.ts";
 import { commandLearn } from "./commands/learn.ts";
@@ -128,6 +129,24 @@ function commands(): Record<string, CommandSpec> {
           help: "Refuse actions it can tell may change something: a non-GET form submit, a file, a button outside a form",
         },
         allowControlOption,
+        {
+          name: "explore",
+          type: "boolean",
+          help: "Look for faults in a test environment: refuse requests outside --allow-domain, note console errors, 5xx and dead ends (webhand findings)",
+        },
+        {
+          name: "allow-domain",
+          type: "string",
+          multiple: true,
+          metavar: "HOST",
+          help: "With --explore, a host the session may reach (and its subdomains), such as shop.test or localhost:8080",
+        },
+        {
+          name: "max-total-actions",
+          type: "int",
+          metavar: "N",
+          help: "With --explore, the most actions the whole session may take, across attempts",
+        },
         { name: "service", type: "string", help: "Learned service information to give Jev, such as hotel-site" },
         { name: "runbook", type: "string", help: "A learned procedure, such as hotel/filter" },
         { name: "param", type: "string", multiple: true, metavar: "KEY=VALUE", help: "A runbook parameter" },
@@ -292,6 +311,11 @@ function commands(): Record<string, CommandSpec> {
       positionals: [{ name: "kind", choices: [...KINDS] }],
       run: commandExtract,
     },
+    findings: {
+      help: "Claude: the faults an exploring session noted (candidates, not verdicts) and the steps that led to them",
+      options: [idOption],
+      run: commandFindings,
+    },
     "check-last": {
       help: "Claude: the previous result of each check of a saved check file, from the run logs (read-only)",
       options: [],
@@ -379,7 +403,18 @@ const processIO: IO = {
  * Runs one command and returns its exit code. A CliExit or UsageError is thrown after the output is written,
  * so the caller prints its message and exits with 1 or 2.
  */
-const SESSION_COMMANDS = ["start", "run", "answer", "replan", "act", "observe", "check", "extract", "finish"];
+const SESSION_COMMANDS = [
+  "start",
+  "run",
+  "answer",
+  "replan",
+  "act",
+  "observe",
+  "check",
+  "extract",
+  "findings",
+  "finish",
+];
 
 /** Picks the session a command works on and holds its lock until the command ends. Returns the release function. */
 function takeSession(command: string, args: Args): () => void {

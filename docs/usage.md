@@ -45,6 +45,7 @@ There are five skills.
 | `/webhand` | Get something done on a web page |
 | `/webhand-learn` | Learn how to use a service and write its service information and runbooks |
 | `/webhand-regress` | Re-run saved checks and report what newly broke since the last run |
+| `/webhand-explore` | Look for faults in a test environment: console errors, uncaught errors, 5xx, failed requests and dead ends, as candidates with the steps that led to them |
 | `/webhand-extract` | Read data from a page without changing anything (a table, a list, links), with the count and what could not be read |
 | `/webhand-verify` | Check acceptance criteria on a real page and report PASS / FAIL / INCONCLUSIVE with quoted evidence |
 
@@ -130,6 +131,16 @@ Jev only brings the page to the data (a search, a filter, the next page). `webha
 For a table, `--rows raw` (the default) shows every row and marks a row that is one cell spanning the whole table (a footnote or a section title); `--rows data` leaves those rows out and names them.
 
 The report is a table with the URL, the time, the count, and what could not be read. `webhand extract` ends `COMPLETE`, `PARTIAL` (a missing column, merged cells expanded, hidden rows left out, a frame or canvas it cannot read), `INCONCLUSIVE` (still loading, nothing found) or `COUNT_MISMATCH` (against `--expect-count`). It never fills in a gap.
+
+### `/webhand-explore` — look for faults in a test environment
+
+```text
+/webhand-explore Try abnormal input on the checkout form of http://localhost:3000 (allowed host: localhost:3000)
+```
+
+You give a charter (what to try) and the hosts that may be visited; Claude shows them and asks you to confirm before it starts. The session is started with `start --explore --allow-domain HOST --max-total-actions N`: webhand refuses `profile:NAME`, refuses every request to a host outside the list (links to other sites, third-party scripts), and stops at the action limit for the whole session. If the app needs a login, use `--auth NAME` with a login saved from a **test account** (signed-in pages are sent to Jev); `--file` lets Jev upload a test file. Jev operates; webhand notes console errors, uncaught errors, 5xx responses, failed requests and dead ends, and `webhand findings` lists them with the steps that led to them.
+
+A finding is a candidate, not a verdict. Claude repeats the steps of each one in a new session and reports it as confirmed, not reproduced or not tried. Exploring submits forms in the test system and may create data: use it only where that is acceptable.
 
 ### `/webhand-verify` — check acceptance criteria
 

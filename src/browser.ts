@@ -30,6 +30,7 @@ import {
   TRACK_WINDOWS,
   UNSEEN,
 } from "./browser-scripts.ts";
+import { clip, dedupe, type Finding, hostAllowed, plainUrl } from "./explore.ts";
 import { sleep } from "./format.ts";
 import { home as sessionHome, tabPath } from "./session.ts";
 import { type Action, MutationUncertain, type Page, PolicyError, StalePage } from "./types.ts";
@@ -127,6 +128,8 @@ export interface OpenOptions {
   trackWindows?: boolean;
   /** Where Chrome saves files the page downloads. Absolute; made if missing. Local Chrome only. */
   downloadDir?: string | null;
+  /** Exploring: refuse requests to hosts outside this list, and note what the pages report going wrong. Local Chrome only. */
+  explore?: { allow: string[] } | null;
   /** Fill in what the engine lacks (Obscura: iterable select.selectedOptions) so snapshot.js reads the page as in Chrome. */
   compat?: boolean;
 }
@@ -141,6 +144,9 @@ export class Browser {
   /** Files that appeared in the download directory during the last act, by name. Taken once. */
   private downloaded: { name: string; bytes: number }[] = [];
   private saving: Promise<unknown>[] = [];
+  private found: Finding[] = [];
+  /** Requests this run refused itself: their failure is the refusal, not a finding of its own. */
+  private refused = new WeakSet<object>();
   browser!: PlaywrightBrowser;
   context!: BrowserContext;
   page!: PlaywrightPage;
@@ -180,6 +186,7 @@ export class Browser {
         }
         instance.cdp = await instance.context.newCDPSession(instance.page);
         await instance.allowDownloads();
+        await instance.watchPages(options.explore ?? null);
         await instance.rememberTab();
         return instance;
       }
@@ -195,6 +202,52 @@ export class Browser {
       await instance.close();
       throw error;
     }
+  }
+
+  /**
+   * Exploring: notes what the pages report going wrong (console errors, uncaught errors, 5xx responses, failed
+   * requests) and refuses every request to a host outside the allowed ones, so a link cannot take the run out of the
+   * test environment. Passive: nothing here acts on a page.
+   */
+  private async watchPages(explore: { allow: string[] } | null): Promise<void> {
+    if (!explore) return;
+    const note = (finding: Finding) => this.found.push(finding);
+    const watch = (page: PlaywrightPage) => {
+      page.on("console", (message) => {
+        // A failed resource is reported by its response or request already.
+        if (message.type() === "error" && !/^Failed to load resource/.test(message.text())) {
+          note({ signal: "console_error", url: plainUrl(page.url()), detail: clip(message.text()) });
+        }
+      });
+      page.on("pageerror", (error) => {
+        note({ signal: "pageerror", url: plainUrl(page.url()), detail: clip(error.message) });
+      });
+      page.on("response", (response) => {
+        if (response.status() >= 500) {
+          note({ signal: "http_5xx", url: plainUrl(response.url()), detail: "", status: response.status() });
+        }
+      });
+      page.on("requestfailed", (request) => {
+        const reason = request.failure()?.errorText ?? "";
+        // Cancelled requests are what navigation does; a refusal of ours is reported once, as out_of_scope.
+        if (this.refused.has(request) || /ERR_ABORTED/.test(reason)) return;
+        note({ signal: "request_failed", url: plainUrl(request.url()), detail: clip(reason) });
+      });
+    };
+    for (const page of this.context.pages()) watch(page);
+    this.context.on("page", watch);
+    await this.context.route("**/*", async (route) => {
+      const request = route.request();
+      if (hostAllowed(request.url(), explore.allow)) return route.continue();
+      this.refused.add(request);
+      note({ signal: "out_of_scope", url: plainUrl(request.url()), detail: "" });
+      return route.abort("blockedbyclient");
+    });
+  }
+
+  /** What exploring noted since the last call, once each. */
+  takeFindings(): Finding[] {
+    return dedupe(this.found.splice(0));
   }
 
   /** Saves what the pages download into the download directory. Playwright holds a download until it is saved. */
