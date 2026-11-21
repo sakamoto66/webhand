@@ -21,6 +21,8 @@ export interface Driver extends Reader, RowReader {
   readonly version: string;
   screenshot(): Promise<Buffer>;
   check(): Promise<PageCheck>;
+  /** Read-only evaluation in the page. */
+  evaluate(expression: string, options?: { awaitPromise?: boolean }): Promise<unknown>;
   unseen(): Promise<Record<string, number>>;
   ignoredWindows(): Promise<string[]>;
   storageState(): Promise<StorageState>;

@@ -21,6 +21,9 @@ export const CHECK_FAIL = 6;
 /** `check`: none failed, but at least one could not be judged. */
 export const CHECK_INCONCLUSIVE = 7;
 
+/** `extract`: the data is there but incomplete (a missing column, a part of the page that cannot be read). */
+export const EXTRACT_PARTIAL = 8;
+
 /** What a command needs to stop with a message, on stderr with exit code 1. */
 export class CliExit extends Error {
   override name = "CliExit";

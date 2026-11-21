@@ -38,13 +38,14 @@ Requirements: Node.js 22 or later and Google Chrome (on Linux, or the Windows si
 
 ## Using the skills
 
-There are three skills.
+There are five skills.
 
 | Skill | Purpose |
 | --- | --- |
 | `/webhand` | Get something done on a web page |
 | `/webhand-learn` | Learn how to use a service and write its service information and runbooks |
 | `/webhand-regress` | Re-run saved checks and report what newly broke since the last run |
+| `/webhand-extract` | Read data from a page without changing anything (a table, a list, links), with the count and what could not be read |
 | `/webhand-verify` | Check acceptance criteria on a real page and report PASS / FAIL / INCONCLUSIVE with quoted evidence |
 
 ### Typical flow
@@ -117,6 +118,16 @@ Keep secrets and personal data out of runbooks and service information. Put valu
 ### `/webhand-regress` — repeat saved checks
 
 After `/webhand-verify`, you can save its checks (`.webhand/checks/`, as a `draft` you approve). `/webhand-regress service/name` runs the approved ones again with the same expectations and reports `NEW FAIL`, `STILL FAILING`, `RECOVERED` against the last run. The expectations are fixed in the file and cannot be changed during a run.
+
+### `/webhand-extract` — read data without changing anything
+
+```text
+/webhand-extract From https://example.test/plans, get the plan name and monthly price of every plan
+```
+
+Jev only brings the page to the data (a search, a filter, the next page). `webhand extract` then reads the table, list, links, fields or text from the page itself, so every value is the page's own text and not Claude's transcription. The session is started with `--read-only`: it refuses a submit of a form that is not a plain GET, a file upload, and a button outside any form unless `--allow-control` names it. That is a refusal of what webhand can tell, not a guarantee about every script on the page.
+
+The report is a table with the URL, the time, the count, and what could not be read. `webhand extract` ends `COMPLETE`, `PARTIAL` (a missing column, merged cells expanded, hidden rows left out, a frame or canvas it cannot read), `INCONCLUSIVE` (still loading, nothing found) or `COUNT_MISMATCH` (against `--expect-count`). It never fills in a gap.
 
 ### `/webhand-verify` — check acceptance criteria
 
