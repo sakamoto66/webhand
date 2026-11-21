@@ -44,6 +44,7 @@ There are three skills.
 | --- | --- |
 | `/webhand` | Get something done on a web page |
 | `/webhand-learn` | Learn how to use a service and write its service information and runbooks |
+| `/webhand-regress` | Re-run saved checks and report what newly broke since the last run |
 | `/webhand-verify` | Check acceptance criteria on a real page and report PASS / FAIL / INCONCLUSIVE with quoted evidence |
 
 ### Typical flow
@@ -112,6 +113,10 @@ It writes to one of two places. Claude asks when it is unclear which one you wan
 Keep secrets and personal data out of runbooks and service information. Put values that vary into `params`.
 
 ---
+
+### `/webhand-regress` — repeat saved checks
+
+After `/webhand-verify`, you can save its checks (`.webhand/checks/`, as a `draft` you approve). `/webhand-regress service/name` runs the approved ones again with the same expectations and reports `NEW FAIL`, `STILL FAILING`, `RECOVERED` against the last run. The expectations are fixed in the file and cannot be changed during a run.
 
 ### `/webhand-verify` — check acceptance criteria
 
