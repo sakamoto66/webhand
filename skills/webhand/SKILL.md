@@ -107,6 +107,7 @@ Use `act` only when one operation clearly unblocks Jev, with indices from the la
 
 - `webhand act CLICK 3`
 - `webhand act TYPE_TEXT 2 --text "Lisbon"`
+- `webhand act TYPE_TEXT 2 --text ""`: empty a field. Jev never picks an empty value, so `--value "LABEL="` does not clear it (the run stops with `NEEDS_VALUE`); `observe` then shows the field without a value
 - `webhand act SELECT 4:2`
 - `webhand act SCROLL_DOWN`, `SCROLL_UP`, or `WAIT`
 - `webhand act TAB_2`: switch to tab 2, when the output shows `TABS` and `TAB_n` in `CONTROLS`. A click can open a new tab; the page shown stays on the old one until a switch
