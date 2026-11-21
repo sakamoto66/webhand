@@ -5,6 +5,7 @@ import { basename, join, relative, resolve } from "node:path";
 import * as agent from "../agent.ts";
 import { Browser, type ViewChoice } from "../browser.ts";
 import { browserRunHeaders } from "../engines/cloudflare.ts";
+import { dedupe, type Finding, isDeadEnd, plainUrl } from "../explore.ts";
 import { quote, stamp } from "../format.ts";
 import { Recorder } from "../metrics.ts";
 import { type Driver, RemoteBrowser } from "../remote.ts";
@@ -91,7 +92,7 @@ export function requireSession(): session.State {
 
 /** The session's browser: Chrome by CDP port, or the daemon that holds an engine's page (Lightpanda, Obscura) by socket. Opens url when given. */
 export async function attach(
-  state: { port?: number; socket?: string; cdp?: string; download_dir?: string },
+  state: { port?: number; socket?: string; cdp?: string; download_dir?: string; explore?: { allow: string[] } | null },
   url: string | null,
   view?: ViewChoice | null,
 ): Promise<Driver> {
@@ -108,7 +109,12 @@ export async function attach(
     }
     return remote;
   }
-  return await Browser.open(url, { port: state.port, view, downloadDir: state.download_dir ?? null });
+  return await Browser.open(url, {
+    port: state.port,
+    view,
+    downloadDir: state.download_dir ?? null,
+    explore: state.explore ?? null,
+  });
 }
 
 export async function openPage(
@@ -176,3 +182,29 @@ export function browserView(state: session.State): ViewChoice | null {
 }
 
 export const FLOWS = ["v1", "v2"];
+
+/** Actions left for an exploring session as a whole; null when the session is not exploring. */
+export function exploreActionsLeft(state: session.State): number | null {
+  if (!state.explore) return null;
+  return Math.max(0, state.explore.max_total - agent.executed(state.history).length);
+}
+
+/**
+ * Exploring: writes what the browser noted since the last command, and a dead end if the page offers nothing to do,
+ * to the log as `finding` events, each with the step it followed. Counts and clipped text only.
+ */
+export function recordFindings(state: session.State, browser: Driver, recorder: Recorder): void {
+  if (!state.explore) return;
+  const step = agent.executed(state.history).length;
+  const noted: Finding[] = browser instanceof Browser ? browser.takeFindings() : [];
+  if (isDeadEnd(state.page)) noted.push({ signal: "dead_end", url: plainUrl(state.page.url ?? ""), detail: "" });
+  for (const finding of dedupe(noted)) {
+    recorder.event("finding", {
+      signal: finding.signal,
+      url: finding.url,
+      detail: finding.detail,
+      ...(finding.status ? { status: finding.status } : {}),
+      step,
+    });
+  }
+}

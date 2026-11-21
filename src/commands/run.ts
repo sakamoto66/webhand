@@ -14,16 +14,18 @@ import type { Driver } from "../remote.ts";
 import * as session from "../session.ts";
 import { MutationUncertain, type Policy, PolicyError, StalePage } from "../types.ts";
 
-import { CliExit, deps, FAILED, OK, print, UNCERTAIN } from "./context.ts";
+import { BUDGET, CliExit, deps, FAILED, OK, print, UNCERTAIN } from "./context.ts";
 import { report } from "./report.ts";
 import {
   attach,
   browserView,
+  exploreActionsLeft,
   jevDiagnostic,
   mergeValues,
   openPage,
   parseFiles,
   parseValues,
+  recordFindings,
   requireSession,
 } from "./shared.ts";
 
@@ -161,6 +163,13 @@ async function collectStep(ctx: RunScan): Promise<number | null> {
   return OK;
 }
 
+/** The attempt's action limit; an exploring session also stops at its total, however many attempts it took. */
+function attemptActions(state: session.State): number {
+  const left = exploreActionsLeft(state);
+  if (left === null) return state.max_actions;
+  return Math.min(state.max_actions, agent.actionsIn(state.history, state.plan.attempt).length + left);
+}
+
 /** One attempt of the agent loop, and what the log and the state keep of how it ended. */
 async function runAttempt(ctx: RunScan): Promise<agent.AgentResult> {
   const { state, browser, policy, recorder } = ctx;
@@ -169,7 +178,7 @@ async function runAttempt(ctx: RunScan): Promise<agent.AgentResult> {
     policy,
     state.plan,
     recorder,
-    new Budget(state.max_actions, state.max_decisions),
+    new Budget(attemptActions(state), state.max_decisions),
     {
       history: state.history,
       readOnly: inForce(state),
@@ -183,6 +192,7 @@ async function runAttempt(ctx: RunScan): Promise<agent.AgentResult> {
       onChange: (page) => {
         state.page = page;
         session.save(state);
+        recordFindings(state, browser, recorder);
       },
       onDecision: (count) => {
         state.attempt_decisions = count;
@@ -210,6 +220,10 @@ async function runAttempt(ctx: RunScan): Promise<agent.AgentResult> {
 
 export async function commandRun(args: Args): Promise<number> {
   const state = requireSession();
+  if (exploreActionsLeft(state) === 0) {
+    print("BUDGET EXHAUSTED for this exploring session. Run findings, then finish --status budget");
+    return BUDGET;
+  }
   const rejected = rejectRun(args, state) ?? (await acceptRunInputs(args, state));
   if (rejected !== null) return rejected;
   state.outcome = null;
@@ -253,6 +267,7 @@ export async function commandRun(args: Args): Promise<number> {
     if (stopped !== null) return stopped;
     result = await runAttempt(ctx);
   } finally {
+    recordFindings(state, browser, recorder);
     await browser.close();
     recorder.close();
     await policy.close?.();

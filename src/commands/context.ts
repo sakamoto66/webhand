@@ -24,6 +24,9 @@ export const CHECK_INCONCLUSIVE = 7;
 /** `extract`: the data is there but incomplete (a missing column, a part of the page that cannot be read). */
 export const EXTRACT_PARTIAL = 8;
 
+/** `findings`: exploring noted at least one candidate. A candidate is not a verdict. */
+export const FINDINGS = 9;
+
 /** What a command needs to stop with a message, on stderr with exit code 1. */
 export class CliExit extends Error {
   override name = "CliExit";

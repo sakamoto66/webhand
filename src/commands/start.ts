@@ -4,6 +4,7 @@ import type { Args } from "../args.ts";
 import * as auth from "../auth.ts";
 import { browserUrl, chooseChrome as pickChrome } from "../engines/chrome.ts";
 import { chooseEngine, engineFor, hostName } from "../engines/index.ts";
+import { ExploreError, hostAllowed, parseAllow } from "../explore.ts";
 import { describeError, quote } from "../format.ts";
 import { gitState, maskUrls, pageEvent, Recorder, safeUrl } from "../metrics.ts";
 import { describePlan, headline } from "../output.ts";
@@ -55,6 +56,7 @@ function resolveTarget(args: Args): StartTarget {
     const engine = chooseEngine(args.engine, { headed: args.headed, profile, chrome: args.chrome });
     // --chrome says where Chrome runs; the other engines have no such choice.
     const [chrome, note] = engine === "chrome" ? pickChrome(args.chrome) : ["linux", null];
+    checkExplore(args, profile, engine, chrome);
     if ((args.download_dir || args.file.length) && !["chrome", "headless-shell"].includes(engine)) {
       throw new CliExit("--file and --download-dir need a local Chrome (--engine chrome or headless-shell)");
     }
@@ -66,6 +68,45 @@ function resolveTarget(args: Args): StartTarget {
     if (error instanceof runbook.RunbookError || error instanceof session.SessionError) {
       throw new CliExit(error.message);
     }
+    throw error;
+  }
+}
+
+/**
+ * Exploring stays in a test environment: a new session on a local Chrome, with the hosts it may visit named, and a
+ * limit on actions in all. A saved profile (profile:NAME) is never used; a login saved by `auth save` (--auth) may be,
+ * for a test account, and a file may be attached.
+ */
+function checkExplore(args: Args, profile: string | null, engine: string, chrome: string): void {
+  if (!args.explore) {
+    if (args.allow_domain.length || args.max_total_actions != null) {
+      throw new CliExit("--allow-domain and --max-total-actions are for --explore");
+    }
+    return;
+  }
+  if (profile) {
+    throw new CliExit(
+      "--explore does not use a saved profile (profile:NAME). Start from a test account's login: --auth NAME",
+    );
+  }
+  if (args.read_only) throw new CliExit("--explore and --read-only are different postures: use one");
+  if (!["chrome", "headless-shell"].includes(engine) || chrome !== "linux") {
+    throw new CliExit(
+      "--explore needs a local Chrome on this machine (--engine chrome or headless-shell, --chrome linux)",
+    );
+  }
+  if (args.max_total_actions == null || args.max_total_actions < 1) {
+    throw new CliExit("--explore needs --max-total-actions N: how many actions the whole session may take");
+  }
+  exploreRule(args);
+}
+
+/** The session's explore rule from the arguments. Checked already, except the hosts. */
+function exploreRule(args: Args): { allow: string[]; max_total: number } {
+  try {
+    return { allow: parseAllow(args.allow_domain), max_total: args.max_total_actions };
+  } catch (error) {
+    if (error instanceof ExploreError) throw new CliExit(error.message);
     throw error;
   }
 }
@@ -98,6 +139,9 @@ function planStart(args: Args, target: StartTarget): { plan: Plan; goal: string;
     // Runbook parameters are Claude's values too, unless Claude labelled them itself.
     const params = Object.entries(runbook.parseValues(args.param)).map(([label, value]) => ({ label, value }));
     values = mergeValues(params, values);
+  }
+  if (args.explore && !hostAllowed(url, exploreRule(args).allow)) {
+    throw new CliExit("The start URL is outside --allow-domain: exploring only visits the hosts it was given");
   }
   if (args.allow_control.length && !args.read_only) throw new CliExit("--allow-control needs --read-only");
   if (args.read_only && steps.some((step) => step.actor === "human")) {
@@ -149,6 +193,7 @@ function initialState(
     start_url: browserUrl(planned.url, chrome),
     ...(args.download_dir ? { download_dir: resolve(args.download_dir) } : {}),
     ...(args.read_only ? { read_only: { allow: args.allow_control } } : {}),
+    ...(args.explore ? { explore: exploreRule(args) } : {}),
     plan: planned.plan,
     runbook: book ? { name: book.name, status: book.status, digest: book.digest, scope: book.scope } : null,
     service: serviceName,
@@ -216,6 +261,7 @@ async function openStartPage(
       ...(plan.collect ? { collect: plan.collect } : {}),
       ...(plan.more ? { more: plan.more } : {}),
       ...(args.read_only ? { read_only: { allow: args.allow_control } } : {}),
+      ...(state.explore ? { explore: state.explore } : {}),
       source: book && !args.step.length ? "runbook" : "claude",
     });
     recorder.event("page", pageEvent(state.page, 1));
@@ -257,6 +303,11 @@ function printStarted(args: Args, target: StartTarget, plan: Plan, state: sessio
     const allow: string[] = state.read_only.allow;
     print(
       `READ-ONLY: actions that submit a non-GET form, attach a file, or press a button outside any form are refused${allow.length ? ` (allowed buttons: ${allow.map((a) => quote(a)).join(", ")})` : ""}. Nothing else is guaranteed`,
+    );
+  }
+  if (state.explore) {
+    print(
+      `EXPLORING: requests to hosts other than ${state.explore.allow.join(", ")} are refused. At most ${state.explore.max_total} actions in all. Anomalies are candidates, not verdicts: after each run or act, webhand findings`,
     );
   }
   print("NEXT: webhand run");
