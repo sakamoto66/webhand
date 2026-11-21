@@ -52,7 +52,7 @@ webhand start --goal "..." --url "..." --step "..." --value "LABEL=VALUE" --serv
 webhand run
 ```
 
-Write the GOAL as the **operation only**, and end it at the moment the result is shown, in neutral words: "Submit the form, and stop when the page shows the outcome of the submission, whatever it says." Do not put the expected result in the GOAL or in a stopping condition ("stop when 予約を完了しました is shown"): Jev would then work to make the page say it, and a missing result would look like a stuck operation. Put the operation's values in `--value`, and each requirement of the operation in a step. For a number field (`spinbutton`, such as a quantity), also write the digits in the step that fills it ("Type 0 into the 数量 field"): Jev picks no listed value for a number field otherwise, and the check ends `INCONCLUSIVE`. Use `--read KIND` when the expected result is in a part of a long page that is not visible.
+Write the GOAL as the **operation only**, and end it at the moment the result is shown, in neutral words: "Submit the form, and stop when the page shows the outcome of the submission, whatever it says." Do not put the expected result in the GOAL or in a stopping condition ("stop when Booking complete is shown"): Jev would then work to make the page say it, and a missing result would look like a stuck operation. Put the operation's values in `--value`, and each requirement of the operation in a step. For a number field (`spinbutton`, such as a quantity), also write the digits in the step that fills it ("Type 0 into the Quantity field"): Jev picks no listed value for a number field otherwise, and the check ends `INCONCLUSIVE`. Use `--read KIND` when the expected result is in a part of a long page that is not visible.
 
 Handle the `run` outcomes as in `/webhand`. `NEEDS_VALUE` and `NEEDS_HUMAN` are answered as there. For `STUCK`, `BLOCKED` and `JEV_FAILED`, the operation did not reach the state the check needs: `answer` or `replan` within the attempt limit, and `INCONCLUSIVE` when it is used up.
 
@@ -67,7 +67,7 @@ After `GOAL_REPORTED`:
 
 ## 6. Finish each check
 
-End each check with exactly one `webhand finish --status ... --reason "..."`. Use `done` when the run reached the point of observation, whatever the verdict (`done` is not a pass): put `C3 PASS: "予約を完了しました" shown` or `C3 FAIL: expected total 15,000, page shows 12,000` in `--reason`. Use `blocked`, `budget` or `error` when the check could not be observed.
+End each check with exactly one `webhand finish --status ... --reason "..."`. Use `done` when the run reached the point of observation, whatever the verdict (`done` is not a pass): put `C3 PASS: "Booking complete" shown` or `C3 FAIL: expected total 15,000, page shows 12,000` in `--reason`. Use `blocked`, `budget` or `error` when the check could not be observed.
 
 ## 7. Report
 
