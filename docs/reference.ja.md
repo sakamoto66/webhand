@@ -170,6 +170,8 @@ networkingMode=mirrored
 | `webhand act OP [TARGET]` | Claude | Jev の代わりに操作を1つ実行する |
 | `webhand observe` | Claude | 現在のページを表示する |
 | `webhand check --expect KIND:ARGS ...` | Claude | 期待を今のページと照合する（読み取り専用、モデルなし）。KIND は `text:S`、`no-text:S`、`field:ラベル=値`、`checked:ラベル=true\|false`、`count:ROLE=N`、`url:/path`、`title:S`。期待ごとに `PASS`/`FAIL`/`INCONCLUSIVE` と観測値の引用を出す。終了コードは 0、6（FAIL あり）、7（FAIL なし、INCONCLUSIVE あり）。ページ全体を見ていないときの否定の結果は `INCONCLUSIVE not_visible`。`--read` はその呼び出しだけページ全体の本文を読む（`replan` 不要、試行を使わない） |
+| `webhand check --saved service/name:ID [--param K=V] [--read] [--production] [--allow-draft]` | Claude | 保存した確認（`.webhand/checks/<service>/<name>.toml`）の期待で今のページを照合する。期待はここでは変えられない。`draft` は（`--allow-draft` がなければ）拒否し、`--production` では `env` が `read-only` でない確認を拒否する。実行ログに `check_run`（確認、id、digest、判定）を残す。`MANUAL` は Claude が読んで判定する |
+| `webhand check-last service/name` | Claude | 保存した確認ごとの直前の判定と digest を、実行ログから出す（読み取り専用）。確認の内容が変わっていれば、そう言う |
 | `webhand finish --status STATUS` | Claude | 独立検証、ログ記録、Chrome の終了 |
 | `webhand learn --name NAME --url URL [--scope project\|user]` | 人 | 操作を記録する |
 | `webhand profile login/list/delete` | 人 | 保存プロファイルを管理する |
@@ -199,6 +201,7 @@ v2 が記録するのは、`~/.webhand/knowledge/<host>.json` に置く、ペー
 | ファイル | 内容 | 使われ方 |
 | --- | --- | --- |
 | `runbooks/<service>/service.toml` | サービスの説明、ログインの要否、ページと領域の一覧、Jev 向けの事実 | `catalog` で Claude が読み、`--service` で Jev に渡す |
+| `checks/<service>/<name>.toml` | 保存した受け入れ確認（`status` は draft/approved、`env` は test/read-only、params、確認ごとの steps・`expect`・`manual`・`depends_on`）。実行では書き換えない。[design-regression.md](design-regression.md) |
 | `runbooks/<service>/<name>.toml` | 手順書（goal、params、steps、hints、done_when、focus、skip） | Claude の計画の下敷き。手順と hints は Jev にも渡す |
 
 どちらも、プロジェクトの `.webhand/` かユーザーの `~/.webhand/` に置きます（「保存場所」）。`learn` は書き込み先を `WRITE THE RUNBOOK TO ...` として表示します。`start_url` にローカルファイルの相対パスを書くと、その `.webhand/` を含むディレクトリからのパスになります。

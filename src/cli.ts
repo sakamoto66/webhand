@@ -14,6 +14,7 @@ import { commandAnswer } from "./commands/answer.ts";
 import { commandAuth } from "./commands/auth.ts";
 import { commandCatalog } from "./commands/catalog.ts";
 import { commandCheck } from "./commands/check.ts";
+import { commandCheckLast } from "./commands/checklast.ts";
 import { CliExit, getContext, type Hooks, OK, setContext } from "./commands/context.ts";
 import { commandFinish } from "./commands/finish.ts";
 import { commandKnowledge } from "./commands/knowledge.ts";
@@ -219,10 +220,18 @@ function commands(): Record<string, CommandSpec> {
           name: "expect",
           type: "string",
           multiple: true,
-          required: true,
           metavar: "KIND:ARGS",
           help: "text:S, no-text:S, field:LABEL=V, checked:LABEL=true|false, count:ROLE=N, url:/path, title:S",
         },
+        {
+          name: "saved",
+          type: "string",
+          metavar: "service/name:ID",
+          help: "Use the expectations of a saved check (.webhand/checks) instead of --expect; they cannot be edited here",
+        },
+        { name: "param", type: "string", multiple: true, metavar: "KEY=VALUE", help: "A saved check's parameter" },
+        { name: "allow-draft", type: "boolean", help: "Trial a saved check no person has approved yet" },
+        { name: "production", type: "boolean", help: "The page is production: a saved check must be env=read-only" },
         {
           name: "read",
           type: "boolean",
@@ -230,6 +239,12 @@ function commands(): Record<string, CommandSpec> {
         },
       ],
       run: commandCheck,
+    },
+    "check-last": {
+      help: "Claude: the previous result of each check of a saved check file, from the run logs (read-only)",
+      options: [],
+      positionals: [{ name: "name" }],
+      run: commandCheckLast,
     },
     finish: {
       help: "Verify, log, and close Chrome",

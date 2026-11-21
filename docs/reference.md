@@ -170,6 +170,8 @@ If the CLI is not installed globally, read `webhand` in the table below as `npx 
 | `webhand act OP [TARGET]` | Claude | Performs a single action in Jev's place |
 | `webhand observe` | Claude | Shows the current page |
 | `webhand check --expect KIND:ARGS ...` | Claude | Compares expectations with the page as it is now (read-only, no model). Kinds: `text:S`, `no-text:S`, `field:LABEL=V`, `checked:LABEL=true\|false`, `count:ROLE=N`, `url:/path`, `title:S`. Prints `PASS`/`FAIL`/`INCONCLUSIVE` per expectation with the quoted observation; exit 0, 6 (any FAIL), 7 (no FAIL, some INCONCLUSIVE). A negative result is `INCONCLUSIVE not_visible` unless the whole page was seen; `--read` reads the whole page's text for this call only (no `replan`, no attempt used) |
+| `webhand check --saved service/name:ID [--param K=V] [--read] [--production] [--allow-draft]` | Claude | Compares the page with the expectations of a saved check (`.webhand/checks/<service>/<name>.toml`); they cannot be edited here. Refuses a `draft` (unless `--allow-draft`) and, with `--production`, a check whose `env` is not `read-only`. Records `check_run` (check, id, digest, verdict) in the run log. `MANUAL` items are printed for Claude to judge |
+| `webhand check-last service/name` | Claude | The latest recorded verdict and digest of each check of a saved check file, from the run logs (read-only); says when the check changed since |
 | `webhand finish --status STATUS` | Claude | Runs independent verification, writes the log, and closes Chrome |
 | `webhand learn --name NAME --url URL [--scope project\|user]` | Person | Records a demonstration |
 | `webhand profile login/list/delete` | Person | Manages saved profiles |
@@ -199,6 +201,7 @@ From a human demonstration, the service's source code, or the log of an earlier 
 | File | Contents | How it is used |
 | --- | --- | --- |
 | `runbooks/<service>/service.toml` | Service description, whether login is required, pages and their regions, facts for Jev | Claude reads it through `catalog`; passed to Jev with `--service` |
+| `checks/<service>/<name>.toml` | Saved acceptance checks (`status` draft/approved, `env` test/read-only, params, per check: steps, `expect`, `manual`, `depends_on`). Never rewritten by a run; see [design-regression.md](design-regression.md) |
 | `runbooks/<service>/<name>.toml` | Runbook (goal, params, steps, hints, done_when, focus, skip) | The basis for Claude's plan; steps and hints are also passed to Jev |
 
 Both go in the project's `.webhand/` or the user's `~/.webhand/` (see [Where things are stored](#where-things-are-stored)). `learn` prints the destination as `WRITE THE RUNBOOK TO ...`. A relative local-file path in `start_url` is resolved from the directory that contains that `.webhand/`.

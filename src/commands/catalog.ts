@@ -1,4 +1,5 @@
 import type { Args } from "../args.ts";
+import * as checkfile from "../checkfile.ts";
 import { listProfiles } from "../engines/chrome.ts";
 import { quote, show } from "../format.ts";
 import * as runbook from "../runbook.ts";
@@ -48,6 +49,23 @@ export async function commandCatalog(args: Args): Promise<number> {
       for (const key of ["focus", "skip"] as const) {
         if (procedure[key]?.length) print(`    ${key}: ${procedure[key].join(", ")}`);
       }
+    }
+  }
+  for (const entry of checkfile.catalog()) {
+    if (!entry.file) {
+      print(`CHECKS ${entry.name} UNUSABLE: ${entry.error}`);
+      continue;
+    }
+    const file = entry.file;
+    print(`CHECKS ${file.name} [${file.status}] env=${file.env} (${file.scope}) digest ${file.digest}`);
+    print(`  start_url: ${file.start_url}${file.runbook ? `  runbook: ${file.runbook}` : ""}`);
+    for (const [key, description] of Object.entries(file.params)) print(`  param ${key}: ${description}`);
+    for (const check of file.checks) {
+      const needs = check.depends_on.length ? ` after ${check.depends_on.join(",")}` : "";
+      print(`  ${check.id}${needs}: ${check.title} (${check.expect.length} expect, ${check.manual.length} manual)`);
+      if (check.given) print(`    given: ${check.given}`);
+      for (const step of check.steps) print(`    step: ${step}`);
+      if (check.stop) print(`    stop: ${check.stop}`);
     }
   }
   const [chrome, note] = chooseChrome(args.chrome);

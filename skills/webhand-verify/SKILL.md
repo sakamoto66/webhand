@@ -84,3 +84,7 @@ Report in one table, then the overall result:
 ## Safety
 
 Do not enter credentials, make purchases or send messages unless the user explicitly asked for that in this conversation. Report input values by their label, never by their value.
+
+## 8. Save the checks (only when asked or agreed)
+
+After the report, offer once to save the checks that have an `expect` in the `webhand check` syntax, so `/webhand-regress` can repeat them. Write `.webhand/checks/<service>/<name>.toml` (or `~/.webhand/checks/...` for the user): `service`, `name`, `status = "draft"`, `env` (`test`, or `read-only` only if no step changes anything), `start_url`, `[params.X]`, and per check `id`, `title`, `given`, `steps`, `stop`, `expect`, `manual`, `depends_on`. Copy the expectations **as you wrote them before the operation**, never rebuilt from what the page showed. Put origins, IDs and any value that could identify a person in `[params]`; never write credentials. Show the file to the user and ask them to approve it: only then change `status` to `approved`. `webhand catalog` shows whether the file is usable.
