@@ -9,7 +9,7 @@
 
 import { type Candidate, candidates, type LoadMore, NONE, type Reader } from "./compare.ts";
 import type { Recorder } from "./metrics.ts";
-import { type ModelCall, type Page, type Plan, PolicyError, StalePage } from "./types.ts";
+import { type Action, type ModelCall, type Page, type Plan, PolicyError, StalePage } from "./types.ts";
 
 const SETTLE_MS = 3000;
 const SETTLE_POLL_MS = 250;
@@ -47,6 +47,8 @@ export function loadMore(
   control: string,
   recorder: Recorder,
   attempt: number,
+  /** A read-only session: why this action may not be pressed, or null. */
+  refuse: ((action: Action) => string | null) | null = null,
 ): LoadMore {
   return async (page) => {
     const items = await candidates(browser, page);
@@ -59,6 +61,11 @@ export function loadMore(
       // How many elements were offered tells "no such control in view" (0) from "Jev found none of them" (>0).
       recorder.event("more", { attempt, url: page.url, pressed: null, offered: items.length });
       return null;
+    }
+    const refused = refuse?.(chosen.action) ?? null;
+    if (refused) {
+      recorder.event("read_only_refused", { attempt, kind: chosen.action.kind, target: chosen.action.label });
+      throw new PolicyError(`read-only: ${refused}; nothing was pressed.`);
     }
     await browser.act(chosen.action, page);
     const next = await changed(browser, page);

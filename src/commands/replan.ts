@@ -54,6 +54,10 @@ function applyReplanPlan(args: Args, state: session.State): void {
   plan.compared = null; // Each attempt compares again from the top.
   if (args.collect) plan.collect = switched(args.collect);
   plan.collected = null; // and collects again.
+  if (args.allow_control.length) {
+    if (!state.read_only) throw new ReplanRejected("--allow-control needs a read-only session (start --read-only)");
+    state.read_only.allow = [...new Set([...state.read_only.allow, ...args.allow_control])];
+  }
   if (args.more) plan.more = switched(args.more);
   if (plan.compare && plan.collect) {
     throw new ReplanRejected("use --compare or --collect, not both (turn one off with none)");

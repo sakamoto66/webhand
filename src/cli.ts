@@ -87,6 +87,13 @@ function commands(): Record<string, CommandSpec> {
     metavar: "CONDITION",
     help: "First scroll through the whole list and collect every item that meets this, then stop; none clears it",
   };
+  const allowControlOption: OptionSpec = {
+    name: "allow-control",
+    type: "string",
+    multiple: true,
+    metavar: "NAME",
+    help: "With --read-only, a button outside a form that may be pressed (its name as the page shows it). Needs a person's approval",
+  };
   const moreOption: OptionSpec = {
     name: "more",
     type: "string",
@@ -115,6 +122,12 @@ function commands(): Record<string, CommandSpec> {
           help: "A file Jev may upload (under the current directory)",
         },
         { name: "download-dir", type: "string", help: "Save files the page downloads here (local Chrome only)" },
+        {
+          name: "read-only",
+          type: "boolean",
+          help: "Refuse actions it can tell may change something: a non-GET form submit, a file, a button outside a form",
+        },
+        allowControlOption,
         { name: "service", type: "string", help: "Learned service information to give Jev, such as hotel-site" },
         { name: "runbook", type: "string", help: "A learned procedure, such as hotel/filter" },
         { name: "param", type: "string", multiple: true, metavar: "KEY=VALUE", help: "A runbook parameter" },
@@ -200,6 +213,7 @@ function commands(): Record<string, CommandSpec> {
         compareOption,
         collectOption,
         moreOption,
+        allowControlOption,
       ],
       run: commandReplan,
     },

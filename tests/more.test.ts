@@ -155,3 +155,21 @@ test("asked only at the bottom of the page, the control above the small print is
   expect(chooser.asked).toBe(1);
   expect(collected).toMatchObject({ matched: 1, pages: 0, stopped: "bottom" });
 });
+
+test("read-only: the --more control is pressed only when the refusal lets it, and a refusal presses nothing", async () => {
+  const { recorder } = await open("collect_button");
+  const b = browser as Browser;
+  await b.evaluate("window.scrollTo(0, document.body.scrollHeight)");
+  const page = await b.observe();
+  const rows = () => b.evaluate("document.querySelectorAll('tbody tr').length");
+  const before = await rows();
+  const deny = (action: Action) => (action.label === "Show more plans" ? "a button outside any form" : null);
+  await expect(loadMore(b, new Control(), plan("g"), "Show more plans", recorder, 1, deny)(page)).rejects.toThrow(
+    /read-only: a button outside any form; nothing was pressed/,
+  );
+  expect(await rows()).toBe(before); // nothing was pressed, nothing was loaded
+  const allowed = await loadMore(b, new Control(), plan("g"), "Show more plans", recorder, 1, () => null)(page);
+  expect(allowed).not.toBeNull();
+  expect((allowed as Page).text).not.toBe(page.text); // it was pressed and the page showed more
+  recorder.close();
+});
