@@ -85,7 +85,7 @@ function matchingLine(page: Page, needle: string): string {
 const notVisible = (what: string): Outcome => ({
   verdict: "INCONCLUSIVE",
   reason: "not_visible",
-  evidence: `${what} not seen, and part of the page was not observed; use replan --read or --whole`,
+  evidence: `${what} not seen, and part of the page was not observed; run check again with --read`,
 });
 
 export function evaluate(page: Page, item: Expectation): Outcome {

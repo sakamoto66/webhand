@@ -124,3 +124,4 @@ RESULT: 1 PASS, 1 FAIL, 1 INCONCLUSIVE
 - 理由コードは `not_visible`、`not_found`、`ambiguous` の 3 つ。password 欄は観測されない要素（snapshot が除外）なので `not_found` になり、値は読まない。`stale` は 1 回の観測で照合するため不要。
 - `--within` は region の本文を持たないため入れていない。
 - `field` / `checked` は観測済みの入力要素だけが対象。画面上の文章として出る値（合計など）は `text` で照合する。
+- `--read`（追加）: r54 で、`not_visible` のあと `replan --read` で読むと試行を 1 回使い、上限に達して INCONCLUSIVE になった。`check --read` はその呼び出しだけページ全体の本文を読み、セッションの view も試行も変えない。

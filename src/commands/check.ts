@@ -19,7 +19,7 @@ export async function commandCheck(args: Args): Promise<number> {
     throw error;
   }
   const state = requireSession();
-  await openPage(state);
+  await openPage(state, null, false, args.read ? ["text"] : []);
   const page = state.page;
   const outcomes: Outcome[] = items.map((item) => evaluate(page, item));
   print(`CHECK ${items.length} expectations on ${page.url}`);

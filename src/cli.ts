@@ -223,6 +223,11 @@ function commands(): Record<string, CommandSpec> {
           metavar: "KIND:ARGS",
           help: "text:S, no-text:S, field:LABEL=V, checked:LABEL=true|false, count:ROLE=N, url:/path, title:S",
         },
+        {
+          name: "read",
+          type: "boolean",
+          help: "Read the text of the whole page beyond the viewport for this check only (no replan, no attempt used)",
+        },
       ],
       run: commandCheck,
     },

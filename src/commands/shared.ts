@@ -111,8 +111,19 @@ export async function attach(
   return await Browser.open(url, { port: state.port, view, downloadDir: state.download_dir ?? null });
 }
 
-export async function openPage(state: session.State, url: string | null = null, restart = false): Promise<void> {
-  const browser = await attach(state, url, browserView(state));
+export async function openPage(
+  state: session.State,
+  url: string | null = null,
+  restart = false,
+  read: string[] = [],
+): Promise<void> {
+  const view = browserView(state);
+  // `read` is for this observation only: the session's saved view is not changed.
+  const browser = await attach(
+    state,
+    url,
+    read.length ? { ...(view ?? {}), read: [...(view?.read ?? []), ...read] } : view,
+  );
   try {
     state.page = await browser.observe();
     if (restart && process.env.WEBHAND_SCREENSHOTS === "1") {
