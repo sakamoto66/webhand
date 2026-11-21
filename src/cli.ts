@@ -13,6 +13,7 @@ import { commandAct } from "./commands/act.ts";
 import { commandAnswer } from "./commands/answer.ts";
 import { commandAuth } from "./commands/auth.ts";
 import { commandCatalog } from "./commands/catalog.ts";
+import { commandCheck } from "./commands/check.ts";
 import { CliExit, getContext, type Hooks, OK, setContext } from "./commands/context.ts";
 import { commandFinish } from "./commands/finish.ts";
 import { commandKnowledge } from "./commands/knowledge.ts";
@@ -210,6 +211,26 @@ function commands(): Record<string, CommandSpec> {
       run: commandAct,
     },
     observe: { help: "Print the current page", options: [idOption], run: commandObserve },
+    check: {
+      help: "Claude: compare expectations with the page as it is now (read-only; evidence, not the verdict)",
+      options: [
+        idOption,
+        {
+          name: "expect",
+          type: "string",
+          multiple: true,
+          required: true,
+          metavar: "KIND:ARGS",
+          help: "text:S, no-text:S, field:LABEL=V, checked:LABEL=true|false, count:ROLE=N, url:/path, title:S",
+        },
+        {
+          name: "read",
+          type: "boolean",
+          help: "Read the text of the whole page beyond the viewport for this check only (no replan, no attempt used)",
+        },
+      ],
+      run: commandCheck,
+    },
     finish: {
       help: "Verify, log, and close Chrome",
       options: [
@@ -291,7 +312,7 @@ const processIO: IO = {
  * Runs one command and returns its exit code. A CliExit or UsageError is thrown after the output is written,
  * so the caller prints its message and exits with 1 or 2.
  */
-const SESSION_COMMANDS = ["start", "run", "answer", "replan", "act", "observe", "finish"];
+const SESSION_COMMANDS = ["start", "run", "answer", "replan", "act", "observe", "check", "finish"];
 
 /** Picks the session a command works on and holds its lock until the command ends. Returns the release function. */
 function takeSession(command: string, args: Args): () => void {

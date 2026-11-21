@@ -169,6 +169,7 @@ If the CLI is not installed globally, read `webhand` in the table below as `npx 
 | `webhand answer --note N [--value L=V] [--url URL]` | Claude | Answers Jev in the same attempt (flow v2 only): the history and the budget are kept. Use `replan` only when the whole plan is wrong |
 | `webhand act OP [TARGET]` | Claude | Performs a single action in Jev's place |
 | `webhand observe` | Claude | Shows the current page |
+| `webhand check --expect KIND:ARGS ...` | Claude | Compares expectations with the page as it is now (read-only, no model). Kinds: `text:S`, `no-text:S`, `field:LABEL=V`, `checked:LABEL=true\|false`, `count:ROLE=N`, `url:/path`, `title:S`. Prints `PASS`/`FAIL`/`INCONCLUSIVE` per expectation with the quoted observation; exit 0, 6 (any FAIL), 7 (no FAIL, some INCONCLUSIVE). A negative result is `INCONCLUSIVE not_visible` unless the whole page was seen; `--read` reads the whole page's text for this call only (no `replan`, no attempt used) |
 | `webhand finish --status STATUS` | Claude | Runs independent verification, writes the log, and closes Chrome |
 | `webhand learn --name NAME --url URL [--scope project\|user]` | Person | Records a demonstration |
 | `webhand profile login/list/delete` | Person | Manages saved profiles |
