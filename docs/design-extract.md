@@ -1,6 +1,6 @@
 # 設計: 取得する（`webhand-extract`、`webhand extract`、`--read-only`）
 
-状態: 仕様案。実装前。目的別スキルの第3弾（`docs/design-purpose-skills.md`）。作業する・検証するは実装済み。
+状態: 実装済み（`feat/webhand-extract`）。実装での変更点は末尾の「実装での決定」。目的別スキルの第3弾（`docs/design-purpose-skills.md`）。作業する・検証するは実装済み。
 
 ## 目的
 
@@ -61,7 +61,7 @@ ROWS: 2   NOT_VISIBLE: 0   MISSING_COLUMNS: none
 RESULT: COMPLETE
 ```
 
-- 結果は `COMPLETE`、`PARTIAL`（`not_visible` や `missing_column` がある）、`INCONCLUSIVE`（`stale` など）。終了コードは 0、8、7 とする（`check` の 6、7 に続けて割り当てる。実装時に既存と衝突しないか確認する）。
+- 結果は `COMPLETE`、`PARTIAL`（`not_visible` や `missing_column` がある）、`INCONCLUSIVE`（`stale` など）、`COUNT_MISMATCH`。終了コードは 0、8、7、6（`check` の 6、7 と同じ意味で、`PARTIAL` だけ 8 を足す）。
 - 値は表記を変えず、ページの文字列のまま出す（`1,980` を `1980` に直さない）。正規化が要るなら Claude が後段で行い、そのことを報告に書く。
 - `extract` の実行ごとに `extract` イベントをセッションログへ追記する（KIND、件数、`not_visible`、取得元。値そのものは含めない。password 値と入力値は含めない）。
 
@@ -80,7 +80,7 @@ webhand start --read-only --goal "..." --url "..." [--allow-control "NAME" ...]
 | `TYPE_TEXT` 検索欄、`SELECT` 絞り込み | 許可（GET の検索・絞り込みフォームに属する欄、またはフォームに属さない欄） |
 | `CLICK` で、POST などの非 GET フォーム内の送信ボタン | 拒否 |
 | `CLICK` フォームに属さないボタン | 既定は拒否。`--allow-control "NAME"` で Claude が名前を挙げたものだけ許可（「もっと見る」など）。`--more` で名指しした制御は自動で許可 |
-| password 欄への入力、ファイルの添付 | 拒否 |
+| ファイルの添付 | 拒否 |
 | ログイン（`[person]` を含む手順） | 拒否。ログインが要るなら `--auth` / `profile:NAME` で入った状態から始める |
 
 - 許可名は Claude が書き、`start` の出力に表示する。ユーザーは `/webhand-extract` の最初の確認で見る。名前だけで安全とは言えないので、許可した制御の名前は報告にも書く。
@@ -119,6 +119,16 @@ webhand start --read-only --goal "..." --url "..." [--allow-control "NAME" ...]
 ## 未解決
 
 - `--read-only` の分類をどこまで細かくするか。名前に頼る方法（「削除」「購入」を含むボタンを拒否）は言語で崩れるので採らない。フォームの method と `--allow-control` に絞った。これで「もっと見る」が JS ボタンのとき、毎回 Claude が名前を書く手間が許容できるかは実験で見る。
-- 終了コードの割り当て（`check` の 6、7 との衝突）。
 - 無限スクロールや仮想化された表で、`extract` が見える範囲しか返せないとき、どこまでを CLI が集め、どこからを `--collect` に任せるか。
-- 実装を `extract` と `--read-only` の1つの PR にするか、2つに分けるか。変数を分けるため、2つに分けるのを推奨する。
+
+## 実装での決定
+
+- **1つの PR**: `extract` と `--read-only` を1つの PR にした（ユーザーの判断）。検証の実験は、変数を分けるため別々に行う。
+- **終了コード**: `COMPLETE` 0、`COUNT_MISMATCH` 6、`INCONCLUSIVE` 7、`PARTIAL` 8。`check` の 6、7 と同じ向き（失敗、判定不能）。
+- **password 欄**: スナップショットは password 欄を操作の候補に出さない（役割がない）ため、`--read-only` の分類に password は要らない。`extract fields` は password を読まず、読まなかったと注記する。
+- **スナップショット**: 各操作に、`--read-only` が拒否すべきものだけ `change`（`form`: GET 以外のフォームの送信、`control`: フォームの外のボタン）を付ける。それ以外には付かないので、既存の出力と golden は変わらない。
+- **`--allow-control` と `--more`**: `--more` で名指しした制御は自動で許可する（`replan --more` で変えても追随する）。
+- **`extract` の読み方**: スナップショットの read layer とは別のページスクリプト（`assets/extract.js`）。セルを切り詰めず、結合セルを展開し、非表示の行を数えて注記する。ページ全体の DOM を1回で読むので、画面外の行も入る。読み込み前の行（無限スクロール、「もっと見る」の先）は読めないので、先に `--more` / `--collect` で到達する。
+- **`--within`**: 領域の名前（`main`、`nav`、`header`、`footer`、`aside`、`form`、`dialog`、`search`、`table`）。ない領域は `INCONCLUSIVE`。
+- **複数の表**: `--expect-count` を付けて表が複数あるときは `INCONCLUSIVE ambiguous`。`--table N` で1つに決める。
+- **ログ**: `extract` イベントは種類、結果、件数、期待件数、足りない列、注記の数だけ。値は書かない。

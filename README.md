@@ -61,6 +61,8 @@ flowchart LR
 4. **Run**: The planned URL opens. Jev picks the next action from the service information, the plan, the current page, and the action history, and loops until the GOAL.
 5. **Replan**: If the GOAL is not reached, Claude writes down why, revises the plan, and tries again (up to 3 attempts by default).
 
+To read data without changing anything, use `/webhand-extract`: Jev only reaches the page, and `webhand extract` reads the values from it (a table, a list, links), in a `--read-only` session, with the count and what could not be read.
+
 To check acceptance criteria instead of getting something done, use `/webhand-verify`: Jev only operates, and Claude judges each check from what the page shows (`PASS`, `FAIL` or `INCONCLUSIVE`, with quoted evidence).
 
 Claude makes the judgment calls (the plan, the values, the check, the replan), and Jev makes the many clicks and entries in between. Jev only chooses among the elements found on the page and the values Claude wrote. Control returns to Claude only when Jev reports the GOAL, needs a value or a person, gets stuck, or cannot tell whether an action took effect. The full list is in [Division of roles](docs/reference.md#division-of-roles).

@@ -16,6 +16,7 @@ import { commandCatalog } from "./commands/catalog.ts";
 import { commandCheck } from "./commands/check.ts";
 import { commandCheckLast } from "./commands/checklast.ts";
 import { CliExit, getContext, type Hooks, OK, setContext } from "./commands/context.ts";
+import { commandExtract } from "./commands/extract.ts";
 import { commandFinish } from "./commands/finish.ts";
 import { commandKnowledge } from "./commands/knowledge.ts";
 import { commandLearn } from "./commands/learn.ts";
@@ -27,6 +28,7 @@ import { FLOWS } from "./commands/shared.ts";
 import { commandStart } from "./commands/start.ts";
 import { CHROMES } from "./engines/chrome.ts";
 import { ENGINE_CHOICES } from "./engines/index.ts";
+import { FORMATS, KINDS, WITHIN } from "./extract.ts";
 import { logOnce } from "./metrics.ts";
 import * as runbook from "./runbook.ts";
 import * as session from "./session.ts";
@@ -113,6 +115,18 @@ function commands(): Record<string, CommandSpec> {
           help: "A file Jev may upload (under the current directory)",
         },
         { name: "download-dir", type: "string", help: "Save files the page downloads here (local Chrome only)" },
+        {
+          name: "read-only",
+          type: "boolean",
+          help: "Refuse actions it can tell may change something: a non-GET form submit, a file, a button outside a form",
+        },
+        {
+          name: "allow-control",
+          type: "string",
+          multiple: true,
+          metavar: "NAME",
+          help: "With --read-only, a button outside a form that only shows more (its name as the page shows it)",
+        },
         { name: "service", type: "string", help: "Learned service information to give Jev, such as hotel-site" },
         { name: "runbook", type: "string", help: "A learned procedure, such as hotel/filter" },
         { name: "param", type: "string", multiple: true, metavar: "KEY=VALUE", help: "A runbook parameter" },
@@ -240,6 +254,35 @@ function commands(): Record<string, CommandSpec> {
       ],
       run: commandCheck,
     },
+    extract: {
+      help: "Claude: read the data of the page as it is now (table, list, link, fields, text); read-only, the page's own text",
+      options: [
+        idOption,
+        { name: "within", type: "string", metavar: "REGION", help: `Only inside this region: ${WITHIN.join(", ")}` },
+        {
+          name: "columns",
+          type: "string",
+          metavar: "A,B",
+          help: "Table only: these columns, by header name; a column the page lacks is reported missing",
+        },
+        { name: "table", type: "int", metavar: "N", help: "Table only: the Nth table of the page" },
+        {
+          name: "expect-count",
+          type: "int",
+          metavar: "N",
+          help: "The number of rows or items expected; a different count is COUNT_MISMATCH",
+        },
+        {
+          name: "format",
+          type: "string",
+          default: "table",
+          choices: [...FORMATS],
+          help: "table (default), json or csv",
+        },
+      ],
+      positionals: [{ name: "kind", choices: [...KINDS] }],
+      run: commandExtract,
+    },
     "check-last": {
       help: "Claude: the previous result of each check of a saved check file, from the run logs (read-only)",
       options: [],
@@ -327,7 +370,7 @@ const processIO: IO = {
  * Runs one command and returns its exit code. A CliExit or UsageError is thrown after the output is written,
  * so the caller prints its message and exits with 1 or 2.
  */
-const SESSION_COMMANDS = ["start", "run", "answer", "replan", "act", "observe", "check", "finish"];
+const SESSION_COMMANDS = ["start", "run", "answer", "replan", "act", "observe", "check", "extract", "finish"];
 
 /** Picks the session a command works on and holds its lock until the command ends. Returns the release function. */
 function takeSession(command: string, args: Args): () => void {
