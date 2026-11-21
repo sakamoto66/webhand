@@ -8,7 +8,6 @@ import type { PageCheck } from "./browser.ts";
 import { quote } from "./format.ts";
 import type { Knowledge } from "./knowledge.ts";
 import { pageEvent, type Recorder, type ScreenshotAfter, safeUrl } from "./metrics.ts";
-import { type ReadOnly, refusal } from "./readonly.ts";
 import {
   type Action,
   Decision,
@@ -32,7 +31,6 @@ export const NEEDS_VALUE = "NEEDS_VALUE"; // A field needs text and none of Clau
 export const ESCALATE = "ESCALATE"; // v2: Jev handed the decision to Claude. `answer` continues the same attempt.
 export const JEV_FAILED = "JEV_FAILED"; // No usable decision. Nothing was executed.
 export const UNCERTAIN = "UNCERTAIN"; // A mutation may have happened. Never retried, never replanned.
-export const READ_ONLY = "READ_ONLY"; // A read-only session refused the action Jev chose. Nothing was executed.
 
 /** Per attempt. A replan starts a new attempt with a fresh budget. */
 export class Budget {
@@ -376,8 +374,6 @@ export async function runAgent(
     onChange?: OnChange;
     onDecision?: (count: number) => void;
     knowledge?: Knowledge;
-    /** A read-only session: an action it refuses ends the attempt as READ_ONLY, before anything runs. */
-    readOnly?: ReadOnly | null;
   } = {},
 ): Promise<AgentResult> {
   const attempt = plan.attempt ?? 1;
@@ -433,11 +429,6 @@ export async function runAgent(
         for (const key of ["label", "role", "value"]) field[key] = decision.action[key] ?? null;
         const what = decision.action.kind === "upload" ? "file" : "value";
         return finish(NEEDS_VALUE, `no ${what} from the plan fits this field`, { field });
-      }
-      const refused = options.readOnly ? refusal(decision.action, options.readOnly) : null;
-      if (refused) {
-        recorder.event("read_only_refused", { attempt, kind: decision.action.kind, target: decision.action.label });
-        return finish(READ_ONLY, `read-only: ${refused}`);
       }
       if (decision.action.offscreen) ({ page, decision } = await intoView(browser, page, decision, recorder, attempt));
       page = await execute(browser, page, decision, history, recorder, {

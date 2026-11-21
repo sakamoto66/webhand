@@ -1,4 +1,4 @@
-/** `webhand extract` and the read-only refusals, on a real headless Chrome and local pages. No model calls. */
+/** `webhand extract`, on a real headless Chrome and local pages. No model calls. */
 
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -6,7 +6,6 @@ import { pathToFileURL } from "node:url";
 import { afterEach, expect, test } from "vitest";
 import { Browser } from "../src/browser.ts";
 import { build, expression, format, type Kind, type Raw } from "../src/extract.ts";
-import { type ReadOnly, refusal } from "../src/readonly.ts";
 import type { Page } from "../src/types.ts";
 import { tmpPath } from "./helpers.ts";
 
@@ -139,46 +138,6 @@ test("--expect-count over several tables needs --table", async () => {
 test("a page that is still busy is INCONCLUSIVE stale, not a short table", async () => {
   const raw = await read(`<table aria-busy="true"><tr><td>1</td></tr></table>`, "table");
   expect(build("table", raw, options)).toMatchObject({ result: "INCONCLUSIVE", reason: "stale" });
-});
-
-const FORMS = `
-<form method="get" action="#"><input name="q" aria-label="Search"><button>Find</button></form>
-<form method="post" action="#"><input aria-label="Name"><input type="password" aria-label="Pass"><button>Buy now</button></form>
-<form method="post"><button formmethod="get">Look</button></form>
-<button type="button">Show more</button><button type="button">Delete account</button>
-<a href="#x">A link</a><input type="checkbox" aria-label="Filter">`;
-
-async function actions(): Promise<Page[]> {
-  const page = await (await open(FORMS)).observe();
-  return page.actions as Page[];
-}
-
-test("the snapshot marks what a read-only session refuses, and only that", async () => {
-  const list = await actions();
-  const change = (label: string) => list.find((a) => a.label === label)?.change ?? null;
-  expect(change("Find")).toBeNull(); // a GET form
-  expect(change("Buy now")).toBe("form");
-  expect(change("Look")).toBeNull(); // formmethod=get wins
-  expect(list.some((a) => a.label === "Pass")).toBe(false); // a password field is never offered
-  expect(change("Show more")).toBe("control");
-  expect(change("A link")).toBeNull();
-  expect(change("Filter")).toBeNull();
-});
-
-test("read-only refuses by that mark, allows named buttons, and checks the label exactly", async () => {
-  const list = await actions();
-  const rule: ReadOnly = { allow: ["show more"] };
-  const why = (label: string) => {
-    const action = list.find((a) => a.label === label && a.kind !== "fill") ?? list.find((a) => a.label === label);
-    return action ? refusal(action, rule) : "missing";
-  };
-  expect(why("Find")).toBeNull();
-  expect(why("Buy now")).toContain("submits a form");
-  expect(why("Delete account")).toContain("button outside any form");
-  expect(why("Show more")).toBeNull();
-  expect(why("A link")).toBeNull();
-  expect(refusal({ kind: "upload", label: "File" }, rule)).toContain("attaches a file");
-  expect(refusal({ kind: "scroll", label: "Scroll", change: "control" }, rule)).toBeNull();
 });
 
 const NOTE = `<table><tr><th>Plan</th><th>Price</th></tr><tr><td>Basic</td><td>980</td></tr>

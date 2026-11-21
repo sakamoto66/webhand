@@ -4,7 +4,7 @@ import type { Args } from "../args.ts";
 import * as auth from "../auth.ts";
 import { browserUrl, chooseChrome as pickChrome } from "../engines/chrome.ts";
 import { chooseEngine, engineFor, hostName } from "../engines/index.ts";
-import { describeError, quote } from "../format.ts";
+import { describeError } from "../format.ts";
 import { gitState, maskUrls, pageEvent, Recorder, safeUrl } from "../metrics.ts";
 import { describePlan, headline } from "../output.ts";
 import { planText } from "../policies/base.ts";
@@ -99,11 +99,6 @@ function planStart(args: Args, target: StartTarget): { plan: Plan; goal: string;
     const params = Object.entries(runbook.parseValues(args.param)).map(([label, value]) => ({ label, value }));
     values = mergeValues(params, values);
   }
-  if (args.allow_control.length && !args.read_only) throw new CliExit("--allow-control needs --read-only");
-  if (args.read_only && steps.some((step) => step.actor === "human")) {
-    throw new CliExit("A read-only session has no [person] steps: start from a saved login (--auth or profile:NAME)");
-  }
-  if (args.read_only && files.length) throw new CliExit("A read-only session cannot upload files");
   if (steps.some((step) => step.actor === "human") && !args.headed) {
     throw new CliExit("This plan has [person] steps. Add --headed so the person can see the window");
   }
@@ -148,7 +143,6 @@ function initialState(
     task,
     start_url: browserUrl(planned.url, chrome),
     ...(args.download_dir ? { download_dir: resolve(args.download_dir) } : {}),
-    ...(args.read_only ? { read_only: { allow: args.allow_control } } : {}),
     plan: planned.plan,
     runbook: book ? { name: book.name, status: book.status, digest: book.digest, scope: book.scope } : null,
     service: serviceName,
@@ -215,7 +209,6 @@ async function openStartPage(
       ...(plan.compare ? { compare: plan.compare } : {}),
       ...(plan.collect ? { collect: plan.collect } : {}),
       ...(plan.more ? { more: plan.more } : {}),
-      ...(args.read_only ? { read_only: { allow: args.allow_control } } : {}),
       source: book && !args.step.length ? "runbook" : "claude",
     });
     recorder.event("page", pageEvent(state.page, 1));
@@ -253,12 +246,6 @@ function printStarted(args: Args, target: StartTarget, plan: Plan, state: sessio
   print(
     `${describePlan(plan, state.view)}\nSESSION: ${args.session} (${hostName(engine, chrome)})\n${headline(state.page)}`,
   );
-  if (state.read_only) {
-    const allow: string[] = state.read_only.allow;
-    print(
-      `READ-ONLY: actions that submit a non-GET form, attach a file, or press a button outside any form are refused${allow.length ? ` (allowed buttons: ${allow.map((a) => quote(a)).join(", ")})` : ""}. Nothing else is guaranteed`,
-    );
-  }
   print("NEXT: webhand run");
 }
 

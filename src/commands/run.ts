@@ -9,7 +9,6 @@ import { Knowledge } from "../knowledge.ts";
 import { logOnce, Recorder } from "../metrics.ts";
 import { loadMore, type MoreChooser } from "../more.ts";
 import { collectedLine, comparedLine } from "../output.ts";
-import { inForce } from "../readonly.ts";
 import type { Driver } from "../remote.ts";
 import * as session from "../session.ts";
 import { MutationUncertain, type Policy, PolicyError, StalePage } from "../types.ts";
@@ -43,11 +42,7 @@ function rejectRun(args: Args, state: session.State): number | null {
     print("REJECTED: this field needs run --value 'LABEL=VALUE'");
     return FAILED;
   }
-  if (
-    [agent.GOAL_REPORTED, agent.BLOCKED, agent.STUCK, agent.ATTEMPT_BUDGET, agent.ESCALATE, agent.READ_ONLY].includes(
-      outcome,
-    )
-  ) {
+  if ([agent.GOAL_REPORTED, agent.BLOCKED, agent.STUCK, agent.ATTEMPT_BUDGET, agent.ESCALATE].includes(outcome)) {
     print(
       `REJECTED: the attempt ended with ${outcome}. Run ${state.plan.flow === "v2" ? "answer, " : ""}replan, act, or finish`,
     );
@@ -172,7 +167,6 @@ async function runAttempt(ctx: RunScan): Promise<agent.AgentResult> {
     new Budget(state.max_actions, state.max_decisions),
     {
       history: state.history,
-      readOnly: inForce(state),
       page: state.page,
       decisions: state.attempt_decisions,
       // v2 records what its operations did, for the next run on the site (WEBHAND_KNOWLEDGE=0 turns it off).

@@ -37,25 +37,3 @@ test("extract reads the page, prints the page's own text, and logs counts but no
 test("extract needs a session and a known kind", async () => {
   expect(await cliExit("extract", "link")).toContain("No active session");
 });
-
-test("--read-only says what it refuses, and does not mix with a person's steps, files or a stray --allow-control", async () => {
-  const started = await research("start", "--task", "plan_lowest", "--chrome", "linux", "--read-only");
-  expect(started.out).toMatch(/READ-ONLY: actions that submit a non-GET form, attach a file, or press a button/);
-  await research("finish", "--status", "abandoned");
-  expect(
-    await researchExit("start", "--task", "plan_lowest", "--chrome", "linux", "--allow-control", "More"),
-  ).toContain("--allow-control needs --read-only");
-  expect(
-    await researchExit(
-      "start",
-      "--task",
-      "plan_lowest",
-      "--chrome",
-      "linux",
-      "--read-only",
-      "--step",
-      "[person] Sign in",
-      "--headed",
-    ),
-  ).toContain("no [person] steps");
-});
