@@ -4,6 +4,7 @@ import type { Args } from "../args.ts";
 import { Recorder } from "../metrics.ts";
 import { render } from "../output.ts";
 import { resolve } from "../policies/base.ts";
+import { inForce, refusal } from "../readonly.ts";
 import * as session from "../session.ts";
 import { MutationUncertain, PolicyError, StalePage } from "../types.ts";
 
@@ -39,6 +40,12 @@ function decideAct(args: Args, state: session.State): ReturnType<typeof resolve>
   }
   if (decision.action === null) {
     print("REJECTED: act runs one operation. Use run, replan, or finish");
+    return FAILED;
+  }
+  const rule = inForce(state);
+  const refused = rule ? refusal(decision.action, rule) : null;
+  if (refused) {
+    print(`REJECTED: read-only session: ${refused}`);
     return FAILED;
   }
   if (decision.action.kind === "fill" && args.text === null) {

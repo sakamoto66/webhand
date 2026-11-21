@@ -309,6 +309,19 @@
     return !(role === 'gridcell' && element.querySelector('button,[role="button"]'));
   };
 
+  // What a read-only session needs to refuse: a submit of a form that is not a plain GET, or a
+  // button that is not in a form (script behind it, unknown). Links, tabs, fields and toggles are not marked.
+  const SUBMIT_SELECTOR = 'button:not([type]),button[type="submit"],input[type="submit"],input[type="image"]';
+  const changeOf = (element, role) => {
+    const form = element.form || null;
+    if (form && element.matches(SUBMIT_SELECTOR)) {
+      const method = String(element.getAttribute('formmethod') || form.getAttribute('method') || 'get').toLowerCase();
+      return method === 'get' ? null : 'form';
+    }
+    if (role === 'button' && !element.matches('summary,a[href]')) return 'control';
+    return null;
+  };
+
   const baseAction = (element, role, rect) => {
     const base = {node: nodeId(element), role, label: accessibleName(element) || role,
       rect: {x: rect.x, y: rect.y, w: rect.width, h: rect.height}};
@@ -317,6 +330,8 @@
       if (value !== null) base[key] = value;
     }
     if (['checkbox', 'radio'].includes(element.type)) base.checked = String(element.checked);
+    const change = changeOf(element, role);
+    if (change) base.change = change;
     return base;
   };
 

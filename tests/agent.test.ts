@@ -472,3 +472,30 @@ test("v2: after Claude's answer, the scroll loop and the missing target are coun
   );
   expect(stopped.outcome).toBe("STUCK"); // Two new ones after it do.
 });
+
+test("a read-only session refuses the action Jev chose, before anything runs", async () => {
+  const buy = { id: "e3", kind: "click", label: "Buy now", node: 3, change: "form" };
+  const browser = new FakeBrowser();
+  const result = await runAgent(browser, new FakePolicy([new Decision("CLICK", buy)]), PLAN, recorder, undefined, {
+    readOnly: { allow: [] },
+  });
+  expect(result.outcome).toBe("READ_ONLY");
+  expect(result.detail).toContain("submits a form");
+  expect(browser.acts).toEqual([]);
+  // The same action runs in a session that is not read-only; a plain click runs in both.
+  const open = await run(new FakeBrowser(), [new Decision("CLICK", buy), new Decision("DONE")]);
+  expect(open.outcome).toBe("GOAL_REPORTED");
+  const plain = new FakeBrowser();
+  const ok = await runAgent(
+    plain,
+    new FakePolicy([new Decision("CLICK", CLICK), new Decision("DONE")]),
+    PLAN,
+    recorder,
+    undefined,
+    {
+      readOnly: { allow: [] },
+    },
+  );
+  expect(ok.outcome).toBe("GOAL_REPORTED");
+  expect(plain.acts).toEqual([["e2", null]]);
+});

@@ -125,7 +125,7 @@ After `/webhand-verify`, you can save its checks (`.webhand/checks/`, as a `draf
 /webhand-extract From https://example.test/plans, get the plan name and monthly price of every plan
 ```
 
-Jev only brings the page to the data (a search, a filter, the next page). `webhand extract` then reads the table, list, links, fields or text from the page itself, so every value is the page's own text and not Claude's transcription. Reading only is kept by the skill's own rules, not by webhand: it must not press anything that buys, sends, saves or submits a form, asks you before a button that is not a link, search or filter, and reads the actions that ran after every step. webhand does not stop an action Jev chooses.
+Jev only brings the page to the data (a search, a filter, the next page). `webhand extract` then reads the table, list, links, fields or text from the page itself, so every value is the page's own text and not Claude's transcription. The session is started with `--read-only`: before anything runs, webhand refuses a submit of a form that is not a plain GET, a file upload, and a button outside any form (a consent wall, "Show more" in script). The one way to allow such a button is `--allow-control "NAME"`, and the plugin's hook makes Claude Code ask you to approve that command, showing the button's name, even though the skill's commands are otherwise allowed. Claude also asks first and reads the actions that ran. webhand refuses only what it can classify: a link or a script that changes something is not told apart.
 
 For a table, `--rows raw` (the default) shows every row and marks a row that is one cell spanning the whole table (a footnote or a section title); `--rows data` leaves those rows out and names them.
 
