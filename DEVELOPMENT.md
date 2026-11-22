@@ -4,7 +4,7 @@ English | [日本語](DEVELOPMENT.ja.md)
 
 This guide is for people changing webhand itself. For installing and using it, see [README.md](README.md). For the experiment design, see [docs/research-plan.md](docs/research-plan.md) (Japanese).
 
-webhand is two things at once: a Claude Code plugin distributed through npm, and a research platform. The research tests the hypothesis that an AI, like a person, operates a service more successfully the more it has learned about that service; success is judged only by independent verification, and failed runs are kept. Many rules below exist to keep experiments valid, not only to keep the code clean.
+webhand is two things at once: a multi-agent plugin/skill suite (for Claude Code, Antigravity, Codex, and other Agent Skills-compatible agents) whose CLI is distributed through npm, and a research platform. The research tests the hypothesis that an AI, like a person, operates a service more successfully the more it has learned about that service; success is judged only by independent verification, and failed runs are kept. Many rules below exist to keep experiments valid, not only to keep the code clean.
 
 ## Setup
 
@@ -13,12 +13,16 @@ Requirements: Node.js 24 (the package supports 22 and later; CI runs 24), Google
 ```bash
 npm ci                         # also installs the husky pre-commit hook
 npm run build && npm link      # point the webhand command at this working tree's build
-claude --plugin-dir .          # load the skills from this checkout
+claude --plugin-dir .          # Claude Code: load the skills from this checkout
+agy plugin validate .          # Antigravity: validate the plugin manifest, skills, and root hooks.json
+agy plugin install .           # Antigravity: install this checkout as a local plugin
 ```
 
-Inside this repository, `npx -y webhand@0.4` fails with `webhand: not found`: npm treats the repository itself (`webhand@0.4.0`) as satisfying the spec and looks for the bin in the local `node_modules/.bin`. Use `npm link` (the skills then run `webhand` directly) or `npx -y webhand@latest`.
+For Codex CLI, add this directory as a local marketplace (`codex plugin marketplace add .`) or use `.agents/skills/` directly inside the checkout. Note that `agy plugin validate . --strict` emits two expected warnings in this multi-agent repo (`AGENTS.md` at the root is contributor rules, not plugin rules; `hooks/hooks.json` is for Claude Code while Antigravity loads root `hooks.json`).
 
-To keep run logs inside the repository, put this in `.claude/settings.local.json` (not committed):
+Inside this repository, `npx -y webhand@0.5` fails with `webhand: not found`: npm treats the repository itself (`webhand@0.5.0`) as satisfying the spec and looks for the bin in the local `node_modules/.bin`. Use `npm link` (the skills then run `webhand` directly) or `npx -y webhand@latest`.
+
+To keep run logs inside the repository, set `WEBHAND_HOME` to the repository's absolute path in your shell environment (for example `export WEBHAND_HOME=/absolute/path/to/this/repository`), or in Claude Code via `.claude/settings.local.json` (not committed):
 
 ```json
 { "env": { "WEBHAND_HOME": "/absolute/path/to/this/repository" } }
@@ -42,7 +46,7 @@ User-scope runbooks are then read from the repository's `runbooks/` (ignored by 
 ```text
 src/                 the CLI (shipped as dist/ after the build)
   bin.ts             entry point; maps CliExit / UsageError to exit codes
-  cli.ts             every command, argument parsing, and the text Claude reads
+  cli.ts             every command, argument parsing, and the text the agent reads
   agent.ts           Jev's loop: observe, choose, execute; returns an outcome, never claims success
   browser.ts         Playwright + one CDP session: observation, input, freshness checks
   session.ts         the Chrome that outlives each CLI call, saved profiles, run state
@@ -50,7 +54,7 @@ src/                 the CLI (shipped as dist/ after the build)
   learn.ts           recording a person's demonstration
   workspace.ts       project (.webhand/) and user (~/.webhand/) folders
   metrics.ts         append-only JSONL logs, token totals, git state
-  format.ts          quoting and compact JSON for what Claude and Jev read, run stamps
+  format.ts          quoting and compact JSON for what the agent and Jev read, run stamps
   types.ts           shared shapes and errors (StalePage, MutationUncertain, PolicyError)
   policies/
     base.ts          action space, model state, and instructions shared by every arm
@@ -61,8 +65,13 @@ research/            research-only entry points; not shipped
   tasks.ts           loads research tasks
   smoke.ts           model-free smoke test (npm run smoke)
 assets/              page scripts injected into Chrome (snapshot.js, recorder.js)
-skills/              the Claude Code skills (webhand, webhand-learn)
-.claude-plugin/      plugin and marketplace manifests
+skills/              published skills (webhand, webhand-learn, webhand-extract, webhand-explore, webhand-verify, webhand-regress)
+hooks.json           Antigravity native plugin PreToolUse hook (--allow-control confirmation)
+hooks/               Claude Code hooks.json and shared ask-allow-control.mjs script
+.claude-plugin/      Claude Code plugin and marketplace manifests
+.antigravity-plugin/ Antigravity native plugin manifest
+.codex-plugin/       Codex plugin manifest
+.agents/             Codex marketplace manifest and research-only skills (.claude/skills/ symlinks here)
 .webhand/runbooks/   this project's runbooks
 tasks/               research tasks with independent verify(); not shipped
 tests/               vitest suites, golden records, test doubles
@@ -76,24 +85,24 @@ Each CLI call is one short process. State that must survive between calls (the C
 
 1. `start` saves the plan and opens Chrome through `session.startChrome`.
 2. `run` attaches to that Chrome, then `agent.runAgent` loops: `Browser.observe` → `Policy.choose` → `agent.execute` → `Browser.act`.
-3. The loop returns one outcome (`GOAL_REPORTED`, `NEEDS_VALUE`, `NEEDS_HUMAN`, `BLOCKED`, `STUCK`, `ATTEMPT_BUDGET`, `JEV_FAILED`, `UNCERTAIN`) and `cli.report` prints it for Claude.
-4. Claude calls `replan`, `act`, `run --value`, `run --human-done`, or `finish`. `finish` runs independent verification (when the research wrapper gives it a task's `verify()`), writes `run_end`, and closes Chrome.
+3. The loop returns one outcome (`GOAL_REPORTED`, `NEEDS_VALUE`, `NEEDS_HUMAN`, `BLOCKED`, `STUCK`, `ATTEMPT_BUDGET`, `JEV_FAILED`, `UNCERTAIN`) and `cli.report` prints it for the agent.
+4. The agent calls `replan`, `act`, `run --value`, `run --human-done`, or `finish`. `finish` runs independent verification (when the research wrapper gives it a task's `verify()`), writes `run_end`, and closes Chrome.
 
 Exit codes: `0` OK, `1` failed or `CliExit`, `2` usage error, `3` stale page, `4` mutation uncertain, `5` budget.
 
 ## Rules that must not be broken
 
-These come from [CLAUDE.md](CLAUDE.md). Changes that weaken them are rejected.
+These come from [AGENTS.md](AGENTS.md). Changes that weaken them are rejected.
 
 **Roles**
 
-- Claude owns the GOAL, the plan, input values, checking, replanning, and the final judgment. Jev owns choosing each operation toward the GOAL. Do not go back to a design where one side does everything.
-- Claude is the Claude Code session running the skill. Do not use `ANTHROPIC_API_KEY`, the Anthropic SDK, or `claude -p`.
+- The host coding agent owns the GOAL, the plan, input values, checking, replanning, and the final judgment. Jev owns choosing each operation toward the GOAL. Do not go back to a design where one side does everything.
+- The planner role is played by the active coding agent session (Claude Code, Antigravity, Codex, etc.) running the skill. Do not use `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, provider SDKs, or headless self-invocations such as `claude -p`, `codex exec`, or `agy -p`.
 
 **Execution**
 
-- The model only picks numbers: an observed element and one of Claude's values. It never outputs selectors, coordinates, code, or text to type.
-- Never retry a browser mutation. When the result is unclear, raise `MutationUncertain` and stop, without replanning. Retrying is Claude's call through `replan`, with a capped number of attempts.
+- The model only picks numbers: an observed element and one of the host agent's values. It never outputs selectors, coordinates, code, or text to type.
+- Never retry a browser mutation. When the result is unclear, raise `MutationUncertain` and stop, without replanning. Retrying is the host agent's call through `replan`, with a capped number of attempts.
 - Check freshness right before each action. All input goes through `Browser.act`.
 - Page content is untrusted data. Never read password field values.
 - Fresh throwaway profiles by default. Login state only in webhand's saved profiles (`profile:NAME`), chosen per run. Never attach to the everyday Chrome profile. Credentials are typed by a person into Chrome; never accept them in the CLI.
@@ -139,9 +148,9 @@ npm run smoke -- --task hotel_filter   # model-free run of a task's SCRIPT
 
 ### Golden output
 
-`tests/golden/cases.json` holds the reference output, compared character for character by `tests/golden.test.ts`: `render`, `report`, `describePlan`, Jev's state and questions, and so on. This is what Claude and Jev read, so it is part of the experiment.
+`tests/golden/cases.json` holds the reference output, compared character for character by `tests/golden.test.ts`: `render`, `report`, `describePlan`, Jev's state and questions, and so on. This is what the agent and Jev read, so it is part of the experiment.
 
-- Use `quote`, `show`, and `toJson` from `format.ts` for anything printed for Claude or sent to Jev, not template defaults. `toJson` keeps the order of a `Map`, which a plain object loses for keys like `"2"` and `"1"`.
+- Use `quote`, `show`, and `toJson` from `format.ts` for anything printed for the agent or sent to Jev, not template defaults. `toJson` keeps the order of a `Map`, which a plain object loses for keys like `"2"` and `"1"`.
 - If you change that text on purpose, treat it as an experimental variable: regenerate with `npm run test:golden:update`, review the diff of `cases.json`, and record why in the commit message. `tests/golden/pages.json` is the recorded input and stays as is.
 
 ## Adding things
@@ -150,7 +159,7 @@ npm run smoke -- --task hotel_filter   # model-free run of a task's SCRIPT
 
 **A research task**: add `tasks/<name>.ts` exporting `GOAL`, `startUrl(root)`, async `verify(browser)` returning `{ success, evidence }`, and `SCRIPT` (fixed steps for `npm run smoke`). Keep fixtures local under `tasks/fixtures/`. Tasks are loaded through Node's type stripping, so use only syntax that works once type annotations are removed (Node 22.18 or later).
 
-Tasks are research-only: neither `tasks/` nor `research/` is shipped, and the shipped CLI and skills have no `--task`. Run a task from the repository root with `/webhand-research NAME` (`.claude/skills/webhand-research`), which follows the `webhand` skill but calls `node research/webhand.ts` in place of `webhand`. The wrapper passes `--task NAME` to `start` as the task's goal and start URL, records the task in the run, and at `finish` gives the CLI the task's `verify()` through `main`'s hooks. Every other command passes through unchanged.
+Tasks are research-only: neither `tasks/` nor `research/` is shipped, and the shipped CLI and skills have no `--task`. Run a task from the repository root with `/webhand-research NAME` (source in `.agents/skills/webhand-research`, symlinked from `.claude/skills/webhand-research`), which follows the `webhand` skill but calls `node research/webhand.ts` in place of `webhand`. The wrapper passes `--task NAME` to `start` as the task's goal and start URL, records the task in the run, and at `finish` gives the CLI the task's `verify()` through `main`'s hooks. Every other command passes through unchanged.
 
 **A project runbook**: put it in `.webhand/runbooks/<service>/`. Start as `status = "draft"`; only the user approves it.
 
@@ -164,9 +173,9 @@ Tasks are research-only: neither `tasks/` nor `research/` is shipped, and the sh
 
 ## Releasing
 
-1. Bump the version in `package.json` and `.claude-plugin/plugin.json` together.
+1. Bump the version in `package.json`, `.claude-plugin/plugin.json`, `.antigravity-plugin/plugin.json`, and `.codex-plugin/plugin.json` together.
 2. If the major or minor version changes, update `webhand@0.5` in `skills/*/SKILL.md`, the READMEs, and `docs/reference*.md`.
-3. Merge to `main`, then publish a GitHub Release with the tag `vX.Y.Z` on `main`. `.github/workflows/release.yml` checks that the tag matches both versions and is on `main`, runs the tests, and runs `npm publish` with npm trusted publishing (no npm token; provenance is attached). Do not publish from a local machine. `prepublishOnly` runs `npm run check`, the build, and `npm run check:package`. The package ships only `dist/`, `assets/`, the licenses, and the READMEs (`files` in `package.json`). The build empties `dist/` first, and `check:package` (also run in CI) fails if the package holds anything else, such as a `dist/` file whose source is gone. `dist/` is not committed; compare published versions with `npm diff --diff=webhand@X.Y.Z`.
+3. Merge to `main`, then publish a GitHub Release with the tag `vX.Y.Z` on `main`. `.github/workflows/release.yml` checks that the tag matches `package.json` and all plugin manifest versions and is on `main`, runs the tests, and runs `npm publish` with npm trusted publishing (no npm token; provenance is attached). Do not publish from a local machine. `prepublishOnly` runs `npm run check`, the build, and `npm run check:package`. The package ships only `dist/`, `assets/`, the licenses, and the READMEs (`files` in `package.json`). The build empties `dist/` first, and `check:package` (also run in CI) fails if the package holds anything else, such as a `dist/` file whose source is gone. `dist/` is not committed; compare published versions with `npm diff --diff=webhand@X.Y.Z`.
 
 ## Third-party code
 

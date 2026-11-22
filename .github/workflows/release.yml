@@ -34,10 +34,18 @@ jobs:
           node -e '
             const { readFileSync } = require("node:fs");
             const pkg = JSON.parse(readFileSync("package.json", "utf8")).version;
-            const plugin = JSON.parse(readFileSync(".claude-plugin/plugin.json", "utf8")).version;
+            const manifests = [
+              ".claude-plugin/plugin.json",
+              ".antigravity-plugin/plugin.json",
+              ".codex-plugin/plugin.json",
+            ];
             const tag = process.env.TAG;
-            if (tag !== `v${pkg}` || plugin !== pkg) {
-              console.error(`tag ${tag}, package.json ${pkg}, plugin.json ${plugin}: they must match (tag v${pkg})`);
+            const mismatches = manifests
+              .map((path) => [path, JSON.parse(readFileSync(path, "utf8")).version])
+              .filter(([, version]) => version !== pkg);
+            if (tag !== `v${pkg}` || mismatches.length > 0) {
+              const found = mismatches.map(([p, v]) => `${p} ${v}`).join(", ");
+              console.error(`tag ${tag}, package.json ${pkg}${found ? `, ${found}` : ""}: they must all match (tag v${pkg})`);
               process.exit(1);
             }
           '

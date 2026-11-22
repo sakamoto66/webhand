@@ -1,7 +1,7 @@
 {
   "name": "webhand",
   "version": "0.5.0",
-  "description": "Claude plans, asks, checks, and replans; Jev operates the browser toward the goal.",
+  "description": "Your coding agent plans, asks, checks, and replans; Jev operates the browser toward the goal.",
   "license": "MIT",
   "author": "sakamoto66",
   "homepage": "https://github.com/sakamoto66/webhand",
@@ -14,7 +14,10 @@
     "agent",
     "automation",
     "runbook",
-    "claude-code"
+    "agent-skills",
+    "claude-code",
+    "antigravity",
+    "codex"
   ],
   "type": "module",
   "bin": {

@@ -2,21 +2,39 @@
 
 English | [日本語](usage.ja.md)
 
-webhand is used through Claude Code skills that call its CLI. Normally you use only the skills, and Claude runs the CLI. You use the CLI directly to manage saved profiles, to debug, and for research runs.
+webhand is used through coding-agent skills (Claude Code, Antigravity, Codex, and other Agent Skills-compatible agents) that call its CLI. Normally you use only the skills, and the agent runs the CLI. You use the CLI directly to manage saved profiles, to debug, and for research runs.
 
 - Background and overview: [README.md](../README.md)
 - For contributors: [DEVELOPMENT.md](../DEVELOPMENT.md)
 
 ## Setup
 
-1. Add the plugin (in Claude Code).
+1. Add the plugin or skills for your coding agent.
 
-   ```text
-   /plugin marketplace add sakamoto66/webhand
-   /plugin install webhand@webhand
-   ```
+   - **Claude Code**:
 
-2. Set Jev's API key as an environment variable and restart Claude Code. Do not put it in a file such as `.env`.
+     ```text
+     /plugin marketplace add sakamoto66/webhand
+     /plugin install webhand@webhand
+     ```
+
+   - **Antigravity (`agy`)**:
+
+     ```bash
+     agy plugin install https://github.com/sakamoto66/webhand
+     ```
+
+   - **OpenAI Codex CLI**:
+
+     ```bash
+     codex plugin marketplace add sakamoto66/webhand
+     ```
+
+     Then open `/plugins` in Codex and install `webhand`.
+
+   - **Other Agent Skills-compatible agents**: Copy `skills/webhand*` into your agent's skills directory (for example `.agents/skills/`).
+
+2. Set Jev's API key as an environment variable and restart your coding agent. Do not put it in a file such as `.env`.
 
    ```bash
    echo 'export TYPESAFE_API_KEY=...' >> ~/.bashrc
@@ -38,7 +56,7 @@ Requirements: Node.js 22 or later and Google Chrome (on Linux, or the Windows si
 
 ## Using the skills
 
-There are five skills.
+There are six skills. In Claude Code they are invoked with `/webhand`, `/webhand-learn`, etc.; in Antigravity and Codex, activate them by skill name or ask in plain words.
 
 | Skill | Purpose |
 | --- | --- |
@@ -66,7 +84,7 @@ flowchart LR
 /webhand On HOTEL PLANISPHERE, book 2 nights for 2 people starting next month's first Saturday
 ```
 
-Claude proceeds in this order.
+The agent proceeds in this order.
 
 1. **Plan**: Reads the learned services and runbooks with `webhand catalog`, and decides the GOAL, start URL, steps, and input values.
    - It asks you for missing values. It never makes up personal data.
@@ -74,16 +92,16 @@ Claude proceeds in this order.
    - For anything that changes real data (booking, sending, purchasing, deleting), it shows the plan and asks for your agreement before starting.
 2. **Choose a session**: Unless your request says, you are asked for one of these.
    - `new` (default): a throwaway profile. Starts signed out and is deleted at the end.
-   - `profile:NAME`: a saved profile dedicated to webhand. It keeps you signed in. Claude offers to create one if needed.
+   - `profile:NAME`: a saved profile dedicated to webhand. It keeps you signed in. The agent offers to create one if needed.
 3. **Run**: Jev operates toward the GOAL. It may ask you for help along the way.
    - You are asked for a value (`NEEDS_VALUE`).
-   - You are asked to sign in or solve a CAPTCHA in the Chrome window (`NEEDS_HUMAN`). Tell Claude when you are done.
-4. **Replan**: If the GOAL is not reached, Claude writes down why, revises the plan, and tries again (up to 3 attempts by default).
-5. **Finish**: At the end you get `status`, `attempts`, and the log path in one line. `status=done` is Claude's claim, not proof of success; check the result on the reported page. If the run was replanned, ended `blocked`, or ended `done` without a runbook, Claude also tells you that you can learn from it (see below).
+   - You are asked to sign in or solve a CAPTCHA in the Chrome window (`NEEDS_HUMAN`). Tell the agent when you are done.
+4. **Replan**: If the GOAL is not reached, the agent writes down why, revises the plan, and tries again (up to 3 attempts by default).
+5. **Finish**: At the end you get `status`, `attempts`, and the log path in one line. `status=done` is the agent's claim, not proof of success; check the result on the reported page. If the run was replanned, ended `blocked`, or ended `done` without a runbook, the agent also tells you that you can learn from it (see below).
 
 #### A procedure not learned yet
 
-For a service webhand has learned, you can ask for a procedure that has no runbook yet. Claude writes the steps from the service information, and Jev still receives the service's `facts` and skips its `default = "skip"` regions. What only a runbook holds (`hints`, `done_when`, `focus`) is not available, so the run may need more replans. To reuse the procedure, learn it from the run.
+For a service webhand has learned, you can ask for a procedure that has no runbook yet. The agent writes the steps from the service information, and Jev still receives the service's `facts` and skips its `default = "skip"` regions. What only a runbook holds (`hints`, `done_when`, `focus`) is not available, so the run may need more replans. To reuse the procedure, learn it from the run.
 
 ### `/webhand-learn` — teach a service
 
@@ -94,10 +112,10 @@ For a service webhand has learned, you can ask for a procedure that has no runbo
 ```
 
 1. **Gather**
-   - **From a demonstration**: Chrome opens. Use it as usual and close the window when you are done. Type sign-ins directly into Chrome. To demonstrate while signed in, tell Claude to use a saved profile.
-   - **From source code**: Claude reads the routes, forms, and visible labels.
-   - **From a run**: Claude reads the log of an earlier `/webhand` run: its own replan reasons, where the run stopped, and the elements and regions the successful attempt used. Lessons come from these, never from page text.
-2. **Draft**: Claude writes these two files with `status = "draft"`.
+   - **From a demonstration**: Chrome opens. Use it as usual and close the window when you are done. Type sign-ins directly into Chrome. To demonstrate while signed in, tell the agent to use a saved profile.
+   - **From source code**: The agent reads the routes, forms, and visible labels.
+   - **From a run**: The agent reads the log of an earlier `/webhand` run: its own replan reasons, where the run stopped, and the elements and regions the successful attempt used. Lessons come from these, never from page text.
+2. **Draft**: The agent writes these two files with `status = "draft"`.
    - `runbooks/<service>/service.toml`: the service description, whether login is required, pages and regions, facts for Jev
    - `runbooks/<service>/<name>.toml`: the runbook (goal, params, steps, hints, done_when, focus, skip)
 
@@ -105,7 +123,7 @@ For a service webhand has learned, you can ask for a procedure that has no runbo
 3. **Try**: Try the draft with `/webhand` and fix the runbook from the result.
 4. **Approve**: Check the content and the trial result, and say so if it is fine. A runbook becomes `approved` only after you approve it.
 
-It writes to one of two places. Claude asks when it is unclear which one you want.
+It writes to one of two places. The agent asks when it is unclear which one you want.
 
 | Destination | Path | When to use |
 | --- | --- | --- |
@@ -126,7 +144,7 @@ After `/webhand-verify`, you can save its checks (`.webhand/checks/`, as a `draf
 /webhand-extract From https://example.test/plans, get the plan name and monthly price of every plan
 ```
 
-Jev only brings the page to the data (a search, a filter, the next page). `webhand extract` then reads the table, list, links, fields or text from the page itself, so every value is the page's own text and not Claude's transcription. The session is started with `--read-only`: before anything runs, webhand refuses a submit of a form that is not a plain GET, a file upload, and a button outside any form (a consent wall, "Show more" in script). The one way to allow such a button is `--allow-control "NAME"`, and the plugin's hook makes Claude Code ask you to approve that command, showing the button's name, even though the skill's commands are otherwise allowed. Claude also asks first and reads the actions that ran. webhand refuses only what it can classify: a link or a script that changes something is not told apart.
+Jev only brings the page to the data (a search, a filter, the next page). `webhand extract` then reads the table, list, links, fields or text from the page itself, so every value is the page's own text and not the agent's transcription. The session is started with `--read-only`: before anything runs, webhand refuses a submit of a form that is not a plain GET, a file upload, and a button outside any form (a consent wall, "Show more" in script). The one way to allow such a button is `--allow-control "NAME"`. On Claude Code (`hooks/hooks.json`) and Antigravity (root `hooks.json`), the plugin's PreToolUse hook forces a permission prompt showing the button's name even when `webhand` commands are otherwise allowed; on Codex CLI and other agents without an interactive `ask` hook, approval relies on the skill's rule (ask first) and the agent's own command approval mode. The agent also asks first and reads the actions that ran. webhand refuses only what it can classify: a link or a script that changes something is not told apart.
 
 For a table, `--rows raw` (the default) shows every row and marks a row that is one cell spanning the whole table (a footnote or a section title); `--rows data` leaves those rows out and names them.
 
@@ -138,9 +156,9 @@ The report is a table with the URL, the time, the count, and what could not be r
 /webhand-explore Try abnormal input on the checkout form of http://localhost:3000 (allowed host: localhost:3000)
 ```
 
-You give a charter (what to try) and the hosts that may be visited; Claude shows them and asks you to confirm before it starts. The session is started with `start --explore --allow-domain HOST --max-total-actions N`: webhand refuses `profile:NAME`, refuses every request to a host outside the list (links to other sites, third-party scripts), and stops at the action limit for the whole session. If the app needs a login, use `--auth NAME` with a login saved from a **test account** (signed-in pages are sent to Jev); `--file` lets Jev upload a test file. Jev operates; webhand notes console errors, uncaught errors, 5xx responses, failed requests and dead ends, and `webhand findings` lists them with the steps that led to them.
+You give a charter (what to try) and the hosts that may be visited; the agent shows them and asks you to confirm before it starts. The session is started with `start --explore --allow-domain HOST --max-total-actions N`: webhand refuses `profile:NAME`, refuses every request to a host outside the list (links to other sites, third-party scripts), and stops at the action limit for the whole session. If the app needs a login, use `--auth NAME` with a login saved from a **test account** (signed-in pages are sent to Jev); `--file` lets Jev upload a test file. Jev operates; webhand notes console errors, uncaught errors, 5xx responses, failed requests and dead ends, and `webhand findings` lists them with the steps that led to them.
 
-A finding is a candidate, not a verdict. Claude repeats the steps of each one in a new session and reports it as confirmed, not reproduced or not tried. Exploring submits forms in the test system and may create data: use it only where that is acceptable.
+A finding is a candidate, not a verdict. The agent repeats the steps of each one in a new session and reports it as confirmed, not reproduced or not tried. Exploring submits forms in the test system and may create data: use it only where that is acceptable.
 
 ### `/webhand-verify` — check acceptance criteria
 
@@ -149,10 +167,10 @@ A finding is a candidate, not a verdict. Claude repeats the steps of each one in
 /webhand-verify Check the acceptance criteria of issue #123 on https://staging.example.com
 ```
 
-1. **Split**: Claude turns the criteria into checks (precondition, operation, expected result), shows the list, and gets your agreement. Criteria with nothing observable on the page ("feels fast") are left out.
+1. **Split**: The agent turns the criteria into checks (precondition, operation, expected result), shows the list, and gets your agreement. Criteria with nothing observable on the page ("feels fast") are left out.
 2. **Environment**: it always asks whether the URL is a test environment or a real service. On a real service it runs only checks that change nothing; checks that register, send, buy or delete are not run (`INCONCLUSIVE`).
 3. **Operate**: one new session per check; Jev only operates. Jev's completion report (`GOAL_REPORTED`) is never evidence of a pass.
-4. **Judge**: after the operation, Claude reads the page and compares it with the expected result.
+4. **Judge**: after the operation, the agent reads the page and compares it with the expected result.
 
 | Verdict | Meaning |
 | --- | --- |
@@ -172,13 +190,13 @@ If it is not installed, read `webhand` as `npx -y webhand@0.5`. See `webhand COM
 
 | Command | Owner | What it does |
 | --- | --- | --- |
-| `catalog` | Claude | List learned services, runbooks, and saved profiles |
-| `start` | Claude | Record the plan and open the start URL in Chrome |
+| `catalog` | Agent | List learned services, runbooks, and saved profiles |
+| `start` | Agent | Record the plan and open the start URL in Chrome |
 | `run` | Jev | Operate toward the GOAL |
-| `replan` | Claude | Revise the plan and start the next attempt |
-| `act` | Claude | Run one operation in place of Jev |
-| `observe` | Claude | Print the current page |
-| `finish` | Claude | Write the log and close Chrome |
+| `replan` | Agent | Revise the plan and start the next attempt |
+| `act` | Agent | Run one operation in place of Jev |
+| `observe` | Agent | Print the current page |
+| `finish` | Agent | Write the log and close Chrome |
 | `learn` | Person | Record a person's demonstration |
 | `profile` | Person | Manage saved profiles |
 
@@ -340,7 +358,7 @@ Then run `wsl --shutdown` in PowerShell to restart WSL.
 
 | Symptom | Fix |
 | --- | --- |
-| Told that `TYPESAFE_API_KEY` is not set | Set the environment variable in your shell profile and restart Claude Code |
+| Told that `TYPESAFE_API_KEY` is not set | Set the environment variable in your shell profile and restart your coding agent |
 | `npx -y webhand@0.5` says `webhand: not found` inside this repository | Run `npm run build && npm link`, or use `npx -y webhand@latest` |
 | A draft runbook cannot be used | Add `--allow-draft` only for trials. Normal runs need approval |
 | A needed part of the page is cut from the observation | Check `REGIONS` in the output for `0/N` or `(skip)`, and pass `--focus` / `--skip` |

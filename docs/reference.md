@@ -6,7 +6,7 @@ Details behind the [README](../README.md): where files live, what each role does
 
 ## Where things are stored
 
-Like Claude Code's `~/.claude/` and `.claude/`, webhand uses two locations: one per user and one per project.
+webhand uses two locations: one per user (`~/.webhand/`) and one per project (`.webhand/`).
 
 | Scope | Path | Contents |
 | --- | --- | --- |
@@ -19,8 +19,8 @@ Like Claude Code's `~/.claude/` and `.claude/`, webhand uses two locations: one 
 
 ```mermaid
 flowchart LR
-  CC["Claude Code"] -->|"/webhand-learn"| RB["Runbooks<br>.webhand/runbooks/#lt;service#gt;/<br>or ~/.webhand/runbooks/#lt;service#gt;/"]
-  CC -->|"/webhand<br>plan, values, checks, replans"| CLI["webhand CLI"]
+  AG["Coding Agent"] -->|"/webhand-learn"| RB["Runbooks<br>.webhand/runbooks/#lt;service#gt;/<br>or ~/.webhand/runbooks/#lt;service#gt;/"]
+  AG -->|"/webhand<br>plan, values, checks, replans"| CLI["webhand CLI"]
   RB -.->|"catalog"| CLI
   CLI -->|"CDP"| CH["Chrome<br>fresh / saved profile<br>Windows side from WSL"]
   CLI -->|"run"| JEV["Jev<br>chooses actions toward the GOAL"]
@@ -30,19 +30,19 @@ flowchart LR
 
 | Who | Role |
 | --- | --- |
-| Claude | Plans the GOAL and steps, writes input values, asks for missing information, checks the result, replans, closes the run |
-| Jev | For each action toward the GOAL, picks by number which element to act on and which of Claude's values to use |
-| Code | Restricts choices to observed elements and Claude's values, checks freshness before acting, and runs independent verification |
+| Agent | Plans the GOAL and steps, writes input values, asks for missing information, checks the result, replans, closes the run |
+| Jev | For each action toward the GOAL, picks by number which element to act on and which of the agent's values to use |
+| Code | Restricts choices to observed elements and the agent's values, checks freshness before acting, and runs independent verification |
 
-`run` hands control back to Claude only in these cases:
+`run` hands control back to the agent only in these cases:
 
-| Result | When | What Claude does |
+| Result | When | What the agent does |
 | --- | --- | --- |
 | `GOAL_REPORTED` | Jev reports the GOAL as reached | Compares the page with the GOAL, then `finish` or `replan` |
 | `NEEDS_VALUE` | No planned value fits an input field | `run --value "label=value"`; asks the user if unsure |
 | `NEEDS_HUMAN` | Login, verification code, CAPTCHA, or a `[person]` step | Asks the user, then `run --human-done` |
 | `BLOCKED` / `STUCK` / `ATTEMPT_BUDGET` | No way forward | `replan` to retry, `act` to fill in one action, or `finish` |
-| `ESCALATE` | Jev hands the decision to Claude (flow v2): a step the goal does not ask for that deletes, pays, sends, or cannot be undone, or a page the plan does not cover where nothing offered fits | Reads `WHY:`, then `answer` so the same attempt goes on |
+| `ESCALATE` | Jev hands the decision to the agent (flow v2): a step the goal does not ask for that deletes, pays, sends, or cannot be undone, or a page the plan does not cover where nothing offered fits | Reads `WHY:`, then `answer` so the same attempt goes on |
 | `JEV_FAILED` | Jev's response was unusable (nothing was executed) | `run` again, `replan`, or `act` |
 | `UNCERTAIN` | Unknown whether an action took effect | Does not repeat it; `finish --status error` |
 
@@ -91,7 +91,7 @@ webhand run --id a
 webhand finish --id a --status done
 ```
 
-- When the id is not `default`, the commands the output tells Claude to run next carry the `--id`. `webhand catalog` lists the open sessions with their goals.
+- When the id is not `default`, the commands the output tells the agent to run next carry the `--id`. `webhand catalog` lists the open sessions with their goals.
 - Only one command at a time runs on a session: a second one stops with "Session is busy", since two `run`s on one Chrome would act twice. A lock left by a command that died is taken over. Commands on different ids do not wait for each other.
 - Starting an id that is already open stops. Two sessions cannot use the same saved profile (the second Chrome exits), and `profile login` refuses a profile an open session uses.
 - Each session writes its own run log. State files are `state/session-ID.json`, `state/tab-ID`, and `state/session-ID.lock` (the default session: `session.json`, `tab`, `session.lock`).
@@ -162,20 +162,20 @@ If the CLI is not installed globally, read `webhand` in the table below as `npx 
 
 | Command | Used by | Description |
 | --- | --- | --- |
-| `webhand catalog` | Claude | Lists learned services, runbooks, and saved profiles |
-| `webhand start --goal G --url U --step S ... --value L=V ... [--file L=PATH ...] [--download-dir DIR] --session ...` | Claude | Records the plan and opens the start URL in Chrome |
+| `webhand catalog` | Agent | Lists learned services, runbooks, and saved profiles |
+| `webhand start --goal G --url U --step S ... --value L=V ... [--file L=PATH ...] [--download-dir DIR] --session ...` | Agent | Records the plan and opens the start URL in Chrome |
 | `webhand run` | Jev | Operates the page toward the GOAL |
-| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | Claude | Revises the plan and starts the next attempt, from the start URL again (`--restart`) or from another page (`--url`) |
-| `webhand answer --note N [--value L=V] [--url URL]` | Claude | Answers Jev in the same attempt (flow v2 only): the history and the budget are kept. Use `replan` only when the whole plan is wrong |
-| `webhand act OP [TARGET]` | Claude | Performs a single action in Jev's place |
-| `webhand observe` | Claude | Shows the current page |
-| `webhand check --expect KIND:ARGS ...` | Claude | Compares expectations with the page as it is now (read-only, no model). Kinds: `text:S`, `no-text:S`, `field:LABEL=V`, `checked:LABEL=true\|false`, `count:ROLE=N`, `url:/path`, `title:S`. Prints `PASS`/`FAIL`/`INCONCLUSIVE` per expectation with the quoted observation; exit 0, 6 (any FAIL), 7 (no FAIL, some INCONCLUSIVE). A negative result is `INCONCLUSIVE not_visible` unless the whole page was seen; `--read` reads the whole page's text for this call only (no `replan`, no attempt used) |
-| `webhand check --saved service/name:ID [--param K=V] [--read] [--production] [--allow-draft]` | Claude | Compares the page with the expectations of a saved check (`.webhand/checks/<service>/<name>.toml`); they cannot be edited here. Refuses a `draft` (unless `--allow-draft`) and, with `--production`, a check whose `env` is not `read-only`. Records `check_run` (check, id, digest, verdict) in the run log. `MANUAL` items are printed for Claude to judge |
-| `webhand check-last service/name` | Claude | The latest recorded verdict and digest of each check of a saved check file, from the run logs (read-only); says when the check changed since |
-| `webhand finish --status STATUS` | Claude | Runs independent verification, writes the log, and closes Chrome |
+| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | Agent | Revises the plan and starts the next attempt, from the start URL again (`--restart`) or from another page (`--url`) |
+| `webhand answer --note N [--value L=V] [--url URL]` | Agent | Answers Jev in the same attempt (flow v2 only): the history and the budget are kept. Use `replan` only when the whole plan is wrong |
+| `webhand act OP [TARGET]` | Agent | Performs a single action in Jev's place |
+| `webhand observe` | Agent | Shows the current page |
+| `webhand check --expect KIND:ARGS ...` | Agent | Compares expectations with the page as it is now (read-only, no model). Kinds: `text:S`, `no-text:S`, `field:LABEL=V`, `checked:LABEL=true\|false`, `count:ROLE=N`, `url:/path`, `title:S`. Prints `PASS`/`FAIL`/`INCONCLUSIVE` per expectation with the quoted observation; exit 0, 6 (any FAIL), 7 (no FAIL, some INCONCLUSIVE). A negative result is `INCONCLUSIVE not_visible` unless the whole page was seen; `--read` reads the whole page's text for this call only (no `replan`, no attempt used) |
+| `webhand check --saved service/name:ID [--param K=V] [--read] [--production] [--allow-draft]` | Agent | Compares the page with the expectations of a saved check (`.webhand/checks/<service>/<name>.toml`); they cannot be edited here. Refuses a `draft` (unless `--allow-draft`) and, with `--production`, a check whose `env` is not `read-only`. Records `check_run` (check, id, digest, verdict) in the run log. `MANUAL` items are printed for the agent to judge |
+| `webhand check-last service/name` | Agent | The latest recorded verdict and digest of each check of a saved check file, from the run logs (read-only); says when the check changed since |
+| `webhand finish --status STATUS` | Agent | Runs independent verification, writes the log, and closes Chrome |
 | `webhand learn --name NAME --url URL [--scope project\|user]` | Person | Records a demonstration |
 | `webhand profile login/list/delete` | Person | Manages saved profiles |
-| `webhand auth save/list/delete NAME` | Claude | Saves the sign-in of a session, to start a new session with `--auth NAME` |
+| `webhand auth save/list/delete NAME` | Agent | Saves the sign-in of a session, to start a new session with `--auth NAME` |
 | `webhand knowledge list/show HOST/clear [HOST]` | Person | Shows or deletes what webhand learned about sites from its own runs (flow v2) |
 
 Prefix a step with `[person]` to make it a step a human performs (requires `--headed`). `--focus REGION` / `--skip REGION` on `start` and `replan` choose which regions are observed (see [Page regions](#page-regions)), and `--read KIND` adds content from beyond the viewport (see [Reading beyond the viewport](#reading-beyond-the-viewport)). With `--runbook NAME --param k=v`, the runbook's GOAL, start URL, and steps become the defaults, and the params are passed to Jev as input values.
@@ -186,8 +186,8 @@ Prefix a step with `[person]` to make it a step a human performs (requires `--he
 
 | | v2 (default) | v1 |
 | --- | --- | --- |
-| What Jev is offered | The actions of the whole page, including elements beyond the viewport (scrolled into view before acting), and elements inside frames | What is in view, plus the regions Claude chose with `--focus` / `--read` |
-| When Jev cannot go on | Jev can also `ESCALATE`; Claude answers with `answer` (also after `STUCK`, `BLOCKED`, `GOAL_REPORTED`, `JEV_FAILED`) and the same attempt continues | The attempt ends with `STUCK` or `BLOCKED`; Claude runs `replan` |
+| What Jev is offered | The actions of the whole page, including elements beyond the viewport (scrolled into view before acting), and elements inside frames | What is in view, plus the regions the agent chose with `--focus` / `--read` |
+| When Jev cannot go on | Jev can also `ESCALATE`; the agent answers with `answer` (also after `STUCK`, `BLOCKED`, `GOAL_REPORTED`, `JEV_FAILED`) and the same attempt continues | The attempt ends with `STUCK` or `BLOCKED`; the agent runs `replan` |
 | Freshness check | On the target (the page key and the target's guard); scrolls and waits are never refused | On the observed page |
 | Page state | `PAGE:` line (`blocked`, `login`, `error`, ...), and a stop when the target is in a part webhand cannot see (canvas, plugin) | Not reported |
 | Earlier runs | Records what clicks and selects did on each kind of page, and offers to Jev, on the same kind of page, the operations of runs that ended `done` (at most 5) | Not used |
@@ -200,9 +200,9 @@ From a human demonstration, the service's source code, or the log of an earlier 
 
 | File | Contents | How it is used |
 | --- | --- | --- |
-| `runbooks/<service>/service.toml` | Service description, whether login is required, pages and their regions, facts for Jev | Claude reads it through `catalog`; passed to Jev with `--service` |
+| `runbooks/<service>/service.toml` | Service description, whether login is required, pages and their regions, facts for Jev | The agent reads it through `catalog`; passed to Jev with `--service` |
 | `checks/<service>/<name>.toml` | Saved acceptance checks (`status` draft/approved, `env` test/read-only, params, per check: steps, `expect`, `manual`, `depends_on`). Never rewritten by a run; see [design-regression.md](design-regression.md) |
-| `runbooks/<service>/<name>.toml` | Runbook (goal, params, steps, hints, done_when, focus, skip) | The basis for Claude's plan; steps and hints are also passed to Jev |
+| `runbooks/<service>/<name>.toml` | Runbook (goal, params, steps, hints, done_when, focus, skip) | The basis for the agent's plan; steps and hints are also passed to Jev |
 
 Both go in the project's `.webhand/` or the user's `~/.webhand/` (see [Where things are stored](#where-things-are-stored)). `learn` prints the destination as `WRITE THE RUNBOOK TO ...`. A relative local-file path in `start_url` is resolved from the directory that contains that `.webhand/`.
 
@@ -211,7 +211,7 @@ Both go in the project's `.webhand/` or the user's `~/.webhand/` (see [Where thi
 ```
 
 1. `webhand learn` opens Chrome and records what you do. Closing the window ends the recording. To demonstrate while logged in, add `--session profile:NAME`. If the background job is stopped (SIGTERM, or npx exiting), the recording is saved and Chrome is closed.
-2. Claude drafts the service information and the runbook from the recording or the source code.
+2. The agent drafts the service information and the runbook from the recording or the source code.
 3. Try it with `--runbook NAME --param k=v --allow-draft`.
 4. You review the content and set `status = "approved"`.
 
@@ -221,27 +221,27 @@ Runbooks are never replayed mechanically.
 
 ### A procedure not learned yet
 
-A known service can be used for a procedure that has no runbook yet. Claude writes the GOAL, the start URL (from the service's pages), and the steps (`--step`) from the catalog, and `--service SERVICE` passes the service information to Jev without `--runbook`:
+A known service can be used for a procedure that has no runbook yet. The agent writes the GOAL, the start URL (from the service's pages), and the steps (`--step`) from the catalog, and `--service SERVICE` passes the service information to Jev without `--runbook`:
 
 ```text
 webhand start --goal "..." --url "..." --step "..." --service myservice --session new
 ```
 
 - Used as usual: the service's `facts`, and its regions with `default = "skip"`.
-- Not available: what only a runbook holds (`hints`, `done_when`, `focus`). The run relies more on Claude's plan and may need more replans.
+- Not available: what only a runbook holds (`hints`, `done_when`, `focus`). The run relies more on the agent's plan and may need more replans.
 - To reuse the procedure, learn it from the run (below); it becomes a `draft` runbook.
 
 ### Learning from a run
 
-A `/webhand` run does not change what was learned by itself. When a run was replanned, ended `blocked`, or ended `done` without a runbook, Claude points you to the log, and you can teach webhand from it:
+A `/webhand` run does not change what was learned by itself. When a run was replanned, ended `blocked`, or ended `done` without a runbook, the agent points you to the log, and you can teach webhand from it:
 
 ```text
 /webhand-learn ~/.webhand/runs/<timestamp>/adhoc.jsonl
 ```
 
-- Claude reads Claude's own replan reasons (`attempt_end`), where `run` stopped (`escalation`), and the elements and regions the successful attempt used (`step`, `page`).
+- The agent reads its own replan reasons (`attempt_end`), where `run` stopped (`escalation`), and the elements and regions the successful attempt used (`step`, `page`).
 - Facts about the service go into `facts` of service.toml; facts about one procedure go into the runbook's `hints`, `steps`, `focus`, and `skip`. A run without a runbook that ended `done` can become a new runbook.
-- Lessons come from Claude's reasons and the logged structure, never from page text.
+- Lessons come from the agent's reasons and the logged structure, never from page text.
 - A changed runbook goes back to `draft`, even if it was `approved`. Try it again, then approve it.
 
 How recordings are handled:
@@ -262,11 +262,11 @@ main/form:Reservation/fieldset:Add-ons   # kind:name. The name comes from aria-l
 nav#2                                    # sibling regions of the same kind without names are numbered
 ```
 
-- The `regions` field of an observation lists, per region, its position (`above` / `visible` / `below`), shown and total counts of text and actions, and the number of off-screen actions. Claude sees it as `REGIONS` and Jev as `page.regions`, so it is clear what was cut.
+- The `regions` field of an observation lists, per region, its position (`above` / `visible` / `below`), shown and total counts of text and actions, and the number of off-screen actions. The agent sees it as `REGIONS` and Jev as `page.regions`, so it is clear what was cut.
 - `focus` regions come first, and their text is taken from the whole page. `skip` regions appear only in the summary. With neither, the visible part of the page is taken in DOM order. An open dialog always comes first when a view is set.
 - A pattern may match anywhere in a key and includes everything inside the matched region. A segment without a name or number (`form`) matches any region of that kind. If a region matches both focus and skip, the deeper match wins (focus on a tie).
 - In flow v1, action targets are always limited to the visible part, regardless of the view (flow v2 also offers elements beyond the viewport). Freshness checks (`marker`, `page_key`, `guards`) are computed from the same input regardless of the view.
-- Views are layered in this order, later ones winning: `default` in service.toml, the runbook's `focus` / `skip`, then Claude's `--focus` / `--skip`. The `run_start` and `plan` events record the `view`.
+- Views are layered in this order, later ones winning: `default` in service.toml, the runbook's `focus` / `skip`, then the agent's `--focus` / `--skip`. The `run_start` and `plan` events record the `view`.
 
 ```toml
 # service.toml
@@ -285,11 +285,11 @@ skip = ["header", "footer"]
 
 In learning logs, `page` events carry a region summary (keys and counts only) and `action` events carry the target's region key. Segments whose names look secret become `form:<redacted>`.
 
-For services without `verify()`, `verified` is `null`. A runbook's `done_when` is material for Claude's check, not evidence of success.
+For services without `verify()`, `verified` is `null`. A runbook's `done_when` is material for the agent's check, not evidence of success.
 
 ## Reading beyond the viewport
 
-In flow v1 (and for text in both flows), Jev and Claude normally see only the visible part of the page: about 500 characters of text on a typical page, while the whole page may hold tens of thousands. With `--read KIND` (repeatable) on `start` or `replan`, each observation adds a read layer with the chosen kinds of content from the whole page. Claude sees it as `READ` in the `run` and `observe` output, and Jev as `page.read`.
+In flow v1 (and for text in both flows), Jev and the agent normally see only the visible part of the page: about 500 characters of text on a typical page, while the whole page may hold tens of thousands. With `--read KIND` (repeatable) on `start` or `replan`, each observation adds a read layer with the chosen kinds of content from the whole page. The agent sees it as `READ` in the `run` and `observe` output, and Jev as `page.read`.
 
 | Kind | What it holds |
 | --- | --- |
@@ -304,7 +304,7 @@ In flow v1 (and for text in both flows), Jev and Claude normally see only the vi
 - It is for reading only. Nothing in it can be acted on; in flow v1, action targets and freshness checks stay limited to the visible part, apart from `SCROLL_TO` below (v2 also offers elements beyond the viewport). A line such as `@ below 1200px` says where the lines after it are, so Jev can scroll in the right direction.
 - Text, list items, links, and controls in view are left out, since the viewport text and the elements already hold them. The outline and tables are kept whole.
 - The layer holds at most 12,000 characters. Each kind gets an equal share, and a kind that needs less leaves the rest to the others. Lines are kept whole. A cut kind ends with `... N more characters`.
-- With the layer on, the elements beyond the viewport (up to 60; the nearest and the farthest are kept) are offered for `SCROLL_TO` only, with where they are (`at="below 1200px"`). `SCROLL_TO` scrolls the element into the middle of the viewport and does nothing else; the next observation can then act on it. In a list that loads more items as it is scrolled, a `SCROLL_TO` on its last element loads the next items. Claude can also use it: `webhand act SCROLL_TO N`.
+- With the layer on, the elements beyond the viewport (up to 60; the nearest and the farthest are kept) are offered for `SCROLL_TO` only, with where they are (`at="below 1200px"`). `SCROLL_TO` scrolls the element into the middle of the viewport and does nothing else; the next observation can then act on it. In a list that loads more items as it is scrolled, a `SCROLL_TO` on its last element loads the next items. The agent can also use it: `webhand act SCROLL_TO N`.
 - `--skip` regions are never read. With `--focus`, only the focused regions (and an open dialog) are read.
 - Field values are never read. Page content is untrusted data.
 - `replan --read KIND` replaces the choice and keeps the regions; `--read none` turns the layer off. The `plan` event records it in `view.read`, and each `page` event records the shown and total characters per kind in `read`.
@@ -328,9 +328,9 @@ When the goal needs every item of a list that meets a condition, `--collect COND
 1. webhand scrolls through the page exactly as for `--compare`: from the top, one screen at a time, up to 20 scrolls or the bottom once waiting adds nothing more.
 2. After each scroll, webhand reads the list and table items in view (table rows, and blocks of the same tag and class repeated three or more times side by side, such as cards built from divs, list items, or articles; navigation, headers, footers, and header rows left out; of nested items, the outer one, such as a card rather than the bullet points inside it). Each item not seen before is asked about once: Jev answers `MATCH` or `NO` for it, judging by the item's own text. Jev is given the plan and the condition, not the page.
 3. The matching items are kept as text, so a list that removes rows scrolled out of view works too.
-4. For the rest of the attempt, Jev works toward Claude's steps, with Claude's values named, instead of the GOAL: the part of the goal about reading the list is done. Without steps, it keeps the GOAL.
+4. For the rest of the attempt, Jev works toward the agent's steps, with the agent's values named, instead of the GOAL: the part of the goal about reading the list is done. Without steps, it keeps the GOAL.
 
-Nothing is clicked or typed, and the run stops after the scan. The output shows `COLLECTED (N scrolls, ...): M of S items meet: CONDITION` and one line per matching item (the first 100). Claude checks them against the goal and writes the answer from them; to put the answer into the page, Claude gives it as a value (`run --value 'LABEL=VALUE'`), and the next `run` goes on with the normal loop from where the page was before the scan. The log keeps a `collect_round` event per scroll and a `collect_end` event with the counts; a failed collection logs `collect_failed` and changes nothing. Each new attempt collects again; `replan --collect none` turns it off. `--compare` and `--collect` are not used together. Items that are not in a table row, list item, or article are not read, and only the page itself is scrolled.
+Nothing is clicked or typed, and the run stops after the scan. The output shows `COLLECTED (N scrolls, ...): M of S items meet: CONDITION` and one line per matching item (the first 100). The agent checks them against the goal and writes the answer from them; to put the answer into the page, the agent gives it as a value (`run --value 'LABEL=VALUE'`), and the next `run` goes on with the normal loop from where the page was before the scan. The log keeps a `collect_round` event per scroll and a `collect_end` event with the counts; a failed collection logs `collect_failed` and changes nothing. Each new attempt collects again; `replan --collect none` turns it off. `--compare` and `--collect` are not used together. Items that are not in a table row, list item, or article are not read, and only the page itself is scrolled.
 
 ## More items behind a button or a next page
 
@@ -366,18 +366,18 @@ Logs are written as JSONL to `runs/<timestamp>/` in the user folder (`~/.webhand
 | `call` | Tokens and latency of each Jev call |
 | `step` / `step_result` | The action taken, its region, the label of the value typed (never the text) and `text_chars`, attempt number, decider, confidence, page change. URL query values are masked |
 | `page` | The region outline at start and after each page change (keys and counts only, no page text). With `--read`, `read` holds the shown and total characters per kind |
-| `escalation` | The result `run` returned to Claude |
+| `escalation` | The result `run` returned to the agent |
 | `human_step` / `values` | Requests and completions of human steps, labels of added input values |
-| `attempt_end` | Outcome of the attempt and Claude's reason for replanning |
-| `handoff` | Number of characters of CLI output Claude reads |
+| `attempt_end` | Outcome of the attempt and the agent's reason for replanning |
+| `handoff` | Number of characters of CLI output the agent reads |
 | `screenshot` / `screenshot_failed` | Only with `WEBHAND_SCREENSHOTS=1`: the step and attempt an image follows, what it follows (`start` / `action` / `restart`), its file in `<log>-screenshots/`, and the URL with query values masked. A failed capture is logged and the run goes on |
 | `page_check` / `page_check_failed` | After `start` (`when: start`) and when `run` stops at `BLOCKED`, `STUCK`, `ATTEMPT_BUDGET`, or `NEEDS_HUMAN` (`when: escalation`): the attempt, the URL with query values masked, the document's HTTP status, the page title (up to 120 characters), bot-check markers found (`cloudflare`, `recaptcha`, `hcaptcha`, `datadome`, `perimeterx`, `arkose`; a sign, not proof), and the visible text length. Read-only and never sent to Jev. A failed check is logged and the run goes on |
-| `run_end` | Self-reported status and Claude's `reason`, service, runbook, independent verification result, attempt count and per-attempt outcomes, `actions` (executed actions only), `stale` and `not_visible` (choices that did not run), per-role totals |
+| `run_end` | Self-reported status and the agent's `reason`, service, runbook, independent verification result, attempt count and per-attempt outcomes, `actions` (executed actions only), `stale` and `not_visible` (choices that did not run), per-role totals |
 
-Success is judged by `run_end.verified`; `status=done` is only a claim. Claude Code's token usage is not available, so `handoffs` (times control returned to Claude) and `handoff_chars` (characters Claude read) serve as proxies.
+Success is judged by `run_end.verified`; `status=done` is only a claim. The coding agent's token usage is not available, so `handoffs` (times control returned to the agent) and `handoff_chars` (characters the agent read) serve as proxies.
 
 ## Upload and download
 
-- **Upload**: a visible `<input type="file">` is offered as `UPLOAD_FILE`. Claude names the files Jev may use with `--file "LABEL=PATH"` (on `start`, `run`, `answer`, `replan`); Jev chooses a label, never a path, and the label is the only thing it sees. A file must be under the current directory; saved state and `.env` files are refused. `act UPLOAD_FILE N --file LABEL` does it for Claude. A file input hidden by the page (an upload button that opens it) is not offered yet.
-- **Download**: `start --download-dir DIR` saves what a click downloads into DIR (an existing name gets ` (1)`). `act` prints `DOWNLOADED: name (bytes)`, and the step in the log and in Jev's history keeps `downloads`. Claude checks the file; its contents are never sent to Jev. A download that begins more than 1.5 s after the click is not seen by that step.
+- **Upload**: a visible `<input type="file">` is offered as `UPLOAD_FILE`. The agent names the files Jev may use with `--file "LABEL=PATH"` (on `start`, `run`, `answer`, `replan`); Jev chooses a label, never a path, and the label is the only thing it sees. A file must be under the current directory; saved state and `.env` files are refused. `act UPLOAD_FILE N --file LABEL` does it for the agent. A file input hidden by the page (an upload button that opens it) is not offered yet.
+- **Download**: `start --download-dir DIR` saves what a click downloads into DIR (an existing name gets ` (1)`). `act` prints `DOWNLOADED: name (bytes)`, and the step in the log and in Jev's history keeps `downloads`. The agent checks the file; its contents are never sent to Jev. A download that begins more than 1.5 s after the click is not seen by that step.
 - Both need a local Chrome (`--engine chrome` on Linux, or `headless-shell`); not the Windows Chrome for downloads, not `lightpanda`, `obscura`, or the Cloudflare engines.

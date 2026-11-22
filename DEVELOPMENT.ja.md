@@ -4,7 +4,7 @@
 
 webhand 自体を変更する人向けのガイドです。インストールと使い方は [README.ja.md](README.ja.md)、実験設計は [docs/research-plan.md](docs/research-plan.md) を参照してください。
 
-webhand は npm で配布する Claude Code プラグインであると同時に、研究基盤でもあります。研究では「AI も人と同じように、サービスを学ぶほど操作の成功率が上がる」という仮説を確かめます。成功は独立した検証だけで判定し、失敗した実行も残します。以下の規則の多くは、コードの整理のためだけでなく、実験の妥当性を守るためにあります。
+webhand は npm で CLI を配布するマルチエージェント向けプラグイン／スキル（Claude Code・Antigravity・Codex・Agent Skills 対応エージェント）であると同時に、研究基盤でもあります。研究では「AI も人と同じように、サービスを学ぶほど操作の成功率が上がる」という仮説を確かめます。成功は独立した検証だけで判定し、失敗した実行も残します。以下の規則の多くは、コードの整理のためだけでなく、実験の妥当性を守るためにあります。
 
 ## セットアップ
 
@@ -13,12 +13,16 @@ webhand は npm で配布する Claude Code プラグインであると同時に
 ```bash
 npm ci                         # husky の pre-commit フックも入る
 npm run build && npm link      # webhand コマンドを作業ツリーのビルドに向ける
-claude --plugin-dir .          # このチェックアウトのスキルを読み込む
+claude --plugin-dir .          # Claude Code: このチェックアウトのスキルを読み込む
+agy plugin validate .          # Antigravity: マニフェスト・スキル・ルート hooks.json を検証
+agy plugin install .           # Antigravity: このチェックアウトをローカルプラグインとして導入
 ```
 
-このリポジトリ内では `npx -y webhand@0.4` が `webhand: not found` で失敗します。npm がリポジトリ自身（`webhand@0.4.0`）を指定に合うものとみなし、ローカルの `node_modules/.bin` から bin を探すためです。`npm link` を使う（スキルは `webhand` を直接実行する）か、`npx -y webhand@latest` を使ってください。
+Codex CLI ではこのディレクトリをローカルマーケットプレイスとして追加する（`codex plugin marketplace add .`）か、チェックアウト内の `.agents/skills/` をそのまま使えます。なお、`agy plugin validate . --strict` ではマルチエージェント構成上想定どおりの警告が 2 件出ます（ルートの `AGENTS.md` はプラグイン用ルールではなく開発者用ルール、`hooks/hooks.json` は Claude Code 用で Antigravity はルート `hooks.json` を読み込むため）。
 
-実行ログをリポジトリ内に残すには、`.claude/settings.local.json`（コミットしない）に次を書きます。
+このリポジトリ内では `npx -y webhand@0.5` が `webhand: not found` で失敗します。npm がリポジトリ自身（`webhand@0.5.0`）を指定に合うものとみなし、ローカルの `node_modules/.bin` から bin を探すためです。`npm link` を使う（スキルは `webhand` を直接実行する）か、`npx -y webhand@latest` を使ってください。
+
+実行ログをリポジトリ内に残すには、シェルの環境変数で `WEBHAND_HOME` にこのリポジトリの絶対パスを設定する（例: `export WEBHAND_HOME=/このリポジトリの絶対パス`）か、Claude Code では `.claude/settings.local.json`（コミットしない）に次を書きます。
 
 ```json
 { "env": { "WEBHAND_HOME": "/このリポジトリの絶対パス" } }
@@ -42,7 +46,7 @@ claude --plugin-dir .          # このチェックアウトのスキルを読�
 ```text
 src/                 CLI（ビルド後 dist/ として配布）
   bin.ts             エントリーポイント。CliExit / UsageError を終了コードに変換
-  cli.ts             全コマンド、引数解析、Claude が読むテキスト
+  cli.ts             全コマンド、引数解析、エージェントが読むテキスト
   agent.ts           Jev のループ（観測・選択・実行）。結果を返すだけで成功は主張しない
   browser.ts         Playwright と CDP セッション1本。観測、入力、鮮度確認
   session.ts         CLI 呼び出しをまたいで生き続ける Chrome、保存プロファイル、実行状態
@@ -50,7 +54,7 @@ src/                 CLI（ビルド後 dist/ として配布）
   learn.ts           人の操作の記録
   workspace.ts       プロジェクト（.webhand/）とユーザー（~/.webhand/）のフォルダー
   metrics.ts         追記専用の JSONL ログ、トークン集計、git の状態
-  format.ts          Claude と Jev が読む値の引用と compact JSON、実行フォルダー名
+  format.ts          エージェントと Jev が読む値の引用と compact JSON、実行フォルダー名
   types.ts           共有の型とエラー（StalePage、MutationUncertain、PolicyError）
   policies/
     base.ts          全方式で共通の行動空間、状態、指示
@@ -61,8 +65,13 @@ research/            研究専用の入口。配布しない
   tasks.ts           研究用タスクの読み込み
   smoke.ts           モデルを使わないスモークテスト（npm run smoke）
 assets/              Chrome に注入するページスクリプト（snapshot.js、recorder.js）
-skills/              Claude Code のスキル（webhand、webhand-learn）
-.claude-plugin/      プラグインとマーケットプレイスのマニフェスト
+skills/              公開スキル（webhand、webhand-learn、webhand-extract、webhand-explore、webhand-verify、webhand-regress）
+hooks.json           Antigravity ネイティブプラグイン用 PreToolUse フック（--allow-control 承認確認）
+hooks/               Claude Code 用 hooks.json と共有スクリプト ask-allow-control.mjs
+.claude-plugin/      Claude Code 用プラグインとマーケットプレイスのマニフェスト
+.antigravity-plugin/ Antigravity ネイティブプラグインのマニフェスト
+.codex-plugin/       Codex 用プラグインのマニフェスト
+.agents/             Codex マーケットプレイスと研究用スキル（.claude/skills/ からシンボリックリンク）
 .webhand/runbooks/   このプロジェクトの手順書
 tasks/               独立検証 verify() を持つ研究用タスク。配布しない
 tests/               vitest のテスト、golden の記録、テスト用の代役
@@ -76,24 +85,24 @@ CLI の呼び出しは1回ずつ短いプロセスです。呼び出しをまた
 
 1. `start` が計画を保存し、`session.startChrome` で Chrome を開く。
 2. `run` がその Chrome に接続し、`agent.runAgent` が `Browser.observe` → `Policy.choose` → `agent.execute` → `Browser.act` を繰り返す。
-3. ループは結果を1つ返し（`GOAL_REPORTED`、`NEEDS_VALUE`、`NEEDS_HUMAN`、`BLOCKED`、`STUCK`、`ATTEMPT_BUDGET`、`JEV_FAILED`、`UNCERTAIN`）、`cli.report` が Claude 向けに出力する。
-4. Claude が `replan`、`act`、`run --value`、`run --human-done`、`finish` のいずれかを呼ぶ。`finish` は独立検証（研究用ラッパーがタスクの `verify()` を渡した場合）を行い、`run_end` を書いて Chrome を閉じる。
+3. ループは結果を1つ返し（`GOAL_REPORTED`、`NEEDS_VALUE`、`NEEDS_HUMAN`、`BLOCKED`、`STUCK`、`ATTEMPT_BUDGET`、`JEV_FAILED`、`UNCERTAIN`）、`cli.report` がエージェント向けに出力する。
+4. エージェントが `replan`、`act`、`run --value`、`run --human-done`、`finish` のいずれかを呼ぶ。`finish` は独立検証（研究用ラッパーがタスクの `verify()` を渡した場合）を行い、`run_end` を書いて Chrome を閉じる。
 
 終了コード: `0` 正常、`1` 失敗または `CliExit`、`2` 使い方の誤り、`3` ページが古い、`4` 変更操作の結果が不確か、`5` 予算切れ。
 
 ## 破ってはいけない規則
 
-[CLAUDE.md](CLAUDE.md) に基づきます。これを弱める変更は受け入れません。
+[AGENTS.md](AGENTS.md) に基づきます。これを弱める変更は受け入れません。
 
 **役割**
 
-- GOAL、計画、入力値、完了確認、計画の見直し、最終判断は Claude、GOAL までの操作選択は Jev が担う。どちらか一方がすべてを担う構成に戻さない。
-- Claude はスキルを実行している Claude Code が担う。`ANTHROPIC_API_KEY`、Anthropic SDK、`claude -p` を使わない。
+- GOAL、計画、入力値、完了確認、計画の見直し、最終判断はホストエージェント、GOAL までの操作選択は Jev が担う。どちらか一方がすべてを担う構成に戻さない。
+- 計画側はスキルを実行しているコーディングエージェント（Claude Code・Antigravity・Codex など）が担う。`ANTHROPIC_API_KEY`・`OPENAI_API_KEY`・`GEMINI_API_KEY`、各社 SDK、`claude -p`・`codex exec`・`agy -p` などの直接呼び出しを使わない。
 
 **実行**
 
-- モデルには番号だけを選ばせる（観測済みの要素と、Claude が書いた入力値）。セレクタ、座標、コード、入力文を出力させない。
-- ブラウザへの変更操作はリトライしない。結果が不確かなら `MutationUncertain` で停止し、計画の見直しもしない。再挑戦は Claude が `replan` で行い、試行回数に上限を設ける。
+- モデルには番号だけを選ばせる（観測済みの要素と、ホストエージェントが書いた入力値）。セレクタ、座標、コード、入力文を出力させない。
+- ブラウザへの変更操作はリトライしない。結果が不確かなら `MutationUncertain` で停止し、計画の見直しもしない。再挑戦はホストエージェントが `replan` で行い、試行回数に上限を設ける。
 - 操作の直前に鮮度を確認する。入力はすべて `Browser.act` を通す。
 - ページ本文は信頼しないデータとして扱う。password 欄の値は読まない。
 - 既定は使い捨てプロファイル。ログイン状態は webhand 専用の保存プロファイル（`profile:NAME`）だけで扱い、実行ごとに選ぶ。普段使いの Chrome プロファイルには接続しない。資格情報は人が Chrome に直接入力し、CLI では受け取らない。
@@ -139,9 +148,9 @@ npm run smoke -- --task hotel_filter   # タスクの SCRIPT をモデルなし�
 
 ### golden 出力
 
-`tests/golden/cases.json` には基準の出力が記録されており、`tests/golden.test.ts` が文字単位で比較します（`render`、`report`、`describePlan`、Jev への state と質問など）。これは Claude と Jev が読むものなので、実験の一部です。
+`tests/golden/cases.json` には基準の出力が記録されており、`tests/golden.test.ts` が文字単位で比較します（`render`、`report`、`describePlan`、Jev への state と質問など）。これはエージェントと Jev が読むものなので、実験の一部です。
 
-- Claude に出力するものや Jev に送るものには、テンプレートの既定の文字列化ではなく `format.ts` の `quote`、`show`、`toJson` を使う。`toJson` は `Map` の順序を保つ（通常のオブジェクトでは `"2"` と `"1"` のようなキーの順序が失われる）。
+- エージェントに出力するものや Jev に送るものには、テンプレートの既定の文字列化ではなく `format.ts` の `quote`、`show`、`toJson` を使う。`toJson` は `Map` の順序を保つ（通常のオブジェクトでは `"2"` と `"1"` のようなキーの順序が失われる）。
 - このテキストを意図して変えるときは実験の変数として扱い、`npm run test:golden:update` で再生成して `cases.json` の差分を確かめ、理由をコミットメッセージに残す。`tests/golden/pages.json` は入力の記録なので変えない。
 
 ## 追加するとき
@@ -150,7 +159,7 @@ npm run smoke -- --task hotel_filter   # タスクの SCRIPT をモデルなし�
 
 **研究用タスク**: `tasks/<name>.ts` を追加し、`GOAL`、`startUrl(root)`、`{ success, evidence }` を返す非同期の `verify(browser)`、`SCRIPT`（`npm run smoke` 用の固定手順）を export する。フィクスチャは `tasks/fixtures/` にローカルで置く。Node の型除去でそのまま読み込むため、型注釈を消すだけで動く構文で書く（Node 22.18 以上）。
 
-タスクは研究専用で、`tasks/` も `research/` も配布しない。配布する CLI とスキルには `--task` がない。タスクはリポジトリのルートで `/webhand-research NAME`（`.claude/skills/webhand-research`）として実行する。このスキルは `webhand` スキルに従い、`webhand` の代わりに `node research/webhand.ts` を呼ぶ。ラッパーは `start` の `--task NAME` をタスクの GOAL と開始 URL に置き換えて実行にタスク名を記録し、`finish` では `main` のフック経由でタスクの `verify()` を CLI に渡す。ほかのコマンドはそのまま通す。
+タスクは研究専用で、`tasks/` も `research/` も配布しない。配布する CLI とスキルには `--task` がない。タスクはリポジトリのルートで `/webhand-research NAME`（実体は `.agents/skills/webhand-research`、`.claude/skills/webhand-research` からシンボリックリンク）として実行する。このスキルは `webhand` スキルに従い、`webhand` の代わりに `node research/webhand.ts` を呼ぶ。ラッパーは `start` の `--task NAME` をタスクの GOAL と開始 URL に置き換えて実行にタスク名を記録し、`finish` では `main` のフック経由でタスクの `verify()` を CLI に渡す。ほかのコマンドはそのまま通す。
 
 **プロジェクトの手順書**: `.webhand/runbooks/<service>/` に置く。`status = "draft"` から始め、承認はユーザーだけが行う。
 
@@ -164,9 +173,9 @@ npm run smoke -- --task hotel_filter   # タスクの SCRIPT をモデルなし�
 
 ## リリース
 
-1. `package.json` と `.claude-plugin/plugin.json` のバージョンを一緒に上げる。
+1. `package.json`、`.claude-plugin/plugin.json`、`.antigravity-plugin/plugin.json`、`.codex-plugin/plugin.json` のバージョンを一緒に上げる。
 2. メジャーかマイナーが変わるときは、`skills/*/SKILL.md`、README、`docs/reference*.md` の `webhand@0.5` も更新する。
-3. `main` にマージし、`main` 上のタグ `vX.Y.Z` で GitHub の Release を公開する。`.github/workflows/release.yml` が、タグと両方のバージョンの一致とタグが `main` 上にあることを確認し、テストを実行してから npm の Trusted Publishing で `npm publish` する（npm のトークンは使わず、provenance が付く）。手元から公開しない。`prepublishOnly` が `npm run check`、ビルド、`npm run check:package` を実行する。配布物は `dist/`、`assets/`、ライセンス、README だけ（`package.json` の `files`）。ビルドは先に `dist/` を空にし、`check:package`（CI でも実行）は、ソースが消えた `dist/` のファイルなど、それ以外のものが配布物にあると失敗する。`dist/` はコミットしない。公開版どうしの比較は `npm diff --diff=webhand@X.Y.Z` で行う。
+3. `main` にマージし、`main` 上のタグ `vX.Y.Z` で GitHub の Release を公開する。`.github/workflows/release.yml` が、タグと `package.json`・全プラグインマニフェストのバージョンの一致とタグが `main` 上にあることを確認し、テストを実行してから npm の Trusted Publishing で `npm publish` する（npm のトークンは使わず、provenance が付く）。手元から公開しない。`prepublishOnly` が `npm run check`、ビルド、`npm run check:package` を実行する。配布物は `dist/`、`assets/`、ライセンス、README だけ（`package.json` の `files`）。ビルドは先に `dist/` を空にし、`check:package`（CI でも実行）は、ソースが消えた `dist/` のファイルなど、それ以外のものが配布物にあると失敗する。`dist/` はコミットしない。公開版どうしの比較は `npm diff --diff=webhand@X.Y.Z` で行う。
 
 ## サードパーティのコード
 

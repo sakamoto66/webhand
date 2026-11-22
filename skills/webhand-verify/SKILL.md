@@ -1,6 +1,6 @@
 ---
 name: webhand-verify
-description: Check acceptance criteria against a real web page through the webhand CLI. Claude splits the criteria into checks, has Jev perform the operations, then judges each check itself from what the page shows and reports PASS, FAIL or INCONCLUSIVE with quoted evidence. Use when asked to verify, confirm or test that a change or feature meets its acceptance criteria on a web page.
+description: Check acceptance criteria against a real web page through the webhand CLI. The agent splits the criteria into checks, has Jev perform the operations, then judges each check itself from what the page shows and reports PASS, FAIL or INCONCLUSIVE with quoted evidence. Use when asked to verify, confirm or test that a change or feature meets its acceptance criteria on a web page.
 argument-hint: "the acceptance criteria and the URL to check"
 allowed-tools: Bash(webhand:*), Bash(npx -y webhand@0.5:*), Bash(gh issue view:*), Bash(gh pr view:*), AskUserQuestion
 ---
@@ -11,7 +11,7 @@ You judge; Jev only operates. This skill reuses the `webhand` commands of the `/
 
 | Role | Owns |
 | --- | --- |
-| Claude (you) | Splitting the criteria, the plan, the values to type, **the verdict**, the report |
+| Agent (you) | Splitting the criteria, the plan, the values to type, **the verdict**, the report |
 | Jev | Every operation: which element, and which of your values |
 
 ## Rules that make a verdict worth something
@@ -33,11 +33,11 @@ Take the criteria from the request, a pasted Issue or PR, or one you read with `
 - **Operation**: what is done, with exact values.
 - **Expected**: what the page must show afterwards, in observable terms (a text, a number, a URL, a control that is enabled or missing). If a criterion has no observable form ("feels fast", "looks nice"), say so and leave it out of the checks rather than inventing one.
 
-Show the list to the user and get agreement **before starting**: how you read the criteria is the biggest risk. Ask with AskUserQuestion when a criterion is ambiguous. Never invent personal information; ask for missing values. Never ask for passwords, codes or card numbers: make that a `[person]` step.
+Show the list to the user and get agreement **before starting**: how you read the criteria is the biggest risk. Ask the user (using your question tool if available) when a criterion is ambiguous. Never invent personal information; ask for missing values. Never ask for passwords, codes or card numbers: make that a `[person]` step.
 
 ## 2. Confirm the environment (always)
 
-Ask with AskUserQuestion whether the URL is a **test** environment or a **real service**, unless the request already says. On a real service, run only checks whose operation changes nothing (looking, searching, opening, filtering). Do not run a check that registers, sends, buys, deletes or saves: its verdict is `INCONCLUSIVE (not run: real service)`, and the report says why. If the user explicitly accepts a change on the real service, follow the `/webhand` rule: show the plan and get agreement first.
+Ask the user (using your question tool if available) whether the URL is a **test** environment or a **real service**, unless the request already says. On a real service, run only checks whose operation changes nothing (looking, searching, opening, filtering). Do not run a check that registers, sends, buys, deletes or saves: its verdict is `INCONCLUSIVE (not run: real service)`, and the report says why. If the user explicitly accepts a change on the real service, follow the `/webhand` rule: show the plan and get agreement first.
 
 ## 3. Sessions
 
