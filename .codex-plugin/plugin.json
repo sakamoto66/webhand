@@ -1,0 +1,18 @@
+{
+  "name": "webhand",
+  "version": "0.5.0",
+  "description": "Your coding agent plans, asks, checks, and replans; Jev operates the browser toward the goal. Learns services from demonstrations or source code.",
+  "author": {
+    "name": "sakamoto66"
+  },
+  "homepage": "https://github.com/sakamoto66/webhand",
+  "repository": "https://github.com/sakamoto66/webhand",
+  "license": "MIT",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "webhand",
+    "shortDescription": "Learn a web service and operate the browser with Jev",
+    "category": "Browser Automation",
+    "capabilities": ["Interactive", "Read", "Write"]
+  }
+}

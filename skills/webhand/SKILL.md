@@ -1,17 +1,17 @@
 ---
 name: webhand
-description: Do something on a web page through the webhand CLI. Claude plans the goal from what webhand has learned, asks for missing information, lets Jev operate the browser toward the goal, and replans when an attempt falls short. Use when asked to do something on a web page with webhand.
+description: Do something on a web page through the webhand CLI. The agent plans the goal from what webhand has learned, asks for missing information, lets Jev operate the browser toward the goal, and replans when an attempt falls short. Use when asked to do something on a web page with webhand.
 argument-hint: "what you want done"
 allowed-tools: Bash(webhand:*), Bash(npx -y webhand@0.5:*), AskUserQuestion
 ---
 
 # webhand
 
-You plan and judge; Jev operates the browser toward your goal. Use only the `webhand` command: run `webhand --version`, and if that fails, use `npx -y webhand@0.5` in its place for every command below (same arguments). It needs Node.js 22 or later and Google Chrome. If `start` says `TYPESAFE_API_KEY` is not set, tell the user to set it as an environment variable (for example `export TYPESAFE_API_KEY=...` in their shell profile) and restart Claude Code, then stop. Run one command at a time per session. To work on two pages at once, start each with its own `--id NAME` and pass that same `--id` to every command of that session (`run`, `replan`, `act`, `observe`, `finish`); `catalog` lists the open sessions. Without `--id`, there is one session. Do not read project files, take screenshots, or write scripts.
+You plan and judge; Jev operates the browser toward your goal. Use only the `webhand` command: run `webhand --version`, and if that fails, use `npx -y webhand@0.5` in its place for every command below (same arguments). It needs Node.js 22 or later and Google Chrome. If `start` says `TYPESAFE_API_KEY` is not set, tell the user to set it as an environment variable (for example `export TYPESAFE_API_KEY=...` in their shell profile) and restart your coding agent, then stop. Run one command at a time per session. To work on two pages at once, start each with its own `--id NAME` and pass that same `--id` to every command of that session (`run`, `replan`, `act`, `observe`, `finish`); `catalog` lists the open sessions. Without `--id`, there is one session. Do not read project files, take screenshots, or write scripts.
 
 | Role | Owns |
 | --- | --- |
-| Claude (you) | The goal, the plan, the values to type, checking the result, replanning, ending the run |
+| Agent (you) | The goal, the plan, the values to type, checking the result, replanning, ending the run |
 | Jev | Every operation toward the goal: which element, and which of your values |
 
 ## 1. Plan from what was learned
@@ -33,13 +33,13 @@ From the request and the catalog, write:
 - **More** (optional, with Compare or Collect): when the list shows more only after a button or link is pressed (Show more, Load more, Next page), add `--more "CONTROL"` with its name as the page shows it, such as `--more "Next page"`. When the scan reaches the end of what is shown, Jev finds that control, webhand presses it once, and the scan goes on, up to 10 times. Name only a control that shows more items of the list, never one that submits, buys, or signs in.
 - **Regions** (optional): the catalog lists each page's learned regions and each procedure's `focus` / `skip`, which apply automatically with `--runbook` and `--service`. Add `--focus REGION` for the parts of a page the goal works in and `--skip REGION` for parts that crowd them out, using keys from the catalog or from `REGIONS` in earlier output. A bare kind such as `form` matches any form. Leave them out when nothing was learned and nothing was cut.
 
-If a needed value is missing, ask the user with AskUserQuestion. Never invent personal information. Never ask for passwords, codes, or card numbers: make that a `[person]` step.
+If a needed value is missing, ask the user (using your question tool if available). Never invent personal information. Never ask for passwords, codes, or card numbers: make that a `[person]` step.
 
 If the goal changes data on a real service (booking, sending, purchasing, deleting), show the plan and get the user's agreement before starting.
 
 ## 2. Choose the session
 
-Ask the user with AskUserQuestion, unless the request already says:
+Ask the user (using your question tool if available), unless the request already says:
 
 - **new**: a temporary profile, signed out, deleted at the end. The default.
 - **profile:NAME**: a saved webhand profile that keeps its sign-in. List the saved profiles from the catalog. If the service needs a login and no profile has it, offer to create one: run `webhand profile login NAME --url LOGIN_URL` as a background job, tell the user to sign in directly in the Chrome window and close it, and wait for the job to end.
@@ -90,7 +90,7 @@ When the outcome is `ESCALATE`, `STUCK`, `BLOCKED`, `GOAL_REPORTED`, or `JEV_FAI
 webhand answer --note "The cookie banner is closed; search for Lisbon first" [--value "LABEL=VALUE"] [--url URL]
 ```
 
-The note is short and says what to do next on this page: a corrected goal, a value, a permission, or a page to go to. Jev sees it, and the history and the budget are kept. Use `replan` only when the whole plan is wrong. When `WHY:` says the page has canvas, frame, or plugin parts webhand cannot see (the element may be inside one), or that Jev scrolled up and down and chose nothing, an `answer` cannot reveal the element: find another way (a list or text version, another page by `--url`, a keyboard route), or ask the person. If the page cannot be reached or the goal cannot hold on this page after answers, do not keep answering: ask the person with AskUserQuestion, giving the page state, what is done, why it stopped, and the choices (continue, another way, stop).
+The note is short and says what to do next on this page: a corrected goal, a value, a permission, or a page to go to. Jev sees it, and the history and the budget are kept. Use `replan` only when the whole plan is wrong. When `WHY:` says the page has canvas, frame, or plugin parts webhand cannot see (the element may be inside one), or that Jev scrolled up and down and chose nothing, an `answer` cannot reveal the element: find another way (a list or text version, another page by `--url`, a keyboard route), or ask the person. If the page cannot be reached or the goal cannot hold on this page after answers, do not keep answering: ask the person, giving the page state, what is done, why it stopped, and the choices (continue, another way, stop).
 
 A stop on one part of the goal is not a reason to leave the other parts undone. When the goal has several parts (several items, pages, or places), go on to the next part before you report, with `replan --step` for it, and say in the final report which parts were done and which were not. Finish `blocked` only when no part can go on, and say what is left.
 
@@ -99,7 +99,7 @@ A stop on one part of the goal is not a reason to leave the other parts undone. 
 The page is out of reach when Jev reports `BLOCKED` or `NEEDS_HUMAN` because of it, or the printed page is an error, a page that is gone or has moved, a sign-in wall, or a bot check (`PAGE: error`, `check`, or `sign_in`, when shown). Do not finish yet. In this order:
 
 1. **Another way in**, at most two: the site's home page, its own search, or a page that lists what the goal needs (a category, an index, a site map). Use `replan --url URL` with steps from that page. Use only the same site, or a URL the user or the catalog gave. Never try to get past a bot check or a CAPTCHA (another address for the same page, reloading, waiting it out); that is for the user to decide.
-2. **Return to the user** with AskUserQuestion when those ways failed, or when only the user can go on (signing in, a CAPTCHA, a choice the goal leaves open). Say which page you are on and what it shows, what is done so far, and why it stopped. Offer: the next way you would try; the user does it in the Chrome window, then you continue with `run --human-done` (only with `--headed`); or stop and report what was found. If the user does not choose, or cannot help, finish with what you have.
+2. **Return to the user** when those ways failed, or when only the user can go on (signing in, a CAPTCHA, a choice the goal leaves open). Say which page you are on and what it shows, what is done so far, and why it stopped. Offer: the next way you would try; the user does it in the Chrome window, then you continue with `run --human-done` (only with `--headed`); or stop and report what was found. If the user does not choose, or cannot help, finish with what you have.
 
 ## 6. Override
 

@@ -22,7 +22,7 @@ You repeat checks a person approved. Jev only operates; `webhand check --saved` 
 
 ## 2. Environment (always)
 
-Ask with AskUserQuestion whether the URL is a **test** environment or a **real service**, unless the request says. On a real service pass `--production` to every `check`: a check whose `env` is not `read-only` is refused, and you report it as `INCONCLUSIVE (not run: real service)`. Before running a `read-only` check on a real service, read its steps once more and show them to the user: if one registers, sends, buys, deletes or saves, do not run it and tell the person the `env` is wrong.
+Ask the user (using your question tool if available) whether the URL is a **test** environment or a **real service**, unless the request says. On a real service pass `--production` to every `check`: a check whose `env` is not `read-only` is refused, and you report it as `INCONCLUSIVE (not run: real service)`. Before running a `read-only` check on a real service, read its steps once more and show them to the user: if one registers, sends, buys, deletes or saves, do not run it and tell the person the `env` is wrong.
 
 ## 3. Before you run: the previous result
 
