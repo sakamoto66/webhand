@@ -7,7 +7,7 @@ const bash = (command: string) => ({ tool_name: "Bash", tool_input: { command } 
 test("a webhand command with --allow-control asks the person, naming the button", () => {
   for (const command of [
     'webhand start --read-only --allow-control "同意して続ける" --goal x',
-    "npx -y webhand@0.4 replan --reason r --allow-control More",
+    "npx -y webhand@0.5 replan --reason r --allow-control More",
     "node research/webhand.ts start --read-only --allow-control='Show more'",
     "cd /w && webhand start --allow-control 'もっと見る'",
   ]) {

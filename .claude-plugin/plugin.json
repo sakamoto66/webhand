@@ -1,6 +1,6 @@
 {
   "name": "webhand",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "Claude plans, asks, checks, and replans; Jev operates the browser toward the goal. Learns services from demonstrations or source code.",
   "author": {
     "name": "sakamoto66"
