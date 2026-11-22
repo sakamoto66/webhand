@@ -2,12 +2,12 @@
 name: webhand-verify
 description: Check acceptance criteria against a real web page through the webhand CLI. Claude splits the criteria into checks, has Jev perform the operations, then judges each check itself from what the page shows and reports PASS, FAIL or INCONCLUSIVE with quoted evidence. Use when asked to verify, confirm or test that a change or feature meets its acceptance criteria on a web page.
 argument-hint: "the acceptance criteria and the URL to check"
-allowed-tools: Bash(webhand:*), Bash(npx -y webhand@0.4:*), Bash(gh issue view:*), Bash(gh pr view:*), AskUserQuestion
+allowed-tools: Bash(webhand:*), Bash(npx -y webhand@0.5:*), Bash(gh issue view:*), Bash(gh pr view:*), AskUserQuestion
 ---
 
 # webhand-verify
 
-You judge; Jev only operates. This skill reuses the `webhand` commands of the `/webhand` skill (`catalog`, `start`, `run`, `answer`, `replan`, `act`, `observe`, `finish`) and its rules for sessions, `[person]` steps, values, `--read` and `--service`. Run `webhand --version`, and if that fails use `npx -y webhand@0.4` in its place. One command at a time per session. Do not read project files, take screenshots, or write scripts.
+You judge; Jev only operates. This skill reuses the `webhand` commands of the `/webhand` skill (`catalog`, `start`, `run`, `answer`, `replan`, `act`, `observe`, `finish`) and its rules for sessions, `[person]` steps, values, `--read` and `--service`. Run `webhand --version`, and if that fails use `npx -y webhand@0.5` in its place. One command at a time per session. Do not read project files, take screenshots, or write scripts.
 
 | Role | Owns |
 | --- | --- |

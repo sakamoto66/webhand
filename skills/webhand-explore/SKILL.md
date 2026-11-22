@@ -2,12 +2,12 @@
 name: webhand-explore
 description: Look for faults in a web app you may test, through the webhand CLI. Claude gives a charter (what to try); Jev operates; webhand notes console errors, uncaught errors, 5xx responses, failed requests and dead ends, and refuses every host outside the allowed list. Reports candidates with the steps that led to them, confirmed by repeating them in a new session. Test environments only. Use when asked to explore, poke at, stress, or hunt for bugs in a web app.
 argument-hint: "the charter (what to try), the URL, and the hosts that may be visited"
-allowed-tools: Bash(webhand:*), Bash(npx -y webhand@0.4:*), AskUserQuestion
+allowed-tools: Bash(webhand:*), Bash(npx -y webhand@0.5:*), AskUserQuestion
 ---
 
 # webhand-explore
 
-Claude sets the charter, Jev operates the page toward it, and `webhand` notes what goes wrong. This skill reuses the `webhand` commands of the `/webhand` skill (`start`, `run`, `answer`, `replan`, `act`, `observe`, `finish`) and its rules for sessions. Run `webhand --version`, and if that fails use `npx -y webhand@0.4` in its place. One command at a time per session. Do not read project files, take screenshots, or write scripts.
+Claude sets the charter, Jev operates the page toward it, and `webhand` notes what goes wrong. This skill reuses the `webhand` commands of the `/webhand` skill (`start`, `run`, `answer`, `replan`, `act`, `observe`, `finish`) and its rules for sessions. Run `webhand --version`, and if that fails use `npx -y webhand@0.5` in its place. One command at a time per session. Do not read project files, take screenshots, or write scripts.
 
 | Role | Owns |
 | --- | --- |

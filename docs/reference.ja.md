@@ -158,7 +158,7 @@ networkingMode=mirrored
 
 ## コマンド
 
-下の表の `webhand` は、インストールしていなければ `npx -y webhand@0.4` と読み替えてください。`webhand --version` で版を確認できます。
+下の表の `webhand` は、インストールしていなければ `npx -y webhand@0.5` と読み替えてください。`webhand --version` で版を確認できます。
 
 | コマンド | 担当 | 内容 |
 | --- | --- | --- |

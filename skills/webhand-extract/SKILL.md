@@ -2,12 +2,12 @@
 name: webhand-extract
 description: Read data from a web page through the webhand CLI without changing anything. Jev only gets to the list or table; webhand extract reads the data itself, so the values are the page's own text, never Claude's transcription. Reports a table with the source, the count, and what could not be read. Use when asked to get, collect, list, compare or export information from a web page.
 argument-hint: "what to read, and the URL"
-allowed-tools: Bash(webhand:*), Bash(npx -y webhand@0.4:*), AskUserQuestion
+allowed-tools: Bash(webhand:*), Bash(npx -y webhand@0.5:*), AskUserQuestion
 ---
 
 # webhand-extract
 
-Jev only brings the page to the data; `webhand extract` reads it. This skill reuses the `webhand` commands of the `/webhand` skill (`catalog`, `start`, `run`, `answer`, `replan`, `act`, `observe`, `finish`) and its rules for sessions, `--read`, `--compare`, `--collect` and `--more`. Run `webhand --version`, and if that fails use `npx -y webhand@0.4` in its place. One command at a time per session. Do not read project files, take screenshots, or write scripts.
+Jev only brings the page to the data; `webhand extract` reads it. This skill reuses the `webhand` commands of the `/webhand` skill (`catalog`, `start`, `run`, `answer`, `replan`, `act`, `observe`, `finish`) and its rules for sessions, `--read`, `--compare`, `--collect` and `--more`. Run `webhand --version`, and if that fails use `npx -y webhand@0.5` in its place. One command at a time per session. Do not read project files, take screenshots, or write scripts.
 
 | Role | Owns |
 | --- | --- |
