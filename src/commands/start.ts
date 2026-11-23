@@ -6,6 +6,7 @@ import { browserUrl, chooseChrome as pickChrome } from "../engines/chrome.ts";
 import { chooseEngine, engineFor, hostName } from "../engines/index.ts";
 import { ExploreError, hostAllowed, parseAllow } from "../explore.ts";
 import { describeError, quote } from "../format.ts";
+import { type HarState, startHarRecorder, stopHarRecorder } from "../har-session.ts";
 import { gitState, maskUrls, pageEvent, Recorder, safeUrl } from "../metrics.ts";
 import { describePlan, headline } from "../output.ts";
 import { planText } from "../policies/base.ts";
@@ -59,6 +60,9 @@ function resolveTarget(args: Args): StartTarget {
     checkExplore(args, profile, engine, chrome);
     if ((args.download_dir || args.file.length) && !["chrome", "headless-shell"].includes(engine)) {
       throw new CliExit("--file and --download-dir need a local Chrome (--engine chrome or headless-shell)");
+    }
+    if (args.har && !["chrome", "headless-shell"].includes(engine)) {
+      throw new CliExit("--har needs Chrome or headless-shell (--engine chrome or headless-shell)");
     }
     if (args.download_dir && chrome !== "linux") {
       throw new CliExit("--download-dir needs Chrome on this machine: the Windows Chrome cannot save to its paths");
@@ -179,9 +183,11 @@ function initialState(
   target: StartTarget,
   planned: { plan: Plan; url: string },
   chromeState: session.State,
+  harState: HarState | null,
 ): session.State {
   const { book, service, serviceName, chrome } = target;
-  const task = getContext().hooks.task ?? null;
+  const hooks = getContext().hooks;
+  const task = hooks.task ?? null;
   const learned = runbook.view(runbook.serviceView(service), book);
   const claudeView = { focus: args.focus, skip: args.skip, read: args.read };
   return {
@@ -192,6 +198,8 @@ function initialState(
     task,
     start_url: browserUrl(planned.url, chrome),
     ...(args.download_dir ? { download_dir: resolve(args.download_dir) } : {}),
+    ...(harState ? { har: harState } : {}),
+    ...(hooks.meta ? { meta: hooks.meta } : {}),
     ...(args.read_only ? { read_only: { allow: args.allow_control } } : {}),
     ...(args.explore ? { explore: exploreRule(args) } : {}),
     plan: planned.plan,
@@ -206,7 +214,7 @@ function initialState(
     max_actions: args.max_actions,
     max_decisions: args.max_decisions,
     started: Date.now() / 1000,
-    log: defaultLog(task || "adhoc"),
+    log: hooks.log ?? defaultLog(task || "adhoc"),
   };
 }
 
@@ -243,6 +251,7 @@ async function openStartPage(
       ...(engine !== "chrome" ? { engine } : {}),
       session: profile ? "profile" : "new",
       ...(args.auth ? { auth: args.auth } : {}),
+      ...(state.har ? { har: true } : {}),
       git: gitState(),
       runbook: state.runbook,
       service: serviceName,
@@ -276,6 +285,7 @@ async function openStartPage(
       session: profile ? "profile" : "new",
       started_at: new Date().toISOString(),
     });
+    if (state.har) await stopHarRecorder(state.har);
     await session.stopChrome(chromeState);
     throw error;
   } finally {
@@ -310,6 +320,9 @@ function printStarted(args: Args, target: StartTarget, plan: Plan, state: sessio
       `EXPLORING: requests to hosts other than ${state.explore.allow.join(", ")} are refused. At most ${state.explore.max_total} actions in all. Anomalies are candidates, not verdicts: after each run or act, webhand findings`,
     );
   }
+  if (state.har) {
+    print(`HAR: recording to ${state.har.path} (contains cookies and page traffic; do not commit)`);
+  }
   print("NEXT: webhand run");
 }
 
@@ -331,7 +344,19 @@ export async function commandStart(args: Args): Promise<number> {
     if (error instanceof session.SessionError) throw new CliExit(error.message);
     throw error;
   }
-  const state = initialState(args, target, planned, chromeState);
+  let harState: HarState | null = null;
+  try {
+    await getContext().hooks.beforeStart?.(chromeState);
+    if (args.har) {
+      harState = await startHarRecorder(chromeState.port, resolve(args.har));
+    }
+  } catch (error) {
+    if (harState) await stopHarRecorder(harState);
+    await session.stopChrome(chromeState);
+    if (error instanceof session.SessionError) throw new CliExit(error.message);
+    throw error;
+  }
+  const state = initialState(args, target, planned, chromeState, harState);
   getContext().log = state.log;
   const skipped = await openStartPage(args, target, planned, chromeState, state);
   session.save(state);

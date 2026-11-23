@@ -5,6 +5,7 @@ import * as agent from "../agent.ts";
 import type { Args } from "../args.ts";
 import type { Browser } from "../browser.ts";
 import { describeError, show } from "../format.ts";
+import { type HarStopResult, stopHarRecorder } from "../har-session.ts";
 import { Knowledge } from "../knowledge.ts";
 import { logOnce, summarize } from "../metrics.ts";
 import { planText } from "../policies/base.ts";
@@ -51,6 +52,7 @@ export async function commandFinish(args: Args): Promise<number> {
   const state = session.load();
   if (state === null) throw new CliExit("No active session. Run: webhand start");
   let verdict: Verdict = { success: null, evidence: "no verifier" };
+  let harResult: HarStopResult | null = null;
   try {
     const verify = getContext().hooks.verify;
     if (verify) {
@@ -64,6 +66,8 @@ export async function commandFinish(args: Args): Promise<number> {
   } catch (error) {
     verdict = { success: false, evidence: describeError(error) };
   } finally {
+    // Flush the HAR sidecar while Chrome is still alive so in-flight bodies can finish.
+    if (state.har) harResult = await stopHarRecorder(state.har);
     await session.stopChrome(state);
     session.clear();
   }
@@ -88,9 +92,15 @@ export async function commandFinish(args: Args): Promise<number> {
     elapsed_ms: Math.round((Date.now() / 1000 - state.started) * 1000),
     verified: verdict.success,
     evidence: verdict.evidence,
+    ...(harResult
+      ? { har_entries: harResult.entries, ...(harResult.error ? { har_error: harResult.error } : {}) }
+      : {}),
     ...totals,
   });
-  print(`FINISHED status=${args.status} verified=${show(verdict.success)} attempts=${plan.attempt} log=${state.log}`);
+  const harNote = state.har ? ` har=${state.har.path}` : "";
+  print(
+    `FINISHED status=${args.status} verified=${show(verdict.success)} attempts=${plan.attempt} log=${state.log}${harNote}`,
+  );
   return OK;
 }
 
