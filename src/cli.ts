@@ -124,6 +124,12 @@ function commands(): Record<string, CommandSpec> {
         },
         { name: "download-dir", type: "string", help: "Save files the page downloads here (local Chrome only)" },
         {
+          name: "har",
+          type: "string",
+          metavar: "PATH",
+          help: "Record HTTP traffic of the session to a HAR 1.2 file (Chrome or headless-shell only; contains cookies and page data)",
+        },
+        {
           name: "read-only",
           type: "boolean",
           help: "Refuse actions it can tell may change something: a non-GET form submit, a file, a button outside a form",

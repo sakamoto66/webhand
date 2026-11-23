@@ -45,6 +45,10 @@ export const deps = {
 export interface Hooks {
   /** Recorded as the run's task and used to name its log. */
   task?: string;
+  /** Runs after Chrome starts and before HAR recording and start URL navigation (research only). */
+  beforeStart?: (chromeState: session.State) => Promise<void>;
+  /** Extra metadata persisted in session state by a research wrapper. */
+  meta?: Record<string, unknown>;
   /** Checks the final page before Chrome closes. */
   verify?: (browser: Browser, state: session.State) => Promise<Verdict>;
 }

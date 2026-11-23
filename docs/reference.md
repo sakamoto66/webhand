@@ -163,7 +163,7 @@ If the CLI is not installed globally, read `webhand` in the table below as `npx 
 | Command | Used by | Description |
 | --- | --- | --- |
 | `webhand catalog` | Agent | Lists learned services, runbooks, and saved profiles |
-| `webhand start --goal G --url U --step S ... --value L=V ... [--file L=PATH ...] [--download-dir DIR] --session ...` | Agent | Records the plan and opens the start URL in Chrome |
+| `webhand start --goal G --url U --step S ... --value L=V ... [--file L=PATH ...] [--download-dir DIR] [--har PATH] --session ...` | Agent | Records the plan and opens the start URL in Chrome |
 | `webhand run` | Jev | Operates the page toward the GOAL |
 | `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | Agent | Revises the plan and starts the next attempt, from the start URL again (`--restart`) or from another page (`--url`) |
 | `webhand answer --note N [--value L=V] [--url URL]` | Agent | Answers Jev in the same attempt (flow v2 only): the history and the budget are kept. Use `replan` only when the whole plan is wrong |
@@ -179,6 +179,8 @@ If the CLI is not installed globally, read `webhand` in the table below as `npx 
 | `webhand knowledge list/show HOST/clear [HOST]` | Person | Shows or deletes what webhand learned about sites from its own runs (flow v2) |
 
 Prefix a step with `[person]` to make it a step a human performs (requires `--headed`). `--focus REGION` / `--skip REGION` on `start` and `replan` choose which regions are observed (see [Page regions](#page-regions)), and `--read KIND` adds content from beyond the viewport (see [Reading beyond the viewport](#reading-beyond-the-viewport)). With `--runbook NAME --param k=v`, the runbook's GOAL, start URL, and steps become the defaults, and the params are passed to Jev as input values.
+
+With `--har PATH` on `start` (Chrome or `headless-shell` only), webhand runs a detached CDP recorder for the life of the session and writes a HAR 1.2 file atomically (mode `0600`) when `finish` runs, before Chrome closes. It captures requests and responses across CLI commands, redirects, and new tabs without changing what Jev sees. HAR files contain cookies, unredacted query strings, POST payloads, and text/JSON response bodies: treat them as sensitive and never commit or share them.
 
 ### Flow v1 and v2
 

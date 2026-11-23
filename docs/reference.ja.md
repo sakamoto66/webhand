@@ -163,7 +163,7 @@ networkingMode=mirrored
 | コマンド | 担当 | 内容 |
 | --- | --- | --- |
 | `webhand catalog` | エージェント | 学習済みのサービス、手順書、保存プロファイルを一覧する |
-| `webhand start --goal G --url U --step S ... --value L=V ... [--file L=PATH ...] [--download-dir DIR] --session ...` | エージェント | 計画を記録し、Chrome で開始 URL を開く |
+| `webhand start --goal G --url U --step S ... --value L=V ... [--file L=PATH ...] [--download-dir DIR] [--har PATH] --session ...` | エージェント | 計画を記録し、Chrome で開始 URL を開く |
 | `webhand run` | Jev | GOAL まで操作する |
 | `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | エージェント | 計画を見直して、次の試行を始める。開始 URL から（`--restart`）、または別のページから（`--url`） |
 | `webhand answer --note N [--value L=V] [--url URL]` | エージェント | 同じ試行の中で Jev に答える（flow v2 のみ）。履歴と予算は引き継ぐ。計画全体が違うときだけ `replan` を使う |
@@ -179,6 +179,8 @@ networkingMode=mirrored
 | `webhand knowledge list/show HOST/clear [HOST]` | 人 | webhand が自分の実行から学んだサイトの知識を表示・削除する（flow v2） |
 
 手順の先頭に `[person]` を付けると、人が行う手順になります（`--headed` が必須です）。`start` と `replan` の `--focus REGION` / `--skip REGION` で、観測する領域を選べます（下の「ページの領域」）。`--read KIND` で、画面の外の内容を足せます（下の「画面の外を読む」）。`--runbook NAME --param k=v` を指定すると、手順書の GOAL、開始 URL、手順が既定値になり、params は入力値として Jev に渡されます。
+
+`start` に `--har PATH` を付けると（Chrome または `headless-shell` のみ）、セッションのあいだ CDP サイドカーが通信を記録し、`finish` で Chrome を閉じる直前に HAR 1.2 ファイルを原子的に書き出します（権限 `0600`）。コマンドをまたぐ通信、リダイレクト、新しいタブも記録し、Jev に渡す観測内容は変えません。HAR には Cookie、マスクなしのクエリ文字列、POST 本文、テキスト／JSON のレスポンス本文が含まれるため、機密情報として扱い、コミットや共有をしないでください。
 
 ### flow v1 と v2
 
