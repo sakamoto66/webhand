@@ -167,7 +167,7 @@
     const alt = element.getAttribute('alt');
     if (alt) return alt;
 
-    if (element.tagName !== 'INPUT') {
+    if (!['INPUT', 'SELECT', 'TEXTAREA'].includes(element.tagName)) {
       const content = flatChildren(element).map(child => {
         if (child.nodeType === Node.TEXT_NODE) return child.textContent;
         if (child.nodeType === Node.ELEMENT_NODE && child.getAttribute('aria-hidden') !== 'true') return nameOf(child);
@@ -224,17 +224,21 @@
 
   const viewportKey = () => [performance.timeOrigin, location.href, scrollX, scrollY, innerWidth, innerHeight];
 
+  const fieldValue = field => field.tagName === 'SELECT' && field.multiple
+    ? [...field.selectedOptions].map(option => option.value).join('\0')
+    : (field.value ?? null);
+
   const formFieldsKey = () => queryAllDeep(FORM_FIELD_SELECTOR).filter(isObservableInput)
-    .map(field => [nodeId(field), field.value, field.checked, field.selectedIndex, field.disabled, field.readOnly]);
+    .map(field => [nodeId(field), fieldValue(field), field.checked, field.selectedIndex, field.disabled, field.readOnly]);
 
   // ---- API used by browser.py and recorder.js ----
 
   state.closest = closestDeep;
 
-  // Whether a click at (x, y) would land on element or one of its flat-tree descendants.
+  // Whether a click at (x, y) would land on element, one of its flat-tree descendants, or its own label.
   state.hit = (element, x, y) => {
     for (let node = deepElementFromPoint(x, y); node; node = flatParent(node)) {
-      if (node === element) return true;
+      if (node === element || (node.tagName === 'LABEL' && node.control === element)) return true;
     }
     return false;
   };
@@ -282,7 +286,7 @@
     const scope = closestDeep(element, GUARD_SCOPE_SELECTOR) || element.parentElement || element.getRootNode().host;
     return [
       nodeId(element), targetRole(element), accessibleName(element),
-      element.value ?? null, element.checked ?? null, element.selectedIndex ?? null, element.readOnly ?? null,
+      fieldValue(element), element.checked ?? null, element.selectedIndex ?? null, element.readOnly ?? null,
       element.matches(':disabled'),
       element.getAttribute('aria-disabled'), element.getAttribute('aria-expanded'),
       element.getAttribute('aria-checked'), element.getAttribute('aria-selected'),
@@ -335,13 +339,19 @@
     return base;
   };
 
-  // One action per option that could be chosen.
+  // One action per option that could be chosen (or deselected in a multi-select).
   const selectActions = (select, base) => {
     const currentValue = [...select.selectedOptions].map(option => option.label).join(', ');
     return [...select.options]
-      .filter(option => !option.selected && !option.disabled && !option.closest('optgroup[disabled]'))
-      .map(option => ({...base, kind: 'select', value: option.value,
-        current_value: currentValue, label: base.label + ' → ' + option.label}));
+      .filter(option => (!option.selected || select.multiple) && !option.disabled && !option.closest('optgroup[disabled]'))
+      .map(option => ({
+        ...base,
+        kind: 'select',
+        value: option.value,
+        ...(select.multiple && option.selected ? {deselect: true} : {}),
+        current_value: currentValue,
+        label: base.label + ' → ' + (select.multiple && option.selected ? 'deselect ' : '') + option.label,
+      }));
   };
 
   // A fill for editable fields (plus a click to open them), otherwise a click.
@@ -765,7 +775,30 @@
         a.index - b.index)
       .map(({action}) => action);
   }
-  chosen = chosen.slice(0, MAX_ACTIONS);
+  // Each <select> expands to one action per option; count it once against the cap so a long
+  // dropdown (e.g. Country with 248 options) cannot evict the controls after it in the same form.
+  const takeCapped = (items, limit, getAction) => {
+    const out = [];
+    const seenSelects = new Set();
+    let slots = 0;
+    for (const item of items) {
+      const action = getAction(item);
+      if (action.kind === 'select') {
+        if (!seenSelects.has(action.node)) {
+          if (slots >= limit) break;
+          seenSelects.add(action.node);
+          slots++;
+        }
+        out.push(item);
+      } else {
+        if (slots >= limit) break;
+        slots++;
+        out.push(item);
+      }
+    }
+    return out;
+  };
+  chosen = takeCapped(chosen, MAX_ACTIONS, action => action);
   const omitted_actions = actions.length - chosen.length;
   // The region key goes on the action for the run log only; the marker above was taken without it.
   for (const action of chosen) {
@@ -774,11 +807,14 @@
     action.region = region.key;
   }
   // v2: the nearest elements beyond the viewport, back in DOM order, after those in view.
-  const beyondKept = beyond
-    .map((entry, index) => ({...entry, index}))
-    .filter(({action}) => !viewing || decide(actionRegions.get(action)).view !== 'skip')
-    .sort((a, b) => a.distance - b.distance || a.index - b.index)
-    .slice(0, MAX_BEYOND)
+  const beyondKept = takeCapped(
+    beyond
+      .map((entry, index) => ({...entry, index}))
+      .filter(({action}) => !viewing || decide(actionRegions.get(action)).view !== 'skip')
+      .sort((a, b) => a.distance - b.distance || a.index - b.index),
+    MAX_BEYOND,
+    entry => entry.action,
+  )
     .sort((a, b) => a.index - b.index)
     .map(({action}) => action);
   for (const action of beyondKept) {

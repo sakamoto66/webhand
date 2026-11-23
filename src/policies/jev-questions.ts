@@ -81,20 +81,37 @@ export function requestSize(fitted: {
   };
 }
 
+function criteriaSize(question: unknown): number {
+  const criteria = (question as { criteria: Map<string, unknown> | Record<string, unknown> }).criteria;
+  return criteria instanceof Map ? criteria.size : Object.keys(criteria).length;
+}
+
 function fits(body: unknown, questions: Record<string, unknown>, budget: number): boolean {
   for (const question of Object.values(questions)) {
-    const criteria = (question as { criteria: Map<string, unknown> | Record<string, unknown> }).criteria;
-    if ((criteria instanceof Map ? criteria.size : Object.keys(criteria).length) > MAX_CHOICES) return false;
+    if (criteriaSize(question) > MAX_CHOICES) return false;
   }
   return estimateTokens(toJson(body)) <= budget;
+}
+
+function overChoiceLimit(questions: Record<string, unknown>): { op: string; excess: number }[] {
+  const over: { op: string; excess: number }[] = [];
+  for (const [name, question] of Object.entries(questions)) {
+    const size = criteriaSize(question);
+    if (size > MAX_CHOICES && name.endsWith("_target")) {
+      over.push({ op: name.slice(0, -"_target".length).toUpperCase(), excess: size - MAX_CHOICES });
+    }
+  }
+  return over;
 }
 
 const pixels = (action: Action): number => Number(/(\d+)px/.exec(String(action.at ?? ""))?.[1] ?? 0);
 
 /**
  * Asks about the page as observed when the request fits Jev's limits. Otherwise elements are left out until it
- * fits: beyond the viewport the farthest first, then those in view from the end of the page. Controls (wait,
- * scroll, reveal) stay. Jev can still answer NOT_VISIBLE, and nothing left out can be chosen.
+ * fits: first, any operation whose target question exceeds MAX_CHOICES drops only its own nodes (farthest offscreen
+ * first, then the largest in-view node such as a 248-option Country dropdown so unrelated buttons/inputs stay);
+ * then, if still over the token budget, remaining elements drop farthest offscreen first and in-view from the end.
+ * Controls (wait, scroll, reveal) stay. Jev can still answer NOT_VISIBLE, and nothing left out can be chosen.
  */
 export function fitChoose<T extends { body: unknown; questions: Record<string, unknown> }>(
   page: Page,
@@ -103,21 +120,56 @@ export function fitChoose<T extends { body: unknown; questions: Record<string, u
 ): T & { page: Page; dropped: number } {
   let built = build(page);
   if (fits(built.body, built.questions, budget)) return { ...built, page, dropped: 0 };
-  const nodes = new Map<unknown, { offscreen: boolean; distance: number; order: number }>();
+  const nodes = new Map<
+    unknown,
+    { offscreen: boolean; distance: number; order: number; opCounts: Map<string, number> }
+  >();
   for (const action of page.actions) {
-    if (!(action.kind in OPERATIONS) || nodes.has(action.node)) continue;
-    nodes.set(action.node, { offscreen: Boolean(action.offscreen), distance: pixels(action), order: nodes.size });
+    const op = OPERATIONS[action.kind];
+    if (!op) continue;
+    let info = nodes.get(action.node);
+    if (!info) {
+      info = { offscreen: Boolean(action.offscreen), distance: pixels(action), order: nodes.size, opCounts: new Map() };
+      nodes.set(action.node, info);
+    }
+    info.opCounts.set(op, (info.opCounts.get(op) ?? 0) + 1);
   }
-  const order = [...nodes].sort(
-    ([, a], [, b]) => Number(b.offscreen) - Number(a.offscreen) || b.distance - a.distance || b.order - a.order,
-  );
   const left = new Set<unknown>();
   let asked = page;
-  while (left.size < order.length) {
-    const step = Math.max(1, Math.ceil((order.length - left.size) / 10));
-    for (const [node] of order.slice(left.size, left.size + step)) left.add(node);
+  const rebuild = () => {
     asked = { ...page, actions: page.actions.filter((a: Action) => !(a.kind in OPERATIONS && left.has(a.node))) };
     built = build(asked);
+  };
+  for (const { op, excess } of overChoiceLimit(built.questions)) {
+    const candidates = [...nodes]
+      .filter(([node, info]) => !left.has(node) && (info.opCounts.get(op) ?? 0) > 0)
+      .sort(
+        ([, a], [, b]) =>
+          Number(b.offscreen) - Number(a.offscreen) ||
+          b.distance - a.distance ||
+          (b.opCounts.get(op) ?? 0) - (a.opCounts.get(op) ?? 0) ||
+          b.order - a.order,
+      );
+    let removed = 0;
+    for (const [node, info] of candidates) {
+      if (removed >= excess) break;
+      left.add(node);
+      removed += info.opCounts.get(op) ?? 0;
+    }
+  }
+  if (left.size) {
+    rebuild();
+    if (fits(built.body, built.questions, budget)) return { ...built, page: asked, dropped: left.size };
+  }
+  const remaining = [...nodes]
+    .filter(([node]) => !left.has(node))
+    .sort(([, a], [, b]) => Number(b.offscreen) - Number(a.offscreen) || b.distance - a.distance || b.order - a.order);
+  let cursor = 0;
+  while (cursor < remaining.length) {
+    const step = Math.max(1, Math.ceil((remaining.length - cursor) / 10));
+    for (const [node] of remaining.slice(cursor, cursor + step)) left.add(node);
+    cursor += step;
+    rebuild();
     if (fits(built.body, built.questions, budget)) break;
   }
   return { ...built, page: asked, dropped: left.size };
