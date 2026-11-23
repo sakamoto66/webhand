@@ -1,11 +1,10 @@
 /**
  * Detached CDP sidecar that records HTTP traffic across a webhand session into a HAR 1.2 file.
  *
- * Started by startHarRecorder() as `node har-daemon.ts SOCKET PORT HAR_PATH`. It connects directly
+ * Started by startHarRecorder() as `node har-daemon.ts SOCKET PORT HAR_PATH`. Connects directly
  * to Chrome's browser-level CDP WebSocket with Target.setAutoAttach(flatten: true), enables
  * Network.* on every page and iframe target, and flushes pending bodies to HAR_PATH when `finish`
- * sends {"cmd":"stop"} on SOCKET. Runs alongside Playwright's per-command connectOverCDP without
- * touching the browser launch or Jev's view of the page.
+ * sends {"cmd":"stop"} on SOCKET.
  */
 
 import { chmodSync, rmSync } from "node:fs";
@@ -28,7 +27,7 @@ const FLUSH_TIMEOUT_MS = 3000;
 const BODY_TIMEOUT_MS = 2000;
 const MAX_POST_DATA_SIZE = 2 * 1024 * 1024;
 
-interface CdpMessage {
+export interface CdpMessage {
   id?: number;
   method?: string;
   sessionId?: string;
@@ -39,75 +38,48 @@ interface CdpMessage {
   error?: { code?: number; message?: string };
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: raw CDP results.
+export type CdpSender = (method: string, params?: Record<string, unknown>, sessionId?: string) => Promise<any>;
+
 interface VersionInfo {
   webSocketDebuggerUrl: string;
   Browser?: string;
 }
 
-async function fetchVersion(port: number): Promise<VersionInfo> {
-  const deadline = performance.now() + VERSION_TIMEOUT_MS;
-  let lastError: unknown;
-  while (performance.now() < deadline) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(1500) });
-      if (response.ok) {
-        const info = (await response.json()) as VersionInfo;
-        if (info.webSocketDebuggerUrl) return info;
-      }
-    } catch (error) {
-      lastError = error;
-    }
-    await sleep(50);
-  }
-  throw lastError ?? new Error(`Chrome debugging port ${port} did not return webSocketDebuggerUrl`);
-}
-
-function parseBrowser(raw?: string): { name: string; version: string } | undefined {
+export function parseBrowser(raw?: string): { name: string; version: string } | undefined {
   if (!raw) return undefined;
   const slash = raw.indexOf("/");
   if (slash < 0) return { name: raw, version: "" };
   return { name: raw.slice(0, slash), version: raw.slice(slash + 1) };
 }
 
-async function run(socketPath: string, port: number, harPath: string): Promise<void> {
-  const version = await fetchVersion(port);
-  const collector = new HarCollector({ browser: parseBrowser(version.Browser) });
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([promise.catch(() => null), sleep(ms).then(() => null)]);
+}
 
-  const ws = new WebSocket(version.webSocketDebuggerUrl);
-  let nextId = 1;
-  // biome-ignore lint/suspicious/noExplicitAny: raw CDP results.
-  const pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
+/**
+ * Routes CDP Target.* and Network.* events into HarCollector, tracking in-flight body/postData
+ * fetches so shutdown can flush them before writing the HAR.
+ */
+export function createHarEventHandler(
+  collector: HarCollector,
+  send: CdpSender,
+  options: { bodyTimeoutMs?: number } = {},
+): {
+  onEvent: (message: CdpMessage) => void;
+  attachExistingTargets: () => Promise<void>;
+  waitForInflight: (timeoutMs: number) => Promise<void>;
+} {
   const attachedTargets = new Set<string>();
   const inflight = new Set<Promise<unknown>>();
-  let wsOpen = false;
-  let stopping = false;
+  const bodyTimeoutMs = options.bodyTimeoutMs ?? BODY_TIMEOUT_MS;
 
   const track = (promise: Promise<unknown>): void => {
     inflight.add(promise);
     promise.finally(() => inflight.delete(promise));
   };
 
-  // biome-ignore lint/suspicious/noExplicitAny: raw CDP methods and params.
-  const send = (method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<any> => {
-    if (!wsOpen) return Promise.reject(new Error("CDP WebSocket is closed"));
-    return new Promise((resolve, reject) => {
-      const id = nextId++;
-      pending.set(id, { resolve, reject });
-      const message: Record<string, unknown> = { id, method, params };
-      if (sessionId) message.sessionId = sessionId;
-      try {
-        ws.send(JSON.stringify(message));
-      } catch (error) {
-        pending.delete(id);
-        reject(error as Error);
-      }
-    });
-  };
-
-  const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | null> =>
-    Promise.race([promise.catch(() => null), sleep(ms).then(() => null)]);
-
-  const enableTarget = async (sessionId: string, type: string | undefined) => {
+  const enableTarget = async (sessionId: string, type: string | undefined): Promise<void> => {
     if (type !== "page" && type !== "iframe") return;
     try {
       await send("Network.enable", { maxPostDataSize: MAX_POST_DATA_SIZE }, sessionId);
@@ -117,9 +89,8 @@ async function run(socketPath: string, port: number, harPath: string): Promise<v
   };
 
   const onEvent = (message: CdpMessage): void => {
-    const method = message.method;
+    const { method, params } = message;
     const sessionId = message.sessionId ?? "";
-    const params = message.params;
     if (!method || !params) return;
 
     if (method === "Target.attachedToTarget") {
@@ -138,7 +109,7 @@ async function run(socketPath: string, port: number, harPath: string): Promise<v
             send("Network.getRequestPostData", { requestId: params.requestId }, sessionId).then((res) => {
               if (typeof res?.postData === "string") collector.setPostData(entry, res.postData);
             }),
-            BODY_TIMEOUT_MS,
+            bodyTimeoutMs,
           ),
         );
       }
@@ -168,7 +139,7 @@ async function run(socketPath: string, port: number, harPath: string): Promise<v
             send("Network.getResponseBody", { requestId: params.requestId }, sessionId).then((res) => {
               if (typeof res?.body === "string") collector.setResponseBody(entry, res.body, Boolean(res.base64Encoded));
             }),
-            BODY_TIMEOUT_MS,
+            bodyTimeoutMs,
           ),
         );
       }
@@ -180,9 +151,82 @@ async function run(socketPath: string, port: number, harPath: string): Promise<v
     }
   };
 
+  const attachExistingTargets = async (): Promise<void> => {
+    // Do not pause target startup (waitForDebuggerOnStart: false) so Playwright connectOverCDP
+    // and target=_blank popups run undisturbed.
+    await send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+    const targets = (await send("Target.getTargets")) as {
+      targetInfos?: { targetId: string; type: string }[];
+    };
+    for (const info of targets?.targetInfos ?? []) {
+      if ((info.type === "page" || info.type === "iframe") && !attachedTargets.has(info.targetId)) {
+        attachedTargets.add(info.targetId);
+        const attached = (await send("Target.attachToTarget", { targetId: info.targetId, flatten: true }).catch(
+          () => null,
+        )) as { sessionId?: string } | null;
+        if (attached?.sessionId) {
+          await enableTarget(attached.sessionId, info.type);
+        }
+      }
+    }
+  };
+
+  const waitForInflight = async (timeoutMs: number): Promise<void> => {
+    if (!inflight.size) return;
+    await Promise.race([Promise.allSettled([...inflight]), sleep(timeoutMs)]);
+  };
+
+  return { onEvent, attachExistingTargets, waitForInflight };
+}
+
+async function fetchVersion(port: number): Promise<VersionInfo> {
+  const deadline = performance.now() + VERSION_TIMEOUT_MS;
+  let lastError: unknown;
+  while (performance.now() < deadline) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(1500) });
+      if (response.ok) {
+        const info = (await response.json()) as VersionInfo;
+        if (info.webSocketDebuggerUrl) return info;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+    await sleep(50);
+  }
+  throw lastError ?? new Error(`Chrome debugging port ${port} did not return webSocketDebuggerUrl`);
+}
+
+async function connectCdp(
+  wsUrl: string,
+  onEvent: (message: CdpMessage) => void,
+  onClose: () => void,
+): Promise<{ send: CdpSender; close: () => void }> {
+  const ws = new WebSocket(wsUrl);
+  let nextId = 1;
+  let open = false;
+  // biome-ignore lint/suspicious/noExplicitAny: raw CDP results.
+  const pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
+
+  const send: CdpSender = (method, params = {}, sessionId) => {
+    if (!open) return Promise.reject(new Error("CDP WebSocket is closed"));
+    return new Promise((resolve, reject) => {
+      const id = nextId++;
+      pending.set(id, { resolve, reject });
+      const message: Record<string, unknown> = { id, method, params };
+      if (sessionId) message.sessionId = sessionId;
+      try {
+        ws.send(JSON.stringify(message));
+      } catch (error) {
+        pending.delete(id);
+        reject(error as Error);
+      }
+    });
+  };
+
   await new Promise<void>((resolve, reject) => {
     ws.onopen = () => {
-      wsOpen = true;
+      open = true;
       resolve();
     };
     ws.onerror = () => reject(new Error("Failed to connect to Chrome CDP WebSocket"));
@@ -200,16 +244,40 @@ async function run(socketPath: string, port: number, harPath: string): Promise<v
     };
   });
 
+  ws.onclose = () => {
+    open = false;
+    for (const waiter of pending.values()) waiter.reject(new Error("CDP WebSocket closed"));
+    pending.clear();
+    onClose();
+  };
+
+  return {
+    send,
+    close: () => {
+      open = false;
+      try {
+        ws.close();
+      } catch {
+        // Ignore close errors during shutdown.
+      }
+    },
+  };
+}
+
+async function run(socketPath: string, port: number, harPath: string): Promise<void> {
+  const version = await fetchVersion(port);
+  const collector = new HarCollector({ browser: parseBrowser(version.Browser) });
   const server = createServer();
+  let stopping = false;
+  let handler: ReturnType<typeof createHarEventHandler> | null = null;
+  let cdp: { send: CdpSender; close: () => void } | null = null;
 
   const flushAndExit = async (replySocket?: Socket): Promise<void> => {
     if (stopping) return;
     stopping = true;
     let writeError: string | null = null;
     try {
-      if (inflight.size) {
-        await Promise.race([Promise.allSettled([...inflight]), sleep(FLUSH_TIMEOUT_MS)]);
-      }
+      await handler?.waitForInflight(FLUSH_TIMEOUT_MS);
       writeHarAtomic(harPath, collector.toHar());
     } catch (error) {
       writeError = error instanceof Error ? error.message : String(error);
@@ -219,46 +287,23 @@ async function run(socketPath: string, port: number, harPath: string): Promise<v
       await new Promise<void>((resolve) => replySocket.end(`${JSON.stringify(payload)}\n`, resolve));
     }
     server.close();
-    wsOpen = false;
-    try {
-      ws.close();
-    } catch {
-      // Ignore close errors during shutdown.
-    }
+    cdp?.close();
     rmSync(socketPath, { force: true });
     process.exit(writeError ? 1 : 0);
   };
 
-  ws.onclose = () => {
-    wsOpen = false;
-    for (const waiter of pending.values()) waiter.reject(new Error("CDP WebSocket closed"));
-    pending.clear();
-    void flushAndExit();
-  };
+  cdp = await connectCdp(
+    version.webSocketDebuggerUrl,
+    (message) => handler?.onEvent(message),
+    () => void flushAndExit(),
+  );
+  handler = createHarEventHandler(collector, cdp.send);
 
   process.on("SIGTERM", () => void flushAndExit());
   process.on("SIGINT", () => void flushAndExit());
 
-  // Attach to every existing and future page/iframe target without pausing target startup,
-  // so Playwright's per-command connectOverCDP and target=_blank popups run undisturbed.
-  await send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
-  const targets = (await send("Target.getTargets")) as {
-    targetInfos?: { targetId: string; type: string }[];
-  };
-  for (const info of targets?.targetInfos ?? []) {
-    if ((info.type === "page" || info.type === "iframe") && !attachedTargets.has(info.targetId)) {
-      attachedTargets.add(info.targetId);
-      const attached = (await send("Target.attachToTarget", { targetId: info.targetId, flatten: true }).catch(
-        () => null,
-      )) as { sessionId?: string } | null;
-      if (attached?.sessionId) {
-        await enableTarget(attached.sessionId, info.type);
-      }
-    }
-  }
-  if (inflight.size) {
-    await Promise.race([Promise.allSettled([...inflight]), sleep(1000)]);
-  }
+  await handler.attachExistingTargets();
+  await handler.waitForInflight(1000);
 
   server.on("connection", (socket: Socket) => {
     socket.on("error", () => {});
@@ -284,5 +329,7 @@ async function run(socketPath: string, port: number, harPath: string): Promise<v
   });
 }
 
-const [socketPath, portArg, harPath] = process.argv.slice(2);
-run(socketPath, Number.parseInt(portArg, 10), harPath).catch(() => process.exit(1));
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const [socketPath, portArg, harPath] = process.argv.slice(2);
+  run(socketPath, Number.parseInt(portArg, 10), harPath).catch(() => process.exit(1));
+}

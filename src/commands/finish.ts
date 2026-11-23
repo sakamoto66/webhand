@@ -5,7 +5,7 @@ import * as agent from "../agent.ts";
 import type { Args } from "../args.ts";
 import type { Browser } from "../browser.ts";
 import { describeError, show } from "../format.ts";
-import { type HarStopResult, stopHarRecorder } from "../har.ts";
+import { type HarStopResult, stopHarRecorder } from "../har-session.ts";
 import { Knowledge } from "../knowledge.ts";
 import { logOnce, summarize } from "../metrics.ts";
 import { planText } from "../policies/base.ts";

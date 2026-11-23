@@ -18,6 +18,7 @@ import {
   shouldCaptureBody,
   writeHarAtomic,
 } from "../src/har.ts";
+import { type CdpSender, createHarEventHandler, parseBrowser } from "../src/har-daemon.ts";
 
 const temps: string[] = [];
 
@@ -324,6 +325,54 @@ describe("HarCollector", () => {
     expect(entries[1].response.headers.find((h) => h.name === "X-Done")?.value).toBe("1");
   });
 
+  test("handles multi-hop 301 -> 302 -> 200 redirect chains with late ExtraInfo", () => {
+    const collector = new HarCollector();
+    collector.onRequestWillBeSent("s1", {
+      requestId: "chain",
+      request: { url: "http://localhost:7780/old", method: "GET" },
+      timestamp: 1,
+    });
+    collector.onRequestWillBeSent("s1", {
+      requestId: "chain",
+      request: { url: "http://localhost:7780/mid", method: "GET" },
+      timestamp: 1.01,
+      redirectResponse: { status: 301, statusText: "Moved Permanently", headers: { Location: "/mid" } },
+    });
+    collector.onRequestWillBeSent("s1", {
+      requestId: "chain",
+      request: { url: "http://localhost:7780/final", method: "GET" },
+      timestamp: 1.02,
+      redirectResponse: { status: 302, statusText: "Found", headers: { Location: "/final" } },
+    });
+    collector.onResponseReceived("s1", {
+      requestId: "chain",
+      timestamp: 1.03,
+      response: { status: 200, statusText: "OK", headers: { "Content-Type": "text/html" } },
+    });
+    collector.onResponseReceivedExtraInfo("s1", {
+      requestId: "chain",
+      statusCode: 301,
+      headers: { "Set-Cookie": "hop1=a; Path=/" },
+    });
+    collector.onResponseReceivedExtraInfo("s1", {
+      requestId: "chain",
+      statusCode: 302,
+      headers: { "Set-Cookie": "hop2=b; Path=/" },
+    });
+    collector.onResponseReceivedExtraInfo("s1", {
+      requestId: "chain",
+      statusCode: 200,
+      headers: { "Set-Cookie": "hop3=c; Path=/" },
+    });
+    collector.onLoadingFinished("s1", { requestId: "chain", timestamp: 1.04, encodedDataLength: 10 });
+
+    const { entries } = collector.toHar().log;
+    expect(entries).toHaveLength(3);
+    expect(entries[0].response.cookies).toEqual([{ name: "hop1", value: "a", path: "/" }]);
+    expect(entries[1].response.cookies).toEqual([{ name: "hop2", value: "b", path: "/" }]);
+    expect(entries[2].response.cookies).toEqual([{ name: "hop3", value: "c", path: "/" }]);
+  });
+
   test("handles loadingFailed, base64 bodies, oversized bodies, and atomic 0600 writes", () => {
     const collector = new HarCollector();
     collector.onRequestWillBeSent("s1", {
@@ -360,5 +409,83 @@ describe("HarCollector", () => {
     expect(parsed.log.entries).toHaveLength(2);
     expect(parsed.log.entries[0].response.status).toBe(0);
     expect(parsed.log.entries[1].response.content.encoding).toBe("base64");
+    // Compact single-line JSON format keeps large HAR files smaller.
+    expect(readFileSync(outPath, "utf8").trim().split("\n")).toHaveLength(1);
+  });
+});
+
+describe("har-daemon event handler", () => {
+  test("parses browser version strings", () => {
+    expect(parseBrowser("Chrome/141.0.7390.108")).toEqual({ name: "Chrome", version: "141.0.7390.108" });
+    expect(parseBrowser("Chromium")).toEqual({ name: "Chromium", version: "" });
+    expect(parseBrowser(undefined)).toBeUndefined();
+  });
+
+  test("attaches existing and new page targets once, fetches deferred postData and response bodies", async () => {
+    const calls: { method: string; sessionId?: string }[] = [];
+    const send: CdpSender = async (method, params = {}, sessionId) => {
+      calls.push({ method, sessionId });
+      if (method === "Target.getTargets") {
+        return {
+          targetInfos: [
+            { targetId: "t1", type: "page" },
+            { targetId: "t-worker", type: "service_worker" },
+          ],
+        };
+      }
+      if (method === "Target.attachToTarget") return { sessionId: `sess-${params.targetId}` };
+      if (method === "Network.getRequestPostData") return { postData: '{"k":"v"}' };
+      if (method === "Network.getResponseBody") return { body: '{"ok":true}', base64Encoded: false };
+      return {};
+    };
+
+    const collector = new HarCollector();
+    const handler = createHarEventHandler(collector, send, { bodyTimeoutMs: 500 });
+    await handler.attachExistingTargets();
+
+    // Duplicate Target.attachedToTarget for t1 is ignored; new page t2 gets Network.enable.
+    handler.onEvent({
+      method: "Target.attachedToTarget",
+      params: { sessionId: "sess-dup", targetInfo: { targetId: "t1", type: "page" } },
+    });
+    handler.onEvent({
+      method: "Target.attachedToTarget",
+      params: { sessionId: "sess-t2", targetInfo: { targetId: "t2", type: "page" } },
+    });
+    handler.onEvent({
+      sessionId: "sess-t2",
+      method: "Network.requestWillBeSent",
+      params: {
+        requestId: "req1",
+        request: {
+          url: "http://localhost:7780/api/save",
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          hasPostData: true,
+        },
+        timestamp: 1,
+      },
+    });
+    handler.onEvent({
+      sessionId: "sess-t2",
+      method: "Network.responseReceived",
+      params: {
+        requestId: "req1",
+        timestamp: 1.05,
+        response: { status: 200, statusText: "OK", mimeType: "application/json" },
+      },
+    });
+    handler.onEvent({
+      sessionId: "sess-t2",
+      method: "Network.loadingFinished",
+      params: { requestId: "req1", timestamp: 1.06, encodedDataLength: 11 },
+    });
+    await handler.waitForInflight(1000);
+
+    const enabledSessions = calls.filter((c) => c.method === "Network.enable").map((c) => c.sessionId);
+    expect(enabledSessions).toEqual(["sess-t1", "sess-t2"]);
+    const [entry] = collector.toHar().log.entries;
+    expect(entry.request.postData).toEqual({ mimeType: "application/json", text: '{"k":"v"}' });
+    expect(entry.response.content.text).toBe('{"ok":true}');
   });
 });

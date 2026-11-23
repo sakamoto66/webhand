@@ -168,11 +168,23 @@ async function commandInfo(args: string[], io: IO): Promise<number> {
   return OK;
 }
 
+function statusOption(argv: string[]): string | null {
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--status") return argv[i + 1] ?? null;
+    if (argv[i].startsWith("--status=")) return argv[i].slice("--status=".length);
+  }
+  return null;
+}
+
 async function commandStart(args: string[], io: IO): Promise<number> {
   const { values, rest } = takeOptions(args, ["task-id", "out-dir", "dataset", "config"]);
   if (values["task-id"] === null) return main(["start", ...args], io);
   if (rest.some((arg) => /^--(goal|url|har)(=|$)/.test(arg))) {
     throw new CliExit("WebArena task supplies its own goal, start URL, and HAR path. Drop --goal, --url, and --har");
+  }
+  session.use(session.idFrom(rest));
+  if (session.load()) {
+    throw new CliExit("A session is active. Run: finish --status abandoned, or start another with --id");
   }
   const taskId = parseTaskId(values["task-id"]);
   const { config, path: configPath } = loadConfig(values.config);
@@ -197,34 +209,30 @@ async function commandStart(args: string[], io: IO): Promise<number> {
 
   const hooks: Hooks = {
     task: `webarena_${taskId}`,
+    log: process.env.WEBHAND_LOG || join(taskDir, "webhand.jsonl"),
     meta: { webarena: meta },
     ...(autoLoginTargets.length
       ? { beforeStart: async (chromeState) => await preAuthenticate(chromeState, autoLoginTargets) }
       : {}),
   };
 
-  const prevLog = process.env.WEBHAND_LOG;
-  if (!prevLog) process.env.WEBHAND_LOG = join(taskDir, "webhand.jsonl");
-  try {
-    const code = await main(
-      ["start", "--goal", task.intent, "--url", task.start_urls[0], "--har", harPath, ...rest],
-      io,
-      hooks,
-    );
-    if (code === OK) {
-      io.out(`WEBARENA_TASK: id=${taskId} sites=${task.sites.join(",") || "none"} dir=${taskDir}\n`);
-      if (task.start_urls.length > 1) {
-        io.out(`START_URLS: ${task.start_urls.join(" | ")}\n`);
-      }
-      if (autoLoginTargets.length) {
-        io.out(`AUTO_LOGIN: pre-authenticated ${autoLoginTargets.map((t) => t.site).join(", ")} (cookies only; excluded from HAR)\n`);
-      }
+  const code = await main(
+    ["start", "--goal", task.intent, "--url", task.start_urls[0], "--har", harPath, ...rest],
+    io,
+    hooks,
+  );
+  if (code === OK) {
+    io.out(`WEBARENA_TASK: id=${taskId} sites=${task.sites.join(",") || "none"} dir=${taskDir}\n`);
+    if (task.start_urls.length > 1) {
+      io.out(`START_URLS: ${task.start_urls.join(" | ")}\n`);
     }
-    return code;
-  } finally {
-    if (prevLog === undefined) delete process.env.WEBHAND_LOG;
-    else process.env.WEBHAND_LOG = prevLog;
+    if (autoLoginTargets.length) {
+      io.out(
+        `AUTO_LOGIN: pre-authenticated ${autoLoginTargets.map((t) => t.site).join(", ")} (cookies only; excluded from HAR)\n`,
+      );
+    }
   }
+  return code;
 }
 
 async function commandFinish(args: string[], io: IO): Promise<number> {
@@ -236,11 +244,19 @@ async function commandFinish(args: string[], io: IO): Promise<number> {
   session.use(session.idFrom(rest));
   const state = session.load();
   const meta = state?.meta?.webarena as WebArenaSessionMeta | undefined;
+  const hasWaOptions = Boolean(
+    values["task-type"] || values["wa-status"] || values["retrieved-data"] || values["error-details"] || flags.eval,
+  );
 
   if (!meta) {
-    if (values["task-type"] || values["wa-status"] || values["retrieved-data"] || values["error-details"] || flags.eval) {
+    if (hasWaOptions) {
       throw new CliExit("Current session was not started with `research/webarena.ts start --task-id`");
     }
+    return main(["finish", ...rest], io);
+  }
+
+  // Allow abandoning an interrupted WebArena session cleanly without requiring a FinalAgentResponse.
+  if (statusOption(rest) === "abandoned" && !hasWaOptions) {
     return main(["finish", ...rest], io);
   }
 

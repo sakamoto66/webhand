@@ -6,7 +6,7 @@ import { browserUrl, chooseChrome as pickChrome } from "../engines/chrome.ts";
 import { chooseEngine, engineFor, hostName } from "../engines/index.ts";
 import { ExploreError, hostAllowed, parseAllow } from "../explore.ts";
 import { describeError, quote } from "../format.ts";
-import { type HarState, startHarRecorder, stopHarRecorder } from "../har.ts";
+import { type HarState, startHarRecorder, stopHarRecorder } from "../har-session.ts";
 import { gitState, maskUrls, pageEvent, Recorder, safeUrl } from "../metrics.ts";
 import { describePlan, headline } from "../output.ts";
 import { planText } from "../policies/base.ts";
@@ -214,7 +214,7 @@ function initialState(
     max_actions: args.max_actions,
     max_decisions: args.max_decisions,
     started: Date.now() / 1000,
-    log: defaultLog(task || "adhoc"),
+    log: hooks.log ?? defaultLog(task || "adhoc"),
   };
 }
 

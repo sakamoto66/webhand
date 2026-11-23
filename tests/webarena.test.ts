@@ -14,7 +14,8 @@ import {
   WebArenaError,
 } from "../research/webarena-config.ts";
 import { CliExit } from "../src/commands/context.ts";
-import { type HarDocument, stopHarRecorder } from "../src/har.ts";
+import type { HarDocument } from "../src/har.ts";
+import { stopHarRecorder } from "../src/har-session.ts";
 import * as session from "../src/session.ts";
 import { tmpPath } from "./helpers.ts";
 import { isolate, ScriptedJev } from "./jev.ts";
@@ -323,5 +324,66 @@ describe("research/webarena CLI integration", () => {
       status: "SUCCESS",
       retrieved_data: ["Quest Band"],
     });
+  });
+
+  test("allows finish --status abandoned without FinalAgentResponse and avoids empty dirs when a session is active", async () => {
+    const datasetPath = join(workDir, "dataset.json");
+    const configPath = join(workDir, "config.json");
+    const outDir = join(workDir, "out-abandoned");
+    writeFileSync(
+      datasetPath,
+      JSON.stringify([
+        { task_id: 44, sites: ["shopping_admin"], start_urls: ["__SHOPPING_ADMIN__"], intent: "Task 44" },
+        { task_id: 45, sites: ["shopping_admin"], start_urls: ["__SHOPPING_ADMIN__"], intent: "Task 45" },
+      ]),
+    );
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        test_data_file: datasetPath,
+        environments: {
+          shopping_admin: {
+            urls: [`${baseUrl}/admin`],
+            use_header_login: true,
+            credentials: { username: "admin", password: "admin1234" },
+          },
+        },
+      }),
+    );
+
+    const started = await wa(
+      "start",
+      "--task-id",
+      "44",
+      "--config",
+      configPath,
+      "--out-dir",
+      outDir,
+      "--chrome",
+      "linux",
+    );
+    expect(started.code).toBe(0);
+
+    // Starting another task on the same session id fails without creating an empty task directory.
+    const dup = await waExit(
+      "start",
+      "--task-id",
+      "45",
+      "--config",
+      configPath,
+      "--out-dir",
+      outDir,
+      "--chrome",
+      "linux",
+    );
+    expect(dup).toContain("A session is active");
+    expect(existsSync(join(outDir, "45"))).toBe(false);
+
+    // Abandoning closes cleanly without requiring --task-type / --wa-status and skips agent_response.json.
+    const abandoned = await wa("finish", "--status", "abandoned");
+    expect(abandoned.code).toBe(0);
+    expect(session.load()).toBeNull();
+    expect(existsSync(join(outDir, "44", "network.har"))).toBe(true);
+    expect(existsSync(join(outDir, "44", "agent_response.json"))).toBe(false);
   });
 });
