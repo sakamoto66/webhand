@@ -394,3 +394,59 @@ test("what worked before on this kind of page reaches Jev's state only when ther
   );
   expect(state.known_from_earlier_runs).toMatchObject({ operations: [{ label: "More" }] });
 });
+
+test("when select choices exceed 255, fitChoose drops the largest select without dropping buttons or inputs", async () => {
+  const actions = [
+    { id: "e1", kind: "fill", node: 1, role: "textbox", label: "Street", value: "" },
+    { id: "e2", kind: "click", node: 1, role: "textbox", label: "Open Street", value: "" },
+    ...Array.from({ length: 248 }, (_, i) => ({
+      id: `ec${i + 1}`,
+      kind: "select",
+      node: 2,
+      role: "combobox",
+      label: `Country → Country ${i + 1}`,
+      value: `C${i + 1}`,
+      current_value: "United States",
+    })),
+    ...Array.from({ length: 60 }, (_, i) => ({
+      id: `es${i + 1}`,
+      kind: "select",
+      node: 3,
+      role: "combobox",
+      label: `State → State ${i + 1}`,
+      value: `S${i + 1}`,
+      current_value: "California",
+    })),
+    { id: "e4", kind: "fill", node: 4, role: "textbox", label: "City", value: "" },
+    { id: "e5", kind: "click", node: 4, role: "textbox", label: "Open City", value: "" },
+    { id: "e6", kind: "click", node: 5, role: "button", label: "Save Order Address", value: "" },
+    { id: "wait", kind: "wait", label: "Wait for the page to update" },
+  ];
+  const page = { url: "http://local/address", title: "Address", text: "Address", actions };
+  const { policy, sent } = jevPolicy((request) => {
+    // biome-ignore lint/suspicious/noExplicitAny: a request body as JSON.
+    const req = request as any;
+    const answer = jevAnswer();
+    const clickKeys = Object.keys(req.questions.click_target.criteria);
+    const saveKey = clickKeys.find((k) =>
+      req.questions.click_target.criteria[k]?.element?.includes("Save Order Address"),
+    );
+    answer.answers.click_target = {
+      choice: saveKey,
+      confidence: 0.9,
+      probabilities: Object.fromEntries(clickKeys.map((k) => [k, k === saveKey ? 1 : 0])),
+    };
+    answer.answers.operation.probabilities = Object.fromEntries(
+      Object.keys(req.questions.operation.criteria).map((k) => [k, k === "CLICK" ? 1 : 0]),
+    );
+    return { status: 200, body: answer };
+  });
+  const decision = await policy.choose(page, PLAN, []);
+  expect(decision.action?.label).toBe("Save Order Address");
+  // biome-ignore lint/suspicious/noExplicitAny: a request body as JSON.
+  const body = sent[0].body as any;
+  const labels = body.state.elements.map((e: { label: string }) => e.label);
+  expect(labels).toEqual(["Street", "State", "City", "Save Order Address"]);
+  expect(Object.keys(body.questions.select_target.criteria)).toHaveLength(61);
+  expect(policy.calls[0].dropped_elements).toBe(1);
+});

@@ -1092,3 +1092,139 @@ test("two_parts: the second part, pinning the note, can be done by a scripted ru
   expect(result.outcome).toBe("GOAL_REPORTED");
   expect((await two.verify(browser)).success).toBe(true);
 });
+
+test("a long select dropdown does not evict the form fields and button after it", async () => {
+  const url = fixture(
+    "long_select.html",
+    `<!doctype html><body><main><form>
+      <label>Street <input id="street" value="123 Main"></label>
+      <label>Country <select id="country"></select></label>
+      <label>State <select id="state"></select></label>
+      <label>City <input id="city"></label>
+      <button type="button" id="save" onclick="document.title='saved'">Save Order Address</button>
+    </form></main>
+    <div style="margin-top:1600px">
+      <label>Offscreen Country <select id="off_country"></select></label>
+      <button type="button" id="off_save">Offscreen Save</button>
+    </div>
+    <script>
+      for (const id of ['country', 'off_country']) {
+        const s = document.getElementById(id);
+        for (let i = 1; i <= 260; i++) s.add(new Option('Country ' + i, 'C' + i));
+      }
+      const st = document.getElementById('state');
+      for (let i = 1; i <= 50; i++) st.add(new Option('State ' + i, 'S' + i));
+    </script></body>`,
+  );
+  await browser.close();
+  const page = await (await open(url, { whole: true })).observe();
+  const labels = page.actions.map((a: { label: string }) => a.label);
+  expect(labels).toContain("City");
+  expect(labels).toContain("Save Order Address");
+  expect(labels).toContain("State → State 50");
+  expect(labels).toContain("Country → Country 260");
+  expect(labels).toContain("Offscreen Save");
+  expect(page.omitted_actions).toBe(0);
+});
+
+test("unlabeled select and textarea do not concatenate their options or value into the accessible name", async () => {
+  const url = fixture(
+    "unlabeled_fields.html",
+    `<!doctype html><body><form>
+      <select id="region" title="State/Province">
+        <option value="">Please select</option>
+        <option value="AL">Alabama</option>
+        <option value="NY">New York</option>
+      </select>
+      <select id="bare">
+        <option value="1">One</option>
+        <option value="2">Two</option>
+      </select>
+      <textarea id="notes" placeholder="Order notes">Existing long comment text</textarea>
+    </form></body>`,
+  );
+  await browser.close();
+  const page = await (await open(url)).observe();
+  const labels = page.actions.map((a: { label: string }) => a.label);
+  expect(labels).toContain("State/Province → New York");
+  expect(labels).toContain("combobox → Two");
+  expect(labels).toContain("Order notes");
+  expect(labels.some((l: string) => l.includes("Alabama") && l.includes("New York"))).toBe(false);
+  expect(labels.some((l: string) => l.includes("Existing long comment text"))).toBe(false);
+});
+
+test("a control covered by its own label or inner span can be clicked, while an unrelated label still blocks", async () => {
+  const url = fixture(
+    "label_toggle.html",
+    `<!doctype html><body>
+      <div style="position:relative;width:80px;height:32px">
+        <input id="active" type="checkbox" style="width:80px;height:32px;margin:0">
+        <label for="active" style="position:absolute;inset:0;display:block;background:#ccc">
+          <span style="display:block;width:100%;height:100%">Active</span>
+        </label>
+      </div>
+      <input id="other" type="checkbox">
+      <div style="position:relative;width:80px;height:32px;margin-top:20px">
+        <input id="blocked" type="checkbox" aria-label="Blocked" style="width:80px;height:32px;margin:0">
+        <label for="other" style="position:absolute;inset:0;display:block;background:#fcc">Wrong</label>
+      </div>
+    </body>`,
+  );
+  await browser.close();
+  const instance = await open(url);
+  const page = await instance.observe();
+  await instance.act(
+    find(page, (a) => a.label === "Active"),
+    page,
+  );
+  expect(await instance.evaluate("document.getElementById('active').checked")).toBe(true);
+  const next = await instance.observe();
+  await expect(
+    instance.act(
+      find(next, (a) => a.label === "Blocked"),
+      next,
+    ),
+  ).rejects.toMatchObject({ changed: ["target_covered"] });
+});
+
+test("a multi-select can add and deselect options without clearing existing selections", async () => {
+  const url = fixture(
+    "multi_select.html",
+    `<!doctype html><body><form>
+      <label>Customer Groups
+        <select id="groups" multiple size="4">
+          <option value="0" selected>NOT LOGGED IN</option>
+          <option value="1">General</option>
+          <option value="2">Wholesale</option>
+          <option value="3">Retailer</option>
+        </select>
+      </label>
+    </form></body>`,
+  );
+  await browser.close();
+  const instance = await open(url);
+  let page = await instance.observe();
+  await instance.act(
+    find(page, (a) => a.label === "Customer Groups → General"),
+    page,
+  );
+  expect(await instance.fresh(page)).toBe(false);
+  expect(await instance.evaluate("[...document.getElementById('groups').selectedOptions].map(o => o.value)")).toEqual([
+    "0",
+    "1",
+  ]);
+  page = await instance.observe();
+  await instance.act(
+    find(page, (a) => a.label === "Customer Groups → Wholesale"),
+    page,
+  );
+  page = await instance.observe();
+  await instance.act(
+    find(page, (a) => a.label === "Customer Groups → deselect NOT LOGGED IN"),
+    page,
+  );
+  expect(await instance.evaluate("[...document.getElementById('groups').selectedOptions].map(o => o.value)")).toEqual([
+    "1",
+    "2",
+  ]);
+});

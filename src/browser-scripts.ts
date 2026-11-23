@@ -279,9 +279,12 @@ export const LIST_END = `(() => {
 
 export const SELECT_OPTION = `(action => {
   const e=window.__browserLab.nodes.get(action.node);
-  if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
-      !o.disabled && !o.closest('optgroup[disabled]'))) return false;
-  e.value=action.value;
+  if (e.tagName!=='SELECT') return false;
+  const opt=[...e.options].find(o=>o.value===action.value &&
+      !o.disabled && !o.closest('optgroup[disabled]'));
+  if (!opt) return false;
+  if (e.multiple) opt.selected=!action.deselect;
+  else e.value=action.value;
   e.dispatchEvent(new Event('input',{bubbles:true}));
   e.dispatchEvent(new Event('change',{bubbles:true}));
   return true;
