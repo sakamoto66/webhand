@@ -45,6 +45,7 @@
     "test:coverage": "vitest run --coverage",
     "test:golden:update": "UPDATE_GOLDEN=1 vitest run tests/golden.test.ts",
     "smoke": "node research/smoke.ts",
+    "verify:tasks": "node research/smoke.ts --all",
     "prepare": "husky",
     "prepublishOnly": "npm run check && npm run build && npm run check:package"
   },
