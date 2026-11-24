@@ -121,6 +121,12 @@ export interface Plan {
     stopped: string;
     pages?: number;
   } | null;
+  /** Short verifiable claims checked by Jev before DONE escalates to Claude (--expect). */
+  expects?: string[];
+  /** Coarse-to-fine 2-stage Jev selection (region first, then elements in that region). */
+  two_stage?: boolean;
+  /** Allow Jev to pick a non-destructive tactical recovery strategy before stopping as STUCK. */
+  recover?: boolean;
 }
 
 export interface Step {
@@ -138,10 +144,18 @@ export interface Value {
 // biome-ignore lint/suspicious/noExplicitAny: history entries are logged as they are.
 export type HistoryEntry = Record<string, any>;
 
+export type ClaimVerdict = "MET" | "NOT_MET" | "UNKNOWN";
+
 export interface Policy {
   name: string;
   /** Appended before validation, so rejected responses are still logged. */
   calls: ModelCall[];
   config(): Record<string, unknown>;
   choose(page: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision>;
+  /** Parallel self-verification of completion claims before DONE returns to Claude. */
+  verifyClaims?(page: Page, plan: Plan, claims: string[]): Promise<Map<string, ClaimVerdict>>;
+  /** Non-destructive tactical recovery choice when an attempt is about to stop as STUCK. */
+  recover?(page: Page, plan: Plan, history: HistoryEntry[]): Promise<{ strategy: string; confidence: number }>;
+  /** Parallel selection of text blocks relevant to a read-only query. */
+  selectBlocks?(page: Page, plan: Plan, query: string, blocks: { key: string; text: string }[]): Promise<Set<string>>;
 }

@@ -8,6 +8,10 @@ import { MATCH, NO, type Row } from "../scans/collect.ts";
 import { type Best, type Candidate, describeBest, KEEP, NONE } from "../scans/compare.ts";
 import { type Controls, jevGoal, modelState, planText, type Targets } from "./base.ts";
 import {
+  BLOCK_SELECT_RULES,
+  CLAIM_MET,
+  CLAIM_NOT_MET,
+  CLAIM_UNKNOWN,
   COLLECT_RULES,
   COMPARE_RULES,
   COMPARED_RULES,
@@ -23,10 +27,15 @@ import {
   NOT_VISIBLE_HELP,
   OPERATION_HELP,
   READ_RULES,
+  RECOVERY_RULES,
+  RECOVERY_STRATEGIES,
+  REGION_ALL,
+  REGION_RULES,
   TAB_RULES,
   TARGET,
   TERMINAL_HELP,
   VALUE,
+  VERIFY_CLAIMS_RULES,
 } from "./prompts.ts";
 
 export const NO_VALUE = "NONE";
@@ -170,4 +179,69 @@ export function buildCollect(criterion: string, rows: Row[]): Record<string, unk
 export function compareState(page: Page, plan: Plan): Record<string, unknown> {
   const { page: _page, elements: _elements, action_history: _history, ...state } = modelState(page, [], plan);
   return state;
+}
+
+export interface RegionCandidate {
+  key: string;
+  region: string;
+  summary: string;
+}
+
+/** Stage-1 question for 2-stage Jev: pick one region to focus on, or ALL for the whole page. */
+export function buildRegionQuestion(plan: Plan, regions: RegionCandidate[]): Record<string, unknown> {
+  const criteria = new Map<string, string>();
+  for (const item of regions) criteria.set(item.key, `${item.region} — ${item.summary}`);
+  criteria.set(REGION_ALL, "Use the whole page (goal already satisfied, terminal choice, or unsure which region)");
+  return {
+    region: {
+      type: "choice",
+      criteria,
+      instructions: { ...taskBrief(plan), rules: REGION_RULES },
+    },
+  };
+}
+
+/** Parallel verification questions: one MET/NOT_MET/UNKNOWN choice per completion claim. */
+export function buildVerifyClaims(plan: Plan, claims: string[]): Record<string, unknown> {
+  const questions: Record<string, unknown> = {};
+  const brief = taskBrief(plan);
+  claims.forEach((claim, i) => {
+    questions[`claim_${i + 1}`] = {
+      type: "choice",
+      criteria: new Map([
+        [CLAIM_MET, `Visibly satisfied on this page: ${claim}`],
+        [CLAIM_NOT_MET, `Not yet satisfied on this page: ${claim}`],
+        [CLAIM_UNKNOWN, "Cannot tell from the current page observation"],
+      ]),
+      instructions: { ...brief, claim, rules: VERIFY_CLAIMS_RULES },
+    };
+  });
+  return questions;
+}
+
+/** Non-destructive tactical recovery choice before stopping an attempt as STUCK. */
+export function buildRecoveryQuestion(plan: Plan): Record<string, unknown> {
+  return {
+    recovery: {
+      type: "choice",
+      criteria: new Map(Object.entries(RECOVERY_STRATEGIES)),
+      instructions: { ...taskBrief(plan), rules: RECOVERY_RULES },
+    },
+  };
+}
+
+/** Parallel relevance questions for selecting answer blocks from a read-only page. */
+export function buildBlockSelect(query: string, blocks: { key: string; text: string }[]): Record<string, unknown> {
+  const questions: Record<string, unknown> = {};
+  for (const block of blocks) {
+    questions[`block_${block.key}`] = {
+      type: "choice",
+      criteria: new Map([
+        [MATCH, `Relevant to: ${query}`],
+        [NO, "Not relevant (chrome, navigation, or unrelated content)"],
+      ]),
+      instructions: { query, block: block.text, rules: BLOCK_SELECT_RULES },
+    };
+  }
+  return questions;
 }

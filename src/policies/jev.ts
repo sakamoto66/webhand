@@ -7,6 +7,8 @@
 import { Agent, fetch as undiciFetch } from "undici";
 import { toJson } from "../core/format.ts";
 import {
+  type Action,
+  type ClaimVerdict,
   Decision,
   type HistoryEntry,
   type ModelCall,
@@ -22,10 +24,70 @@ import { type Best, type Candidate, KEEP, NONE } from "../scans/compare.ts";
 import { actionSpace, fileChoices, modelState, resolve, valueChoices } from "./base.ts";
 import { type Fetch, type Json, postJson, validateChoice } from "./jev-client.ts";
 import { estimateTokens, FIT_TRIES, fitChoose, OVER_LIMIT, requestSize, SHRINK, TOKEN_BUDGET } from "./jev-fit.ts";
-import { buildCollect, buildCompare, buildMore, buildQuestions, compareState, NO_VALUE } from "./jev-questions.ts";
-import { NOT_VISIBLE } from "./prompts.ts";
+import {
+  buildBlockSelect,
+  buildCollect,
+  buildCompare,
+  buildMore,
+  buildQuestions,
+  buildRecoveryQuestion,
+  buildRegionQuestion,
+  buildVerifyClaims,
+  compareState,
+  NO_VALUE,
+  type RegionCandidate,
+} from "./jev-questions.ts";
+import {
+  CLAIM_MET,
+  CLAIM_NOT_MET,
+  CLAIM_UNKNOWN,
+  NOT_VISIBLE,
+  OPERATIONS,
+  RECOVERY_STRATEGIES,
+  REGION_ALL,
+} from "./prompts.ts";
 
 export { type Fetch, validateChoice };
+
+/** Minimum element count before 2-stage region narrowing activates (small pages go straight to 1-stage). */
+const TWO_STAGE_MIN_ELEMENTS = 16;
+/** If stage-2 region-narrowed choice falls below this confidence, double-check once against the full page. */
+const LOW_CONFIDENCE_THRESHOLD = 0.55;
+const CLAIM_VERDICTS: ClaimVerdict[] = [CLAIM_MET, CLAIM_NOT_MET, CLAIM_UNKNOWN];
+
+/** Groups interactive actions by their snapshot region key to build Stage-1 candidates. */
+function regionCandidates(page: Page): RegionCandidate[] {
+  const groups = new Map<string, string[]>();
+  for (const action of page.actions ?? []) {
+    if (!(action.kind in OPERATIONS)) continue;
+    const region = typeof action.region === "string" && action.region ? action.region : "page";
+    const labels = groups.get(region) ?? [];
+    const label = String(action.label ?? "").split(" → ")[0];
+    if (label && labels.length < 6 && !labels.includes(label)) labels.push(label);
+    groups.set(region, labels);
+  }
+  const counts = new Map<string, number>();
+  for (const action of page.actions ?? []) {
+    if (!(action.kind in OPERATIONS)) continue;
+    const region = typeof action.region === "string" && action.region ? action.region : "page";
+    counts.set(region, (counts.get(region) ?? 0) + 1);
+  }
+  return [...groups.entries()].map(([region, labels], i) => ({
+    key: String(i + 1),
+    region,
+    summary: `${counts.get(region) ?? 0} actions (${labels.join(", ")})`,
+  }));
+}
+
+/** Keeps controls (WAIT/SCROLL/TAB) plus interactive actions belonging to the chosen region (or its children). */
+function filterPageToRegion(page: Page, region: string): Page {
+  const actions = (page.actions ?? []).filter((action: Action) => {
+    if (!(action.kind in OPERATIONS)) return true;
+    const r = typeof action.region === "string" && action.region ? action.region : "page";
+    return r === region || r.startsWith(`${region}/`);
+  });
+  return { ...page, actions };
+}
 
 export class JevPolicy implements Policy {
   name = "jev";
@@ -93,6 +155,57 @@ export class JevPolicy implements Policy {
     return keys;
   }
 
+  async verifyClaims(page: Page, plan: Plan, claims: string[]): Promise<Map<string, ClaimVerdict>> {
+    const state = modelState(page, [], plan);
+    delete state.elements; // Verification inspects URL, title, text, read layer, and regions only.
+    const body = { model: this.model, state, questions: buildVerifyClaims(plan, claims) };
+    const answers = (await this.post(body, "verify")).answers ?? {};
+    const verdicts = new Map<string, ClaimVerdict>();
+    claims.forEach((claim, i) => {
+      const choice = validateChoice(answers[`claim_${i + 1}`] ?? {}, CLAIM_VERDICTS).choice as ClaimVerdict;
+      verdicts.set(claim, choice);
+    });
+    return verdicts;
+  }
+
+  async recover(page: Page, plan: Plan, history: HistoryEntry[]): Promise<{ strategy: string; confidence: number }> {
+    const state = modelState(page, history, plan);
+    delete state.elements;
+    const body = { model: this.model, state, questions: buildRecoveryQuestion(plan) };
+    const answers = (await this.post(body, "recover")).answers ?? {};
+    const parsed = validateChoice(answers.recovery ?? {}, Object.keys(RECOVERY_STRATEGIES));
+    return { strategy: parsed.choice, confidence: parsed.confidence };
+  }
+
+  async selectBlocks(
+    page: Page,
+    plan: Plan,
+    query: string,
+    blocks: { key: string; text: string }[],
+  ): Promise<Set<string>> {
+    const body = { model: this.model, state: compareState(page, plan), questions: buildBlockSelect(query, blocks) };
+    const answers = (await this.post(body, "select_blocks")).answers ?? {};
+    const keys = new Set<string>();
+    for (const block of blocks) {
+      if (validateChoice(answers[`block_${block.key}`] ?? {}, [MATCH, NO]).choice === MATCH) keys.add(block.key);
+    }
+    return keys;
+  }
+
+  /** Stage-1 region selection for 2-stage Jev; returns chosen region key or null when whole page should be used. */
+  private async pickRegion(page: Page, plan: Plan, history: HistoryEntry[]): Promise<string | null> {
+    const candidates = regionCandidates(page);
+    if (candidates.length < 2) return null;
+    const state = modelState(page, history, plan);
+    delete state.elements;
+    const body = { model: this.model, state, questions: buildRegionQuestion(plan, candidates) };
+    const answers = (await this.post(body, "region")).answers ?? {};
+    const valid = [...candidates.map((c) => c.key), REGION_ALL];
+    const picked = validateChoice(answers.region ?? {}, valid);
+    if (picked.choice === REGION_ALL) return null;
+    return candidates.find((c) => c.key === picked.choice)?.region ?? null;
+  }
+
   private async post(body: unknown, purpose: string, extra: Partial<ModelCall> = {}): Promise<Json> {
     const started = performance.now();
     const result = await postJson(this.fetchJson, this.key, body);
@@ -114,6 +227,27 @@ export class JevPolicy implements Policy {
   }
 
   async choose(whole: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {
+    if (plan.two_stage && actionSpace(whole.actions ?? [])[0].length >= TWO_STAGE_MIN_ELEMENTS) {
+      const region = await this.pickRegion(whole, plan, history);
+      if (region) {
+        const narrowed = filterPageToRegion(whole, region);
+        const decision = await this.chooseFrom(narrowed, plan, history);
+        // Read-only fallback to the full page if the chosen region missed the target or confidence is low.
+        if (
+          decision.operation === NOT_VISIBLE ||
+          (decision.confidence !== null && decision.confidence < LOW_CONFIDENCE_THRESHOLD)
+        ) {
+          const full = await this.chooseFrom(whole, plan, history);
+          if (decision.operation === NOT_VISIBLE) return full;
+          return (full.confidence ?? 0) >= (decision.confidence ?? 0) ? full : decision;
+        }
+        return decision;
+      }
+    }
+    return this.chooseFrom(whole, plan, history);
+  }
+
+  private async chooseFrom(whole: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {
     const values = valueChoices(plan);
     const files = fileChoices(plan);
     const build = (page: Page) => {

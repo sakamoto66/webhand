@@ -15,6 +15,8 @@ import {
   PolicyError,
   StalePage,
 } from "../core/types.ts";
+import { CLAIM_MET, CLAIM_NOT_MET, RECOVERY_ESCALATE, RECOVERY_STRATEGIES } from "../policies/prompts.ts";
+import { scroll } from "../scans/list-scanner.ts";
 import type { SiteMemory } from "../storage/memory.ts";
 import {
   captureScreenshot,
@@ -74,6 +76,11 @@ const TERMINAL_OUTCOMES: Record<string, string> = {
   ESCALATE,
 };
 
+/** Max Jev self-verification rejections per attempt before letting GOAL_REPORTED reach Claude. */
+const MAX_SELF_VERIFY_REJECTIONS = 2;
+/** Max non-destructive tactical recoveries per attempt before stopping as STUCK. */
+const MAX_RECOVERIES = 2;
+
 /** Runs one attempt until an outcome above. history is extended in place. */
 export async function runAgent(
   browser: Actor,
@@ -97,8 +104,14 @@ export async function runAgent(
   const onChange = options.onChange ?? (() => {});
   const onDecision = options.onDecision ?? (() => {});
   let decisions = options.decisions ?? 0;
+  let verifyRejections = 0;
+  let recoveries = 0;
+  const tacticalHints: string[] = [];
   const started = performance.now();
   let page = options.page || (await browser.observe());
+
+  const activePlan = (): Plan =>
+    tacticalHints.length ? { ...plan, instructions: [...(plan.instructions ?? []), ...tacticalHints] } : plan;
 
   const flushCalls = () => {
     for (const call of policy.calls) recorder.call(call);
@@ -117,7 +130,57 @@ export async function runAgent(
 
   while (true) {
     const stop = stopReason(plan, history, page, attempt, budget, decisions);
-    if (stop) return finish(stop[0], stop[1]);
+    if (stop) {
+      const [stopOutcome, stopDetail] = stop;
+      const canRecover =
+        stopOutcome === STUCK &&
+        Boolean(plan.recover) &&
+        Boolean(policy.recover) &&
+        recoveries < MAX_RECOVERIES &&
+        !stopDetail.includes("cannot see");
+      if (canRecover && policy.recover) {
+        try {
+          const picked = await policy.recover(page, activePlan(), history);
+          flushCalls();
+          recorder.event("tactical_recovery", {
+            attempt,
+            strategy: picked.strategy,
+            confidence: picked.confidence,
+          });
+          if (picked.strategy !== RECOVERY_ESCALATE) {
+            recoveries += 1;
+            if (picked.strategy === "SCROLL_TO_TOP" && (page.scroll?.y ?? 0) > 0) {
+              await browser.act(scroll(-page.scroll.y), page);
+              page = await browser.observe();
+            }
+            const guidance = RECOVERY_STRATEGIES[picked.strategy] ?? picked.strategy;
+            tacticalHints.push(`Tactical recovery (${picked.strategy}): ${guidance}`);
+            history.push({
+              step: history.length + 1,
+              attempt,
+              kind: "recovery",
+              operation: "RECOVERY",
+              action: `Tactical recovery: ${picked.strategy}`,
+              text: null,
+              url: page.url,
+              page_changed: true,
+            });
+            onChange(page);
+            continue;
+          }
+        } catch (error) {
+          flushCalls();
+          if (error instanceof PolicyError) {
+            return finish(JEV_FAILED, error.message, error.diagnostic ? { jev: error.diagnostic } : {});
+          }
+          if (error instanceof MutationUncertain) {
+            return finish(UNCERTAIN, `mutation uncertain: ${error.message}`);
+          }
+          // Non-fatal recovery failure falls through to normal STUCK escalation.
+        }
+      }
+      return finish(stopOutcome, stopDetail);
+    }
     let decision: Decision | null = null;
     const executedBefore = history.length;
     try {
@@ -126,7 +189,7 @@ export async function runAgent(
       onDecision(decisions);
       const known = options.memory?.hints(page.url) ?? [];
       if (known.length) recorder.event("known_offered", { attempt, count: known.length });
-      decision = await policy.choose(known.length ? { ...page, known } : page, plan, history);
+      decision = await policy.choose(known.length ? { ...page, known } : page, activePlan(), history);
       flushCalls();
       if (decision.operation === "NOT_VISIBLE") {
         await noteNotVisible(browser, recorder, history, page, decision, attempt);
@@ -136,6 +199,44 @@ export async function runAgent(
       }
       if (decision.action === null) {
         if (!(await browser.fresh(page))) continue;
+        if (
+          decision.operation === "DONE" &&
+          plan.expects?.length &&
+          policy.verifyClaims &&
+          verifyRejections < MAX_SELF_VERIFY_REJECTIONS
+        ) {
+          const verdicts = await policy.verifyClaims(page, activePlan(), plan.expects);
+          flushCalls();
+          const met = [...verdicts.entries()].filter(([, v]) => v === CLAIM_MET).map(([c]) => c);
+          const unmet = [...verdicts.entries()].filter(([, v]) => v === CLAIM_NOT_MET).map(([c]) => c);
+          const unknown = [...verdicts.entries()]
+            .filter(([, v]) => v !== CLAIM_MET && v !== CLAIM_NOT_MET)
+            .map(([c]) => c);
+          recorder.event("self_verify", {
+            attempt,
+            met: met.length,
+            unmet: unmet.length,
+            unknown: unknown.length,
+          });
+          if (unmet.length > 0) {
+            verifyRejections += 1;
+            tacticalHints.push(
+              `Self-verification rejected premature DONE. Complete these unmet expectations before choosing DONE: ${unmet.join("; ")}`,
+            );
+            history.push({
+              step: history.length + 1,
+              attempt,
+              kind: "verify",
+              operation: "SELF_VERIFY",
+              action: `Unmet expectations: ${unmet.join("; ")}`,
+              text: null,
+              url: page.url,
+              page_changed: true,
+            });
+            onChange(page);
+            continue;
+          }
+        }
         return finish(TERMINAL_OUTCOMES[decision.operation] ?? BLOCKED, `Jev chose ${decision.operation}`);
       }
       if ((decision.action.kind === "fill" || decision.action.kind === "upload") && decision.text === null) {

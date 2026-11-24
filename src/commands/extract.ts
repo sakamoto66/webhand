@@ -27,7 +27,7 @@ function insideDir(parent: string, child: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !rel.startsWith("/"));
 }
 
-function resolveOutPath(rawOut: string): string {
+export function resolveOutPath(rawOut: string): string {
   const target = resolve(rawOut);
   const cwd = realpathSync(process.cwd());
   if (!insideDir(cwd, target)) {

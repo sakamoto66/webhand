@@ -9,12 +9,14 @@ import { catalogCommand } from "./catalog.ts";
 import { checkCommand } from "./check.ts";
 import { checkLastCommand } from "./checklast.ts";
 import { doctorCommand } from "./doctor.ts";
+import { drilldownCommand } from "./drilldown.ts";
 import { extractCommand } from "./extract.ts";
 import { findingsCommand } from "./findings.ts";
 import { finishCommand } from "./finish.ts";
 import { memoryCommand } from "./memory.ts";
 import { observeCommand } from "./observe.ts";
 import { profileCommand } from "./profile.ts";
+import { queryCommand } from "./query.ts";
 import { recordCommand } from "./record.ts";
 import { replanCommand } from "./replan.ts";
 import { runCommand } from "./run.ts";
@@ -32,6 +34,8 @@ const DEFINITIONS: CommandDef[] = [
   observeCommand,
   checkCommand,
   extractCommand,
+  drilldownCommand,
+  queryCommand,
   findingsCommand,
   checkLastCommand,
   finishCommand,

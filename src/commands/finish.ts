@@ -53,7 +53,7 @@ function runTotals(log: string): Record<string, unknown> {
 }
 
 /** Verifies the page independently when a verifier was given. The status is what the agent claims, nothing more. */
-async function commandFinish(args: Args): Promise<number> {
+export async function commandFinish(args: Args): Promise<number> {
   const state = session.load();
   if (state === null) throw new CliExit("No active session. Run: webhand start");
   let verdict: Verdict = { success: null, evidence: "no verifier" };

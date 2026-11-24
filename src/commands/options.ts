@@ -106,3 +106,25 @@ export function fileOption(): OptionSpec {
     help: "A file Jev may upload (under the current directory)",
   };
 }
+
+export function autonomyOptions(): OptionSpec[] {
+  return [
+    {
+      name: "expect",
+      type: "string",
+      multiple: true,
+      metavar: "CLAIM",
+      help: "A verifiable completion claim Jev checks before DONE wakes the host (repeatable)",
+    },
+    {
+      name: "two-stage",
+      type: "boolean",
+      help: "Narrow dense multi-region pages in 2 Jev stages (region first, then element) with low-confidence fallback",
+    },
+    {
+      name: "recover",
+      type: "boolean",
+      help: "Let Jev choose a non-destructive tactical recovery strategy before stopping as STUCK",
+    },
+  ];
+}

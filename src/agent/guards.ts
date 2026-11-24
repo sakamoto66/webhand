@@ -3,9 +3,9 @@
 import type { HistoryEntry, Page, Plan } from "../core/types.ts";
 import { ATTEMPT_BUDGET, type Budget, MISSING, STALE, STUCK } from "./outcomes.ts";
 
-/** Executed actions only, in every attempt: not a person's step, a NOT_VISIBLE choice, or a refused stale one. */
+/** Executed actions only, in every attempt: not a person's step, self-check, recovery, NOT_VISIBLE, or refused stale. */
 export function executed(history: HistoryEntry[]): HistoryEntry[] {
-  return history.filter((h) => !["human", "answer", MISSING, STALE].includes(h.kind));
+  return history.filter((h) => !["human", "answer", "verify", "recovery", MISSING, STALE].includes(h.kind));
 }
 
 /** Executed actions of one attempt; they count against the budget. */
@@ -19,10 +19,16 @@ function stuck(history: HistoryEntry[], attempt = 1): boolean {
   return recent.length === 3 && recent.every((s) => s.page_changed === false && s.kind !== "wait");
 }
 
-/** Entries of this attempt after Claude's last answer: an answer starts the count again, so Jev is asked before any stop. */
+/** Entries of this attempt after Claude's last answer or a tactical recovery: restarts the count so Jev can act again. */
 function sinceAnswer(history: HistoryEntry[], attempt: number): HistoryEntry[] {
   const own = history.filter((h) => (h.attempt ?? 1) === attempt && h.kind !== "human");
-  const last = own.map((h) => h.kind).lastIndexOf("answer");
+  let last = -1;
+  for (let i = own.length - 1; i >= 0; i--) {
+    if (own[i].kind === "answer" || own[i].kind === "recovery") {
+      last = i;
+      break;
+    }
+  }
   return own.slice(last + 1);
 }
 
