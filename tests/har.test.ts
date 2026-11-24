@@ -421,10 +421,10 @@ describe("har-daemon event handler", () => {
     expect(parseBrowser(undefined)).toBeUndefined();
   });
 
-  test("attaches existing and new page targets once, fetches deferred postData and response bodies", async () => {
-    const calls: { method: string; sessionId?: string }[] = [];
+  test("attaches existing and new page targets once, resumes waiting targets after Network.enable, and fetches bodies", async () => {
+    const calls: { method: string; params?: Record<string, unknown>; sessionId?: string }[] = [];
     const send: CdpSender = async (method, params = {}, sessionId) => {
-      calls.push({ method, sessionId });
+      calls.push({ method, params, sessionId });
       if (method === "Target.getTargets") {
         return {
           targetInfos: [
@@ -443,14 +443,24 @@ describe("har-daemon event handler", () => {
     const handler = createHarEventHandler(collector, send, { bodyTimeoutMs: 500 });
     await handler.attachExistingTargets();
 
-    // Duplicate Target.attachedToTarget for t1 is ignored; new page t2 gets Network.enable.
+    // Duplicate Target.attachedToTarget for t1 skips Network.enable, but still resumes if waitingForDebugger.
     handler.onEvent({
       method: "Target.attachedToTarget",
-      params: { sessionId: "sess-dup", targetInfo: { targetId: "t1", type: "page" } },
+      params: { sessionId: "sess-dup", targetInfo: { targetId: "t1", type: "page" }, waitingForDebugger: true },
     });
+    // Non-page targets paused on start must also be resumed so Chrome never stalls.
     handler.onEvent({
       method: "Target.attachedToTarget",
-      params: { sessionId: "sess-t2", targetInfo: { targetId: "t2", type: "page" } },
+      params: {
+        sessionId: "sess-worker",
+        targetInfo: { targetId: "t-worker-2", type: "service_worker" },
+        waitingForDebugger: true,
+      },
+    });
+    // New page t2 paused on start enables Network before resuming.
+    handler.onEvent({
+      method: "Target.attachedToTarget",
+      params: { sessionId: "sess-t2", targetInfo: { targetId: "t2", type: "page" }, waitingForDebugger: true },
     });
     handler.onEvent({
       sessionId: "sess-t2",
@@ -482,8 +492,21 @@ describe("har-daemon event handler", () => {
     });
     await handler.waitForInflight(1000);
 
+    const autoAttach = calls.find((c) => c.method === "Target.setAutoAttach");
+    expect(autoAttach?.params).toMatchObject({ autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
+
     const enabledSessions = calls.filter((c) => c.method === "Network.enable").map((c) => c.sessionId);
     expect(enabledSessions).toEqual(["sess-t1", "sess-t2"]);
+
+    const resumedSessions = calls.filter((c) => c.method === "Runtime.runIfWaitingForDebugger").map((c) => c.sessionId);
+    expect(resumedSessions).toEqual(expect.arrayContaining(["sess-dup", "sess-worker", "sess-t2"]));
+    const t2EnableIdx = calls.findIndex((c) => c.method === "Network.enable" && c.sessionId === "sess-t2");
+    const t2ResumeIdx = calls.findIndex(
+      (c) => c.method === "Runtime.runIfWaitingForDebugger" && c.sessionId === "sess-t2",
+    );
+    expect(t2EnableIdx).toBeGreaterThan(-1);
+    expect(t2ResumeIdx).toBeGreaterThan(t2EnableIdx);
+
     const [entry] = collector.toHar().log.entries;
     expect(entry.request.postData).toEqual({ mimeType: "application/json", text: '{"k":"v"}' });
     expect(entry.response.content.text).toBe('{"ok":true}');

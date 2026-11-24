@@ -95,9 +95,24 @@ export function createHarEventHandler(
 
     if (method === "Target.attachedToTarget") {
       const targetId = params.targetInfo?.targetId as string | undefined;
-      if (targetId && attachedTargets.has(targetId)) return;
-      if (targetId) attachedTargets.add(targetId);
-      track(enableTarget(params.sessionId, params.targetInfo?.type as string | undefined));
+      const type = params.targetInfo?.type as string | undefined;
+      const childSessionId = params.sessionId as string | undefined;
+      const waiting = Boolean(params.waitingForDebugger);
+      const alreadyAttached = Boolean(targetId && attachedTargets.has(targetId));
+      if (targetId && !alreadyAttached) attachedTargets.add(targetId);
+      if (childSessionId) {
+        track(
+          (async () => {
+            try {
+              if (!alreadyAttached) await withTimeout(enableTarget(childSessionId, type), bodyTimeoutMs);
+            } finally {
+              if (waiting) {
+                await send("Runtime.runIfWaitingForDebugger", {}, childSessionId).catch(() => {});
+              }
+            }
+          })(),
+        );
+      }
       return;
     }
 
@@ -152,9 +167,10 @@ export function createHarEventHandler(
   };
 
   const attachExistingTargets = async (): Promise<void> => {
-    // Do not pause target startup (waitForDebuggerOnStart: false) so Playwright connectOverCDP
-    // and target=_blank popups run undisturbed.
-    await send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+    // Pause newly created targets until Network.enable finishes, then release via
+    // Runtime.runIfWaitingForDebugger, so fast navigations (such as target=_blank popups on
+    // localhost) cannot complete before Network.* listeners are attached.
+    await send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
     const targets = (await send("Target.getTargets")) as {
       targetInfos?: { targetId: string; type: string }[];
     };
@@ -172,8 +188,12 @@ export function createHarEventHandler(
   };
 
   const waitForInflight = async (timeoutMs: number): Promise<void> => {
-    if (!inflight.size) return;
-    await Promise.race([Promise.allSettled([...inflight]), sleep(timeoutMs)]);
+    const deadline = performance.now() + timeoutMs;
+    while (inflight.size > 0) {
+      const remaining = deadline - performance.now();
+      if (remaining <= 0) return;
+      await Promise.race([Promise.allSettled([...inflight]), sleep(remaining)]);
+    }
   };
 
   return { onEvent, attachExistingTargets, waitForInflight };

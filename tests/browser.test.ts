@@ -523,10 +523,11 @@ test("in a list that loads as it is scrolled, SCROLL_TO its last element loads m
   expect(await rows()).toBe(10);
   for (const loaded of [20, 30, 40]) {
     const last = page.actions.filter((a: Action) => a.kind === "reveal").at(-1);
+    expect(last).toBeDefined();
     await browser.act(last as never, page);
+    // Wait until the newly loaded rows are in the DOM before observing, so `page` never holds the pre-load snapshot.
+    await vi.waitFor(async () => expect(await rows()).toBe(loaded), { timeout: 10_000, interval: 100 });
     page = await browser.observe();
-    for (let i = 0; i < 5 && (await rows()) < loaded; i++) page = await browser.observe();
-    expect(await rows()).toBe(loaded);
   }
   expect(page.read.text).toMatch(/\nTuff \| [^|\n]+ \| €11 \| Choose Tuff\n/);
   expect((await plans.verify(browser)).success).toBe(false);
