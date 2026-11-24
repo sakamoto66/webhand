@@ -66,6 +66,7 @@ describe("research/webarena-config", () => {
           shopping: {
             urls: ["http://127.0.0.1:7770"],
             use_header_login: false,
+            credentials: { email: "emma.lopez@gmail.com", password: "Password.123" },
           },
           reddit: {
             urls: ["http://127.0.0.1:9999"],
@@ -82,11 +83,23 @@ describe("research/webarena-config", () => {
     const targets = resolveAutoLoginTargets(config, ["shopping_admin", "shopping", "reddit", "shopping_admin"]);
     expect(targets).toEqual([
       {
+        mode: "header",
         site: "shopping_admin",
         url: "http://127.0.0.1:7780/admin",
         header: { name: "X-M2-Admin-Auto-Login", value: "admin:secret" },
       },
       {
+        mode: "form",
+        site: "shopping",
+        loginUrl: "http://127.0.0.1:7770/customer/account/login",
+        userSelector: 'input#email[name="login[username]"], input[name="login[username]"]',
+        passwordSelector: 'input#pass[name="login[password]"], input[name="login[password]"]',
+        submitSelector: 'button#send2, form#login-form button[type="submit"]',
+        user: "emma.lopez@gmail.com",
+        password: "Password.123",
+      },
+      {
+        mode: "header",
         site: "reddit",
         url: "http://127.0.0.1:9999",
         header: { name: "X-Custom-Login", value: "user1:pw" },
@@ -199,6 +212,48 @@ describe("research/webarena CLI integration", () => {
       const url = req.url ?? "/";
       const autoLogin = req.headers["x-m2-admin-auto-login"];
       const cookies = req.headers.cookie ?? "";
+      if (url === "/customer/account/login" && req.method === "GET") {
+        res
+          .writeHead(200, { "content-type": "text/html" })
+          .end(
+            '<!doctype html><title>Customer Login</title><form id="login-form" method="post" action="/customer/account/loginPost/">' +
+              '<input id="email" name="login[username]" type="email">' +
+              '<input id="pass" name="login[password]" type="password">' +
+              '<button id="send2" type="submit">Sign In</button></form>',
+          );
+        return;
+      }
+      if (url === "/customer/account/loginPost/" && req.method === "POST") {
+        let body = "";
+        req.on("data", (chunk) => {
+          body += String(chunk);
+        });
+        req.on("end", () => {
+          const params = new URLSearchParams(body);
+          if (params.get("login[username]") === "emma@example.com" && params.get("login[password]") === "ShopPass!99") {
+            seenAuthPaths.push(url);
+            res
+              .writeHead(302, {
+                location: "/customer/account/",
+                "set-cookie": "shop_sid=emma_cookie; Path=/; HttpOnly",
+              })
+              .end();
+          } else {
+            res.writeHead(302, { location: "/customer/account/login" }).end();
+          }
+        });
+        return;
+      }
+      if (url === "/customer/account/") {
+        if (!cookies.includes("shop_sid=emma_cookie")) {
+          res.writeHead(302, { location: "/customer/account/login" }).end();
+          return;
+        }
+        res
+          .writeHead(200, { "content-type": "text/html" })
+          .end("<!doctype html><title>My Account</title><p>Welcome, Emma!</p>");
+        return;
+      }
       if (autoLogin === "admin:admin1234") {
         if (url !== "/favicon.ico") seenAuthPaths.push(url);
         res
@@ -400,5 +455,100 @@ describe("research/webarena CLI integration", () => {
     expect(session.load()).toBeNull();
     expect(existsSync(join(outDir, "44", "network.har"))).toBe(true);
     expect(existsSync(join(outDir, "44", "agent_response.json"))).toBe(false);
+  });
+
+  test("pre-authenticates shopping via local form login before HAR starts without leaking password, and fails fast on bad credentials", async () => {
+    const datasetPath = join(workDir, "dataset-shop.json");
+    const configPath = join(workDir, "config-shop.json");
+    const badConfigPath = join(workDir, "config-shop-bad.json");
+    const outDir = join(workDir, "out-shop");
+    writeFileSync(
+      datasetPath,
+      JSON.stringify([
+        {
+          task_id: 47,
+          sites: ["shopping"],
+          start_urls: ["__SHOPPING__/customer/account/"],
+          intent: "Check My Account",
+        },
+      ]),
+    );
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        test_data_file: datasetPath,
+        environments: {
+          shopping: {
+            urls: [baseUrl],
+            use_header_login: false,
+            credentials: { email: "emma@example.com", password: "ShopPass!99" },
+          },
+        },
+      }),
+    );
+    writeFileSync(
+      badConfigPath,
+      JSON.stringify({
+        test_data_file: datasetPath,
+        environments: {
+          shopping: {
+            urls: [baseUrl],
+            use_header_login: false,
+            credentials: { email: "emma@example.com", password: "wrong" },
+          },
+        },
+      }),
+    );
+
+    const bad = await waExit(
+      "start",
+      "--task-id",
+      "47",
+      "--config",
+      badConfigPath,
+      "--out-dir",
+      outDir,
+      "--chrome",
+      "linux",
+    );
+    expect(bad).toContain("Form pre-login failed for shopping");
+    expect(session.load()).toBeNull();
+
+    const started = await wa(
+      "start",
+      "--task-id",
+      "47",
+      "--config",
+      configPath,
+      "--out-dir",
+      outDir,
+      "--chrome",
+      "linux",
+    );
+    expect(started.code).toBe(0);
+    expect(started.out).toContain("My Account");
+    expect(started.out).toContain("AUTO_LOGIN: pre-authenticated shopping (form)");
+    expect(seenAuthPaths).toEqual(["/customer/account/loginPost/"]);
+
+    const finished = await wa(
+      "finish",
+      "--status",
+      "done",
+      "--task-type",
+      "NAVIGATE",
+      "--wa-status",
+      "SUCCESS",
+      "--reason",
+      "Opened My Account",
+    );
+    expect(finished.code).toBe(0);
+
+    const harText = readFileSync(join(outDir, "47", "network.har"), "utf8");
+    expect(harText).not.toContain("ShopPass!99");
+    expect(harText).not.toContain("loginPost");
+    const har = JSON.parse(harText) as HarDocument;
+    expect(
+      har.log.entries.some((e) => e.request.url === `${baseUrl}/customer/account/` && e.response.status === 200),
+    ).toBe(true);
   });
 });
