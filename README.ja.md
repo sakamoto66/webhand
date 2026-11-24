@@ -35,7 +35,7 @@ webhand は目的に合わせた **6 つのスキル** を備えており、仕�
 
 | 頼みたい仕事 | スキル | 返ってくる成果物 | 頼み方の例 |
 | --- | --- | --- | --- |
-| **作業を済ませる** | `/webhand` | 予約・申請・管理画面入力などの実行結果と、確認済みの最終画面 | `/webhand HOTEL PLANISPHERE で来月の土曜から2泊、2名で予約して` |
+| **作業を済ませる** | `/webhand` | 予約・申請・管理画面入力（CSV / JSON の複数行バッチ実行にも対応）と、確認済みの最終画面 | `/webhand HOTEL PLANISPHERE で来月の土曜から2泊、2名で予約して` |
 | **データを安全に集める** | `/webhand-extract` | ページ原文そのままの表・一覧・リンク（`--read-only`、件数と読めなかった部分つき） | `/webhand-extract https://example.test/plans から全プランのプラン名と月額を取って` |
 | **受け入れ条件を確かめる** | `/webhand-verify` | 条件ごとの `PASS` / `FAIL` / `INCONCLUSIVE` 判定と画面文言の引用証拠 | `/webhand-verify https://staging.example.com で次を確認して: 価格の昇順で並ぶ / 合計に税が含まれる` |
 | **壊れていないか見直す** | `/webhand-regress` | 保存した確認の固定期待値による再実行結果（`NEW FAIL` / `STILL FAILING` / `RECOVERED`） | `/webhand-regress shop/checkout` |

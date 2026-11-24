@@ -4,6 +4,7 @@ import type { Args, CommandSpec } from "../args.ts";
 import { actCommand } from "./act.ts";
 import { answerCommand } from "./answer.ts";
 import { authCommand } from "./auth.ts";
+import { batchCommand } from "./batch.ts";
 import { catalogCommand } from "./catalog.ts";
 import { checkCommand } from "./check.ts";
 import { checkLastCommand } from "./checklast.ts";
@@ -36,6 +37,7 @@ const DEFINITIONS: CommandDef[] = [
   finishCommand,
   recordCommand,
   authCommand,
+  batchCommand,
   memoryCommand,
   profileCommand,
 ];

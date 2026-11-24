@@ -10,6 +10,7 @@ import { logOnce, summarize } from "../core/metrics.ts";
 import type { ModelCall, Verdict } from "../core/types.ts";
 import { type HarStopResult, stopHarRecorder } from "../har/session.ts";
 import { planText } from "../policies/base.ts";
+import * as batch from "../storage/batch.ts";
 import { memoryEnabled, SiteMemory } from "../storage/memory.ts";
 import * as session from "../storage/session.ts";
 import { CliExit, getContext, OK, print } from "./context.ts";
@@ -102,8 +103,20 @@ async function commandFinish(args: Args): Promise<number> {
     ...totals,
   });
   const harNote = state.har ? ` har=${state.har.path}` : "";
+  let batchNote = "";
+  if (state.batch) {
+    const rowStatus: batch.BatchRowStatus = state.outcome === "UNCERTAIN" ? "uncertain" : args.status;
+    const { nextPending, total } = batch.recordRowOutcome(state.batch.id, state.batch.row, {
+      status: rowStatus,
+      reason: args.reason,
+      attempts: plan.attempt,
+      log: state.log,
+    });
+    const nextPart = nextPending != null ? ` next=${nextPending}` : " batch_done=true";
+    batchNote = ` batch=${state.batch.id} row=${state.batch.row}/${total}${nextPart}`;
+  }
   print(
-    `FINISHED status=${args.status} verified=${show(verdict.success)} attempts=${plan.attempt} log=${state.log}${harNote}`,
+    `FINISHED status=${args.status} verified=${show(verdict.success)} attempts=${plan.attempt} log=${state.log}${harNote}${batchNote}`,
   );
   return OK;
 }
