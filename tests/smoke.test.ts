@@ -1,7 +1,8 @@
 import { describe, expect, test } from "vitest";
 import { skipReason } from "../research/smoke.ts";
 import { listTasks, loadTask } from "../research/tasks.ts";
-import { ROOT } from "./helpers.ts";
+import { UsageError } from "../src/args.ts";
+import { inDirectory, ROOT, research, tmpPath } from "./helpers.ts";
 
 describe("research/smoke task discovery", () => {
   test("listTasks returns sorted task names from tasks/", () => {
@@ -10,6 +11,21 @@ describe("research/smoke task discovery", () => {
     expect(names).toEqual([...names].sort());
     expect(names).toContain("hotel_filter");
     expect(names).toContain("cookie_wall");
+  });
+
+  test("research tasks lists task names without reading sources", async () => {
+    const { code, out } = await research("tasks");
+    expect(code).toBe(0);
+    expect(out.trim().split("\n")).toEqual(listTasks(ROOT));
+
+    const help = await research("tasks", "--help");
+    expect(help.code).toBe(0);
+    expect(help.out).toContain("usage: node research/webhand.ts tasks");
+
+    await expect(research("tasks", "extra")).rejects.toThrow(UsageError);
+
+    const empty = await inDirectory(tmpPath(), () => research("tasks"));
+    expect(empty).toEqual({ code: 0, out: "" });
   });
 
   test("skipReason separates standalone local tasks from remote, scan, and replan-only tasks", async () => {

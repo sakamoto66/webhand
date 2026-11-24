@@ -3,16 +3,17 @@
  * `node research/webhand.ts COMMAND ...` in place of `webhand COMMAND ...`.
  *
  * `start --task NAME` takes the GOAL and start URL from tasks/NAME.ts and labels the run with it.
- * `finish` then runs the task's verify() on the final page. Every other command is passed through.
+ * `finish` then runs the task's verify() on the final page. `tasks` lists available task names
+ * without reading task sources. Every other command is passed through.
  */
 
 import { pathToFileURL } from "node:url";
 import { UsageError } from "../src/args.ts";
 import type { Browser } from "../src/browser/index.ts";
 import { type IO, main } from "../src/cli.ts";
-import { CliExit, type Hooks } from "../src/commands/context.ts";
+import { CliExit, type Hooks, OK } from "../src/commands/context.ts";
 import * as session from "../src/storage/session.ts";
-import { loadTask, TaskError } from "./tasks.ts";
+import { listTasks, loadTask, TaskError } from "./tasks.ts";
 
 /** Takes `--task NAME` or `--task=NAME` out of the arguments. */
 function takeTask(argv: string[]): [string | null, string[]] {
@@ -67,6 +68,19 @@ function withContext(browser: Browser): Browser {
 /** Runs one command with research tasks and returns its exit code, as main() does. */
 export async function run(argv: string[], io?: IO): Promise<number> {
   const [command, ...args] = argv;
+  if (command === "tasks") {
+    const out = io?.out ?? ((text: string) => process.stdout.write(text));
+    if (args.includes("--help") || args.includes("-h")) {
+      out(
+        "usage: node research/webhand.ts tasks\n\nList available research task names (without reading task sources)\n",
+      );
+      return OK;
+    }
+    if (args.length > 0) throw new UsageError(`unrecognized arguments: ${args.join(" ")}`);
+    const names = listTasks();
+    if (names.length > 0) out(`${names.join("\n")}\n`);
+    return OK;
+  }
   if (command === "start") {
     const [name, rest] = takeTask(args);
     if (name === null) return main(argv, io);
