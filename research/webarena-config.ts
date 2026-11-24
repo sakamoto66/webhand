@@ -5,8 +5,8 @@
  * Research repository only; never shipped in the npm package.
  */
 
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 export class WebArenaError extends Error {
   override name = "WebArenaError";
@@ -112,6 +112,14 @@ export type AutoLoginTarget =
       password: string;
     };
 
+/** Secret-free summary of one configured WebArena site for `doctor` diagnostics. */
+interface SiteConfigSummary {
+  site: string;
+  url: string;
+  auth_mode: "header" | "form" | "none" | "invalid";
+  auth_error?: string;
+}
+
 /** Public task metadata safe to hand to the planning agent. Never contains `eval` or `expected`. */
 export interface WebArenaTaskPublic {
   task_id: number;
@@ -119,6 +127,47 @@ export interface WebArenaTaskPublic {
   start_urls: string[];
   intent: string;
   intent_template_id?: number;
+}
+
+interface ListTasksOptions {
+  sites?: string[];
+  onePerTemplate?: boolean;
+  pendingOutDir?: string | null;
+  limit?: number | null;
+}
+
+interface TaskReportRow {
+  task_id: number;
+  status: string;
+  task_type: string | null;
+  wa_status: string | null;
+  attempts: number | null;
+  score: number | null;
+  eval_status: string | null;
+  log_path: string | null;
+  har_path: string | null;
+  agent_response_path: string | null;
+}
+
+interface TypeBreakdown {
+  total: number;
+  evaluated: number;
+  success: number;
+  failure: number;
+  error: number;
+}
+
+export interface RunDirReport {
+  output_dir: string;
+  eval_results_path: string | null;
+  total: number;
+  evaluated: number;
+  unevaluated: number;
+  success: number;
+  failure: number;
+  error: number;
+  by_task_type: Record<string, TypeBreakdown>;
+  tasks: TaskReportRow[];
 }
 
 const TASK_TYPES = ["RETRIEVE", "MUTATE", "NAVIGATE"] as const;
@@ -288,6 +337,25 @@ export function resolveAutoLoginTargets(config: WebArenaConfig, sites: string[])
   return targets;
 }
 
+/** Summarizes configured sites and auth modes without ever exposing credentials or header values. */
+export function inspectSiteConfigs(config: WebArenaConfig, sites?: string[]): SiteConfigSummary[] {
+  const keys = sites?.length ? [...new Set(sites.map(normalizeSiteKey))] : Object.keys(config.environments).sort();
+  return keys.map((site) => {
+    const url = activeSiteUrl(config, site);
+    try {
+      const target = resolveAutoLoginTarget(config, site);
+      return { site, url, auth_mode: target ? target.mode : "none" };
+    } catch (error) {
+      return {
+        site,
+        url,
+        auth_mode: "invalid",
+        auth_error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
+}
+
 export function resolveDatasetPath(config: WebArenaConfig, explicitPath?: string | null): string {
   const candidate = explicitPath ?? process.env.WEBARENA_DATASET ?? config.test_data_file ?? DEFAULT_DATASET_PATH;
   const resolved = resolve(candidate);
@@ -299,8 +367,7 @@ export function resolveDatasetPath(config: WebArenaConfig, explicitPath?: string
   return resolved;
 }
 
-/** Loads one task by task_id, stripping `eval` and all expected answer fields so verification stays independent. */
-export function loadTaskPublic(datasetPath: string, taskId: number, config: WebArenaConfig): WebArenaTaskPublic {
+function readRawDataset(datasetPath: string): Record<string, unknown>[] {
   let rawTasks: unknown;
   try {
     rawTasks = JSON.parse(readFileSync(datasetPath, "utf8"));
@@ -310,13 +377,11 @@ export function loadTaskPublic(datasetPath: string, taskId: number, config: WebA
   if (!Array.isArray(rawTasks)) {
     throw new WebArenaError(`WebArena dataset must be a JSON array: ${datasetPath}`);
   }
-  const found = rawTasks.find(
-    (item): item is Record<string, unknown> =>
-      Boolean(item) && typeof item === "object" && (item as Record<string, unknown>).task_id === taskId,
-  );
-  if (!found) {
-    throw new WebArenaError(`Task ID ${taskId} was not found in ${datasetPath}`);
-  }
+  return rawTasks.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object");
+}
+
+function toPublicTask(found: Record<string, unknown>, config: WebArenaConfig): WebArenaTaskPublic {
+  const taskId = Number(found.task_id);
   const sites = Array.isArray(found.sites) ? found.sites.map((s) => normalizeSiteKey(String(s))) : [];
   const rawUrls = Array.isArray(found.start_urls)
     ? found.start_urls.map(String)
@@ -337,6 +402,178 @@ export function loadTaskPublic(datasetPath: string, taskId: number, config: WebA
     start_urls,
     intent,
     ...(typeof found.intent_template_id === "number" ? { intent_template_id: found.intent_template_id } : {}),
+  };
+}
+
+/** Loads one task by task_id, stripping `eval` and all expected answer fields so verification stays independent. */
+export function loadTaskPublic(datasetPath: string, taskId: number, config: WebArenaConfig): WebArenaTaskPublic {
+  const found = readRawDataset(datasetPath).find((item) => item.task_id === taskId);
+  if (!found) {
+    throw new WebArenaError(`Task ID ${taskId} was not found in ${datasetPath}`);
+  }
+  return toPublicTask(found, config);
+}
+
+/** Lists public task metadata (never exposing `eval` or `expected`), with optional site/template/pending filters. */
+export function listTasksPublic(
+  datasetPath: string,
+  config: WebArenaConfig,
+  options: ListTasksOptions = {},
+): { totalInDataset: number; tasks: WebArenaTaskPublic[] } {
+  const raw = readRawDataset(datasetPath);
+  const siteFilter = options.sites?.length ? new Set(options.sites.map(normalizeSiteKey)) : null;
+  const pendingOutDir = options.pendingOutDir ? resolve(options.pendingOutDir) : null;
+
+  let tasks = raw
+    .filter((item) => typeof item.task_id === "number")
+    .map((item) => toPublicTask(item, config))
+    .sort((a, b) => a.task_id - b.task_id);
+
+  if (siteFilter) {
+    tasks = tasks.filter((task) => task.sites.length > 0 && task.sites.every((site) => siteFilter.has(site)));
+  }
+
+  if (options.onePerTemplate) {
+    const seenTemplates = new Set<number>();
+    tasks = tasks.filter((task) => {
+      if (task.intent_template_id === undefined) return true;
+      if (seenTemplates.has(task.intent_template_id)) return false;
+      seenTemplates.add(task.intent_template_id);
+      return true;
+    });
+  }
+
+  if (pendingOutDir) {
+    tasks = tasks.filter((task) => !existsSync(join(pendingOutDir, String(task.task_id), config.agent_response_file_name)));
+  }
+
+  if (options.limit !== undefined && options.limit !== null) {
+    tasks = tasks.slice(0, options.limit);
+  }
+
+  return { totalInDataset: raw.length, tasks };
+}
+
+function readWebhandRunEnd(logPath: string): { status: string | null; attempts: number | null } {
+  if (!existsSync(logPath)) return { status: null, attempts: null };
+  let status: string | null = null;
+  let attempts: number | null = null;
+  try {
+    for (const line of readFileSync(logPath, "utf8").split("\n")) {
+      if (!line.trim()) continue;
+      const entry = JSON.parse(line) as { type?: string; status?: unknown; attempts?: unknown };
+      if (entry.type === "run_end") {
+        status = typeof entry.status === "string" ? entry.status : null;
+        attempts = typeof entry.attempts === "number" ? entry.attempts : null;
+      }
+    }
+  } catch {
+    return { status: null, attempts: null };
+  }
+  return { status, attempts };
+}
+
+function readEvalScoreOnly(evalPath: string): { score: number | null; eval_status: string | null } {
+  if (!existsSync(evalPath)) return { score: null, eval_status: null };
+  try {
+    // Only extract top-level score and status; never expose expected answers, assertions, or failure details.
+    const parsed = JSON.parse(readFileSync(evalPath, "utf8")) as { score?: unknown; status?: unknown };
+    return {
+      score: typeof parsed.score === "number" ? parsed.score : null,
+      eval_status: typeof parsed.status === "string" ? parsed.status : null,
+    };
+  } catch {
+    return { score: null, eval_status: null };
+  }
+}
+
+/** Aggregates all task runs in an output directory (including failed/blocked/incomplete runs) without leaking eval details. */
+export function summarizeRunDir(outputDir: string, config: WebArenaConfig): RunDirReport {
+  const resolvedDir = resolve(outputDir);
+  if (!existsSync(resolvedDir)) {
+    throw new WebArenaError(`Output directory not found: ${resolvedDir}`);
+  }
+  const taskIds = readdirSync(resolvedDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^\d+$/.test(entry.name))
+    .map((entry) => Number.parseInt(entry.name, 10))
+    .sort((a, b) => a - b);
+
+  const byTaskType: Record<string, TypeBreakdown> = {};
+  const tasks: TaskReportRow[] = [];
+  let evaluated = 0;
+  let success = 0;
+  let failure = 0;
+  let error = 0;
+
+  for (const taskId of taskIds) {
+    const taskDir = join(resolvedDir, String(taskId));
+    const logCandidate = join(taskDir, "webhand.jsonl");
+    const harCandidate = join(taskDir, config.trace_file_name);
+    const responseCandidate = join(taskDir, config.agent_response_file_name);
+    const evalCandidate = join(taskDir, config.eval_result_file_name);
+
+    const runEnd = readWebhandRunEnd(logCandidate);
+    let taskType: string | null = null;
+    let waStatus: string | null = null;
+    if (existsSync(responseCandidate)) {
+      try {
+        const resp = JSON.parse(readFileSync(responseCandidate, "utf8")) as {
+          task_type?: unknown;
+          status?: unknown;
+        };
+        taskType = typeof resp.task_type === "string" ? resp.task_type : null;
+        waStatus = typeof resp.status === "string" ? resp.status : null;
+      } catch {
+        // Leave null if malformed; keep the row in the report.
+      }
+    }
+    const { score, eval_status } = readEvalScoreOnly(evalCandidate);
+
+    const typeKey = taskType ?? "UNKNOWN";
+    const bucket = byTaskType[typeKey] ?? { total: 0, evaluated: 0, success: 0, failure: 0, error: 0 };
+    bucket.total += 1;
+    if (eval_status !== null || score !== null) {
+      evaluated += 1;
+      bucket.evaluated += 1;
+      if (eval_status === "success" || (eval_status === null && score === 1)) {
+        success += 1;
+        bucket.success += 1;
+      } else if (eval_status === "error") {
+        error += 1;
+        bucket.error += 1;
+      } else {
+        failure += 1;
+        bucket.failure += 1;
+      }
+    }
+    byTaskType[typeKey] = bucket;
+
+    tasks.push({
+      task_id: taskId,
+      status: runEnd.status ?? "incomplete",
+      task_type: taskType,
+      wa_status: waStatus,
+      attempts: runEnd.attempts,
+      score,
+      eval_status,
+      log_path: existsSync(logCandidate) ? logCandidate : null,
+      har_path: existsSync(harCandidate) ? harCandidate : null,
+      agent_response_path: existsSync(responseCandidate) ? responseCandidate : null,
+    });
+  }
+
+  const evalResultsCandidate = join(resolvedDir, "eval_results.json");
+  return {
+    output_dir: resolvedDir,
+    eval_results_path: existsSync(evalResultsCandidate) ? evalResultsCandidate : null,
+    total: tasks.length,
+    evaluated,
+    unevaluated: tasks.length - evaluated,
+    success,
+    failure,
+    error,
+    by_task_type: byTaskType,
+    tasks,
   };
 }
 

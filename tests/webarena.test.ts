@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -6,10 +6,13 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { run as runWebArena } from "../research/webarena.ts";
 import {
   defaultConfig,
+  inspectSiteConfigs,
+  listTasksPublic,
   loadConfig,
   loadTaskPublic,
   renderTaskUrl,
   resolveAutoLoginTargets,
+  summarizeRunDir,
   validateAgentResponse,
   WebArenaError,
 } from "../research/webarena-config.ts";
@@ -195,6 +198,191 @@ describe("research/webarena-config", () => {
       validateAgentResponse({ taskType: "BAD", status: "SUCCESS", retrievedDataRaw: null, errorDetails: null }),
     ).toThrow(WebArenaError);
     expect(defaultConfig().trace_file_name).toBe("network.har");
+  });
+
+  test("lists public tasks with site, template, pending, and limit filters while stripping eval/expected", () => {
+    const config = defaultConfig();
+    const datasetPath = join(workDir, "dataset-list.json");
+    const outDir = join(workDir, "out-list");
+    mkdirSync(join(outDir, "10"), { recursive: true });
+    writeFileSync(
+      join(outDir, "10", "agent_response.json"),
+      JSON.stringify({ task_type: "NAVIGATE", status: "SUCCESS" }),
+    );
+    writeFileSync(
+      datasetPath,
+      JSON.stringify([
+        {
+          task_id: 20,
+          sites: ["gitlab"],
+          start_urls: ["__GITLAB__/a"],
+          intent: "Second of tpl 1",
+          intent_template_id: 1,
+          eval: [{ expected: "SECRET_20" }],
+        },
+        {
+          task_id: 10,
+          sites: ["gitlab"],
+          start_urls: ["__GITLAB__/a"],
+          intent: "First of tpl 1",
+          intent_template_id: 1,
+          eval: [{ expected: "SECRET_10" }],
+        },
+        {
+          task_id: 30,
+          sites: ["gitlab"],
+          start_urls: ["__GITLAB__/b"],
+          intent: "Only of tpl 2",
+          intent_template_id: 2,
+          eval: [{ expected: "SECRET_30" }],
+        },
+        {
+          task_id: 40,
+          sites: ["gitlab", "reddit"],
+          start_urls: ["__GITLAB__", "__REDDIT__"],
+          intent: "Multi-site task",
+          intent_template_id: 3,
+          eval: [{ expected: "SECRET_40" }],
+        },
+        {
+          task_id: 50,
+          sites: ["reddit"],
+          start_urls: ["__REDDIT__"],
+          intent: "Reddit task",
+          intent_template_id: 4,
+          eval: [{ expected: "SECRET_50" }],
+        },
+      ]),
+    );
+
+    const gitlabOnly = listTasksPublic(datasetPath, config, { sites: ["gitlab"] });
+    expect(gitlabOnly.totalInDataset).toBe(5);
+    expect(gitlabOnly.tasks.map((t) => t.task_id)).toEqual([10, 20, 30]);
+    expect(JSON.stringify(gitlabOnly)).not.toContain("SECRET_");
+
+    const onePerTpl = listTasksPublic(datasetPath, config, { sites: ["gitlab"], onePerTemplate: true });
+    expect(onePerTpl.tasks.map((t) => t.task_id)).toEqual([10, 30]);
+
+    const pending = listTasksPublic(datasetPath, config, {
+      sites: ["gitlab"],
+      onePerTemplate: true,
+      pendingOutDir: outDir,
+    });
+    expect(pending.tasks.map((t) => t.task_id)).toEqual([30]);
+
+    const multi = listTasksPublic(datasetPath, config, { sites: ["gitlab", "reddit"], limit: 2 });
+    expect(multi.tasks.map((t) => t.task_id)).toEqual([10, 20]);
+  });
+
+  test("inspectSiteConfigs never exposes credentials and flags invalid auth config", () => {
+    const configPath = join(workDir, "config-inspect.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        environments: {
+          shopping_admin: {
+            urls: ["http://127.0.0.1:7780/admin"],
+            use_header_login: true,
+            credentials: { username: "admin", password: "SuperSecretPassword!" },
+          },
+          gitlab: {
+            urls: ["http://127.0.0.1:8023"],
+            use_header_login: false,
+            credentials: { username: "byteblaze", password: "GitLabSecretPassword!" },
+          },
+          reddit: {
+            urls: ["http://127.0.0.1:9999"],
+            use_header_login: true,
+            credentials: { username: "u", password: "RedditSecretPassword!" },
+          },
+          wikipedia: {
+            urls: ["http://127.0.0.1:8888"],
+            use_header_login: false,
+          },
+        },
+      }),
+    );
+    const { config } = loadConfig(configPath);
+    const summaries = inspectSiteConfigs(config, ["shopping_admin", "gitlab", "reddit", "wikipedia"]);
+    expect(summaries).toEqual([
+      { site: "shopping_admin", url: "http://127.0.0.1:7780/admin", auth_mode: "header" },
+      { site: "gitlab", url: "http://127.0.0.1:8023", auth_mode: "form" },
+      expect.objectContaining({ site: "reddit", url: "http://127.0.0.1:9999", auth_mode: "invalid" }),
+      { site: "wikipedia", url: "http://127.0.0.1:8888", auth_mode: "none" },
+    ]);
+    const serialized = JSON.stringify(summaries);
+    expect(serialized).not.toContain("SuperSecretPassword!");
+    expect(serialized).not.toContain("GitLabSecretPassword!");
+    expect(serialized).not.toContain("RedditSecretPassword!");
+    expect(serialized).not.toContain("byteblaze");
+  });
+
+  test("summarizeRunDir includes failed, blocked, and incomplete runs without leaking eval_result details", () => {
+    const outDir = join(workDir, "run-summary");
+    mkdirSync(join(outDir, "10"), { recursive: true });
+    mkdirSync(join(outDir, "20"), { recursive: true });
+    mkdirSync(join(outDir, "30"), { recursive: true });
+
+    // Task 10: done + evaluated success
+    writeFileSync(
+      join(outDir, "10", "webhand.jsonl"),
+      `${JSON.stringify({ type: "run_end", status: "done", attempts: 1 })}\n`,
+    );
+    writeFileSync(join(outDir, "10", "network.har"), "{}");
+    writeFileSync(
+      join(outDir, "10", "agent_response.json"),
+      JSON.stringify({ task_type: "RETRIEVE", status: "SUCCESS" }),
+    );
+    writeFileSync(
+      join(outDir, "10", "eval_result.json"),
+      JSON.stringify({
+        task_id: 10,
+        status: "success",
+        score: 1,
+        expected: ["TOP_SECRET_ANSWER"],
+        assertions: ["HIDDEN"],
+      }),
+    );
+
+    // Task 20: blocked + evaluated failure
+    writeFileSync(
+      join(outDir, "20", "webhand.jsonl"),
+      `${JSON.stringify({ type: "run_end", status: "blocked", attempts: 2 })}\n`,
+    );
+    writeFileSync(
+      join(outDir, "20", "agent_response.json"),
+      JSON.stringify({ task_type: "MUTATE", status: "UNKNOWN_ERROR", error_details: "Blocked by Monaco" }),
+    );
+    writeFileSync(
+      join(outDir, "20", "eval_result.json"),
+      JSON.stringify({ task_id: 20, status: "failure", score: 0, reason: "SHOULD_NOT_LEAK" }),
+    );
+
+    // Task 30: incomplete (no run_end, no eval)
+    writeFileSync(join(outDir, "30", "network.har"), "{}");
+
+    const report = summarizeRunDir(outDir, defaultConfig());
+    expect(report.total).toBe(3);
+    expect(report.evaluated).toBe(2);
+    expect(report.unevaluated).toBe(1);
+    expect(report.success).toBe(1);
+    expect(report.failure).toBe(1);
+    expect(report.error).toBe(0);
+    expect(report.by_task_type.RETRIEVE).toEqual({ total: 1, evaluated: 1, success: 1, failure: 0, error: 0 });
+    expect(report.by_task_type.MUTATE).toEqual({ total: 1, evaluated: 1, success: 0, failure: 1, error: 0 });
+    expect(report.by_task_type.UNKNOWN).toEqual({ total: 1, evaluated: 0, success: 0, failure: 0, error: 0 });
+    expect(
+      report.tasks.map((t) => ({ id: t.task_id, status: t.status, attempts: t.attempts, score: t.score })),
+    ).toEqual([
+      { id: 10, status: "done", attempts: 1, score: 1 },
+      { id: 20, status: "blocked", attempts: 2, score: 0 },
+      { id: 30, status: "incomplete", attempts: null, score: null },
+    ]);
+
+    const serialized = JSON.stringify(report);
+    expect(serialized).not.toContain("TOP_SECRET_ANSWER");
+    expect(serialized).not.toContain("SHOULD_NOT_LEAK");
+    expect(serialized).not.toContain("HIDDEN");
   });
 });
 
@@ -512,6 +700,9 @@ describe("research/webarena CLI integration", () => {
       "linux",
     );
     expect(bad).toContain("Form pre-login failed for shopping");
+    expect(bad).toContain("post=302");
+    expect(bad).toContain("final=");
+    expect(bad).not.toContain("wrong");
     expect(session.load()).toBeNull();
 
     const started = await wa(
@@ -529,6 +720,16 @@ describe("research/webarena CLI integration", () => {
     expect(started.out).toContain("My Account");
     expect(started.out).toContain("AUTO_LOGIN: pre-authenticated shopping (form)");
     expect(seenAuthPaths).toEqual(["/customer/account/loginPost/"]);
+
+    // Non-secret reproducibility metadata is written to outDir/run_meta.json.
+    const metaPath = join(outDir, "run_meta.json");
+    expect(existsSync(metaPath)).toBe(true);
+    const metaText = readFileSync(metaPath, "utf8");
+    expect(metaText).not.toContain("ShopPass!99");
+    expect(JSON.parse(metaText)).toMatchObject({
+      dataset_file: "dataset-shop.json",
+      sites: ["shopping"],
+    });
 
     const finished = await wa(
       "finish",
@@ -550,5 +751,100 @@ describe("research/webarena CLI integration", () => {
     expect(
       har.log.entries.some((e) => e.request.url === `${baseUrl}/customer/account/` && e.response.status === 200),
     ).toBe(true);
+  });
+
+  test("supports list, doctor, and report CLI commands without leaking secrets or expected answers", async () => {
+    const datasetPath = join(workDir, "dataset-cli.json");
+    const configPath = join(workDir, "config-cli.json");
+    const outDir = join(workDir, "out-cli");
+    mkdirSync(join(outDir, "101"), { recursive: true });
+    writeFileSync(
+      join(outDir, "101", "webhand.jsonl"),
+      `${JSON.stringify({ type: "run_end", status: "done", attempts: 1 })}\n`,
+    );
+    writeFileSync(join(outDir, "101", "network.har"), "{}");
+    writeFileSync(
+      join(outDir, "101", "agent_response.json"),
+      JSON.stringify({ task_type: "NAVIGATE", status: "SUCCESS" }),
+    );
+    writeFileSync(
+      join(outDir, "101", "eval_result.json"),
+      JSON.stringify({ task_id: 101, status: "success", score: 1, expected: ["DO_NOT_LEAK"] }),
+    );
+    writeFileSync(
+      datasetPath,
+      JSON.stringify([
+        {
+          task_id: 101,
+          sites: ["shopping"],
+          start_urls: ["__SHOPPING__/customer/account/"],
+          intent: "Open account",
+          intent_template_id: 1,
+          eval: [{ expected: "SECRET_101" }],
+        },
+        {
+          task_id: 102,
+          sites: ["shopping"],
+          start_urls: ["__SHOPPING__/customer/account/"],
+          intent: "Open account 2",
+          intent_template_id: 2,
+          eval: [{ expected: "SECRET_102" }],
+        },
+      ]),
+    );
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        test_data_file: datasetPath,
+        environments: {
+          shopping: {
+            urls: [baseUrl],
+            use_header_login: false,
+            credentials: { email: "emma@example.com", password: "TopSecretPassword!" },
+          },
+          gitlab: {
+            urls: ["http://127.0.0.1:1"],
+            use_header_login: false,
+          },
+        },
+      }),
+    );
+
+    const listed = await wa("list", "--sites", "shopping", "--pending", "--out-dir", outDir, "--config", configPath);
+    expect(listed.code).toBe(0);
+    expect(listed.out).toContain("TASKS: 1 (dataset: 2)");
+    expect(listed.out).toContain("TASK_IDS: 102");
+    expect(listed.out).not.toContain("SECRET_");
+
+    const listedJson = await wa("list", "--sites", "shopping", "--json", "--config", configPath);
+    expect(listedJson.code).toBe(0);
+    expect(JSON.parse(listedJson.out)).toHaveLength(2);
+    expect(listedJson.out).not.toContain("SECRET_");
+
+    const docOk = await wa("doctor", "--sites", "shopping", "--config", configPath);
+    expect(docOk.code).toBe(0);
+    expect(docOk.out).toContain("DATASET: OK (2 tasks");
+    expect(docOk.out).toContain("SITE shopping:");
+    expect(docOk.out).toContain("reach=reachable");
+    expect(docOk.out).toContain("auth=form");
+    expect(docOk.out).not.toContain("TopSecretPassword!");
+    expect(docOk.out).not.toContain("emma@example.com");
+
+    const docFail = await wa("doctor", "--sites", "gitlab", "--timeout-ms", "500", "--config", configPath);
+    expect(docFail.code).toBe(1);
+    expect(docFail.out).toContain("SITE gitlab:");
+    expect(docFail.out).toContain("reach=unreachable");
+
+    const repMd = await wa("report", "--output-dir", outDir, "--config", configPath);
+    expect(repMd.code).toBe(0);
+    expect(repMd.out).toContain("webarena_verified_score (separate from `tasks/` `verify()`)");
+    expect(repMd.out).toContain("**1 / 1** (100.0%)");
+    expect(repMd.out).toContain("| 101 | `done` | `NAVIGATE` | `SUCCESS` | 1 | `1` (success) |");
+    expect(repMd.out).not.toContain("DO_NOT_LEAK");
+
+    const repJson = await wa("report", "--out-dir", outDir, "--format", "json", "--config", configPath);
+    expect(repJson.code).toBe(0);
+    expect(JSON.parse(repJson.out)).toMatchObject({ total: 1, evaluated: 1, success: 1, failure: 0 });
+    expect(repJson.out).not.toContain("DO_NOT_LEAK");
   });
 });

@@ -3,18 +3,23 @@
  * Not shipped in npm: run from the repository root as `node research/webarena.ts COMMAND ...`.
  *
  * - `info --task-id ID` prints public task metadata without leaking `eval` / `expected`.
+ * - `list [--sites S1,S2] [--one-per-template] [--pending --out-dir DIR] [--limit N] [--json]`
+ *   lists public task metadata without leaking `eval` / `expected`.
+ * - `doctor [--sites S1,S2]` checks dataset, host memory, site reachability, and auth mode without leaking secrets.
  * - `start --task-id ID [--out-dir DIR]` resolves start URLs, pre-authenticates configured sites
- *   via local Auto-Login headers BEFORE HAR recording starts (so credentials never enter HAR or CLI),
+ *   via local Auto-Login headers or form login BEFORE HAR recording starts (so credentials never enter HAR or CLI),
  *   and passes `--har <out-dir>/<id>/network.har` to webhand.
- * - `finish --status ... --task-type ... --wa-status ... [--retrieved-data JSON] [--error-details TEXT] [--eval]`
+ * - `finish --status ... --task-type ... --wa-status ... [--retrieved-data JSON] [--error-details TEXT] [--eval [--verbose]]`
  *   flushes network.har, writes agent_response.json, and optionally runs `uvx webarena-verified eval-tasks`.
  * - `eval --output-dir DIR [--task-ids ...] [--sites ...] [--config ...]` runs batch offline evaluation.
+ * - `report --output-dir DIR [--format md|json]` summarizes all runs (including failed/blocked) without leaking eval details.
  * - Every other command (`run`, `answer`, `replan`, `act`, `observe`, `check`, `extract`, ...) passes through.
  */
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { freemem, totalmem } from "node:os";
+import { basename, join, resolve } from "node:path";
 import { chromium } from "playwright-core";
 import { UsageError } from "../src/args.ts";
 import { type IO, main } from "../src/cli.ts";
@@ -23,10 +28,14 @@ import { stamp } from "../src/format.ts";
 import * as session from "../src/session.ts";
 import {
   type AutoLoginTarget,
+  inspectSiteConfigs,
+  listTasksPublic,
   loadConfig,
   loadTaskPublic,
+  type RunDirReport,
   resolveAutoLoginTargets,
   resolveDatasetPath,
+  summarizeRunDir,
   validateAgentResponse,
   WebArenaError,
 } from "./webarena-config.ts";
@@ -97,8 +106,56 @@ function parseTaskId(raw: string | null): number {
   return Number.parseInt(raw.trim(), 10);
 }
 
+function parsePositiveInt(raw: string, flag: string): number {
+  if (!/^\d+$/.test(raw.trim())) throw new UsageError(`${flag} must be a positive integer`);
+  const value = Number.parseInt(raw.trim(), 10);
+  if (value < 1) throw new UsageError(`${flag} must be a positive integer`);
+  return value;
+}
+
+function parseSitesList(raw: string | null): string[] | undefined {
+  if (!raw) return undefined;
+  const items = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return items.length ? items : undefined;
+}
+
 function normalizeLoginUrl(url: string): string {
   return url.split(/[?#]/)[0].replace(/\/+$/, "");
+}
+
+function currentGitRev(): string | null {
+  try {
+    return execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Records non-secret run-level reproducibility metadata in `<outDir>/run_meta.json`. */
+function updateRunMeta(outDir: string, datasetPath: string, sites: string[]): void {
+  const metaPath = join(outDir, "run_meta.json");
+  const now = new Date().toISOString();
+  let existing: { created_at?: string; sites?: string[]; git_rev?: string | null } = {};
+  if (existsSync(metaPath)) {
+    try {
+      existing = JSON.parse(readFileSync(metaPath, "utf8")) as typeof existing;
+    } catch {
+      existing = {};
+    }
+  }
+  const mergedSites = [...new Set([...(existing.sites ?? []), ...sites])].sort();
+  const payload = {
+    created_at: existing.created_at ?? now,
+    updated_at: now,
+    git_rev: existing.git_rev ?? currentGitRev(),
+    node_version: process.version,
+    dataset_file: basename(datasetPath),
+    sites: mergedSites,
+  };
+  writeFileSync(metaPath, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 }
 
 /**
@@ -122,7 +179,7 @@ async function preAuthenticate(chromeState: session.State, targets: AutoLoginTar
           await page.locator(target.userSelector).first().fill(target.user);
           await page.locator(target.passwordSelector).first().fill(target.password);
           const loginNorm = normalizeLoginUrl(target.loginUrl);
-          await Promise.all([
+          const [postResponse] = await Promise.all([
             page.waitForResponse((res) => res.request().method() === "POST", { timeout: 15_000 }).catch(() => null),
             page.locator(target.submitSelector).first().click(),
           ]);
@@ -140,7 +197,10 @@ async function preAuthenticate(chromeState: session.State, targets: AutoLoginTar
               .isVisible()
               .catch(() => false))
           ) {
-            throw new CliExit(`Form pre-login failed for ${target.site} at ${target.loginUrl}`);
+            const postStatus = postResponse ? String(postResponse.status()) : "no-response";
+            throw new CliExit(
+              `Form pre-login failed for ${target.site} at ${target.loginUrl} (post=${postStatus}, final=${normalizeLoginUrl(page.url())})`,
+            );
           }
         }
       } finally {
@@ -154,17 +214,17 @@ async function preAuthenticate(chromeState: session.State, targets: AutoLoginTar
 
 /** Runs `uvx webarena-verified eval-tasks` and prints the score clearly separated from tasks/'s verify(). */
 function runEvalTasks(
-  options: { outputDir: string; taskIds?: string | null; sites?: string | null; configPath?: string | null },
+  options: { outputDir: string; taskIds?: string | null; sites?: string | null; configPath?: string | null; quiet?: boolean },
   io: IO,
-): number {
+): string {
   const cliArgs = ["webarena-verified", "eval-tasks", "--output-dir", resolve(options.outputDir)];
   if (options.taskIds) cliArgs.push("--task-ids", options.taskIds);
   if (options.sites) cliArgs.push("--sites", options.sites);
   if (options.configPath) cliArgs.push("--config", resolve(options.configPath));
   try {
     const out = execFileSync("uvx", cliArgs, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    if (out.trim()) io.out(`${out.trimEnd()}\n`);
-    return OK;
+    if (!options.quiet && out.trim()) io.out(`${out.trimEnd()}\n`);
+    return out;
   } catch (error) {
     const err = error as { stdout?: string; stderr?: string; message?: string };
     if (err.stdout?.trim()) io.out(`${err.stdout.trimEnd()}\n`);
@@ -199,6 +259,149 @@ async function commandInfo(args: string[], io: IO): Promise<number> {
   return OK;
 }
 
+async function commandList(args: string[], io: IO): Promise<number> {
+  const { values, flags, rest } = takeOptions(
+    args,
+    ["sites", "out-dir", "limit", "dataset", "config"],
+    ["one-per-template", "pending", "json"],
+  );
+  if (rest.length) throw new UsageError(`unrecognized arguments: ${rest.join(" ")}`);
+  if (flags.pending && !values["out-dir"]) {
+    throw new UsageError("--pending requires --out-dir");
+  }
+  const limit = values.limit !== null ? parsePositiveInt(values.limit, "--limit") : null;
+  const { config } = loadConfig(values.config);
+  const datasetPath = resolveDatasetPath(config, values.dataset);
+  const { totalInDataset, tasks } = listTasksPublic(datasetPath, config, {
+    sites: parseSitesList(values.sites),
+    onePerTemplate: flags["one-per-template"],
+    pendingOutDir: flags.pending ? values["out-dir"] : null,
+    limit,
+  });
+  if (flags.json) {
+    io.out(`${JSON.stringify(tasks, null, 2)}\n`);
+    return OK;
+  }
+  io.out(`TASKS: ${tasks.length} (dataset: ${totalInDataset})\n`);
+  io.out(`TASK_IDS: ${tasks.map((t) => t.task_id).join(",")}\n`);
+  for (const task of tasks) {
+    const tpl = task.intent_template_id !== undefined ? String(task.intent_template_id) : "-";
+    const intentSingleLine = task.intent.replace(/\s+/g, " ");
+    io.out(`${task.task_id}\t${task.sites.join(",") || "-"}\ttpl=${tpl}\t${task.start_urls[0]}\t${intentSingleLine}\n`);
+  }
+  return OK;
+}
+
+async function probeUrl(url: string, timeoutMs: number): Promise<{ reachable: boolean; detail: string }> {
+  try {
+    const res = await fetch(url, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(timeoutMs) });
+    return { reachable: true, detail: `HTTP ${res.status}` };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    return { reachable: false, detail: msg.split("\n")[0] };
+  }
+}
+
+async function commandDoctor(args: string[], io: IO): Promise<number> {
+  const { values, rest } = takeOptions(args, ["sites", "dataset", "config", "timeout-ms"]);
+  if (rest.length) throw new UsageError(`unrecognized arguments: ${rest.join(" ")}`);
+  const timeoutMs = values["timeout-ms"] !== null ? parsePositiveInt(values["timeout-ms"], "--timeout-ms") : 2500;
+  const { config, path: configPath } = loadConfig(values.config);
+  let ok = true;
+
+  io.out(`CONFIG: ${configPath ?? "(default)"}\n`);
+
+  try {
+    const datasetPath = resolveDatasetPath(config, values.dataset);
+    const { totalInDataset } = listTasksPublic(datasetPath, config, { limit: 0 });
+    io.out(`DATASET: OK (${totalInDataset} tasks at ${datasetPath})\n`);
+  } catch (error) {
+    ok = false;
+    io.out(`DATASET: MISSING (${error instanceof Error ? error.message : String(error)})\n`);
+  }
+
+  try {
+    const uvxVersion = execFileSync("uvx", ["--version"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    io.out(`UVX: OK (${uvxVersion})\n`);
+  } catch {
+    io.out("UVX: MISSING (install uv/uvx to run webarena-verified eval-tasks)\n");
+  }
+
+  const freeGiB = freemem() / 1024 ** 3;
+  const totalGiB = totalmem() / 1024 ** 3;
+  const memHint = freeGiB < 2 ? " (low free RAM: stop unused site containers and run sequentially)" : "";
+  io.out(`MEMORY: free=${freeGiB.toFixed(1)}GiB total=${totalGiB.toFixed(1)}GiB${memHint}\n`);
+
+  const siteSummaries = inspectSiteConfigs(config, parseSitesList(values.sites));
+  for (const summary of siteSummaries) {
+    const probe = await probeUrl(summary.url, timeoutMs);
+    if (!probe.reachable || summary.auth_mode === "invalid") ok = false;
+    const reachText = probe.reachable ? `reachable (${probe.detail})` : `unreachable (${probe.detail})`;
+    const authText = summary.auth_error ? `${summary.auth_mode} (${summary.auth_error})` : summary.auth_mode;
+    io.out(`SITE ${summary.site}: url=${summary.url} reach=${reachText} auth=${authText}\n`);
+  }
+
+  return ok ? OK : 1;
+}
+
+function formatPct(num: number, den: number): string {
+  if (!den) return "-";
+  return `${((num / den) * 100).toFixed(1)}%`;
+}
+
+function formatReportMarkdown(report: RunDirReport): string {
+  const lines: string[] = [];
+  lines.push(`## WebArena-Verified Report (\`${report.output_dir}\`)`);
+  lines.push("");
+  lines.push(
+    `- **webarena_verified_score (separate from \`tasks/\` \`verify()\`)**: **${report.success} / ${report.evaluated}** (${formatPct(report.success, report.evaluated)}) — total=${report.total}, success=${report.success}, failure=${report.failure}, error=${report.error}, unevaluated=${report.unevaluated}`,
+  );
+  if (report.eval_results_path) {
+    lines.push(`- **eval_results.json**: \`${report.eval_results_path}\``);
+  }
+  lines.push("");
+  lines.push("| task_type | total | evaluated | success | failure | error | rate |");
+  lines.push("|---|---:|---:|---:|---:|---:|---:|");
+  for (const typeKey of Object.keys(report.by_task_type).sort()) {
+    const b = report.by_task_type[typeKey];
+    lines.push(
+      `| \`${typeKey}\` | ${b.total} | ${b.evaluated} | ${b.success} | ${b.failure} | ${b.error} | ${formatPct(b.success, b.evaluated)} |`,
+    );
+  }
+  lines.push("");
+  lines.push("| task_id | status | task_type | wa_status | attempts | webarena_verified_score | log | har | agent_response |");
+  lines.push("|---:|---|---|---|---:|---|---|---|---|");
+  for (const row of report.tasks) {
+    const scoreCell =
+      row.score !== null || row.eval_status !== null
+        ? `\`${row.score ?? "?"}\` (${row.eval_status ?? "?"})`
+        : "-";
+    lines.push(
+      `| ${row.task_id} | \`${row.status}\` | ${row.task_type ? `\`${row.task_type}\`` : "-"} | ${row.wa_status ? `\`${row.wa_status}\`` : "-"} | ${row.attempts ?? "-"} | ${scoreCell} | ${row.log_path ?? "-"} | ${row.har_path ?? "-"} | ${row.agent_response_path ?? "-"} |`,
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+async function commandReport(args: string[], io: IO): Promise<number> {
+  const { values, rest } = takeOptions(args, ["output-dir", "out-dir", "format", "config"]);
+  if (rest.length) throw new UsageError(`unrecognized arguments: ${rest.join(" ")}`);
+  const outputDir = values["output-dir"] ?? values["out-dir"];
+  if (!outputDir) throw new UsageError("--output-dir is required");
+  const format = (values.format ?? "md").trim().toLowerCase();
+  if (format !== "md" && format !== "json") {
+    throw new UsageError(`Invalid --format "${values.format}" (expected md or json)`);
+  }
+  const { config } = loadConfig(values.config);
+  const report = summarizeRunDir(outputDir, config);
+  if (format === "json") {
+    io.out(`${JSON.stringify(report, null, 2)}\n`);
+  } else {
+    io.out(formatReportMarkdown(report));
+  }
+  return OK;
+}
+
 function statusOption(argv: string[]): string | null {
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--status") return argv[i + 1] ?? null;
@@ -224,6 +427,7 @@ async function commandStart(args: string[], io: IO): Promise<number> {
   const outDir = resolve(values["out-dir"] ?? config.output_dir ?? join("runs", "webarena", stamp()));
   const taskDir = join(outDir, String(taskId));
   mkdirSync(taskDir, { recursive: true });
+  updateRunMeta(outDir, datasetPath, task.sites);
   const harPath = join(taskDir, config.trace_file_name);
   const explicitAuth = rest.some((arg) => /^--auth(=|$)/.test(arg));
   const autoLoginTargets = explicitAuth ? [] : resolveAutoLoginTargets(config, task.sites);
@@ -271,13 +475,18 @@ async function commandFinish(args: string[], io: IO): Promise<number> {
   const { values, flags, rest } = takeOptions(
     args,
     ["task-type", "wa-status", "retrieved-data", "error-details"],
-    ["eval"],
+    ["eval", "verbose"],
   );
   session.use(session.idFrom(rest));
   const state = session.load();
   const meta = state?.meta?.webarena as WebArenaSessionMeta | undefined;
   const hasWaOptions = Boolean(
-    values["task-type"] || values["wa-status"] || values["retrieved-data"] || values["error-details"] || flags.eval,
+    values["task-type"] ||
+      values["wa-status"] ||
+      values["retrieved-data"] ||
+      values["error-details"] ||
+      flags.eval ||
+      flags.verbose,
   );
 
   if (!meta) {
@@ -309,9 +518,16 @@ async function commandFinish(args: string[], io: IO): Promise<number> {
   io.out(`AGENT_RESPONSE: ${responsePath}\n`);
 
   if (flags.eval) {
-    runEvalTasks({ outputDir: meta.out_dir, taskIds: String(meta.task_id), configPath: meta.config_path }, io);
+    const rawEvalOut = runEvalTasks(
+      { outputDir: meta.out_dir, taskIds: String(meta.task_id), configPath: meta.config_path, quiet: !flags.verbose },
+      io,
+    );
     const summary = summarizeEvalResult(join(meta.task_dir, meta.eval_result_file_name));
-    if (summary) io.out(`${summary}\n`);
+    if (summary) {
+      io.out(`${summary}\n`);
+    } else if (!flags.verbose && rawEvalOut.trim()) {
+      io.out(`${rawEvalOut.trimEnd()}\n`);
+    }
   } else {
     const cfgPart = meta.config_path ? ` --config ${meta.config_path}` : "";
     io.out(
@@ -322,14 +538,13 @@ async function commandFinish(args: string[], io: IO): Promise<number> {
 }
 
 async function commandEval(args: string[], io: IO): Promise<number> {
-  const { values, rest } = takeOptions(args, ["output-dir", "task-ids", "sites", "config"]);
+  const { values, rest } = takeOptions(args, ["output-dir", "out-dir", "task-ids", "sites", "config"]);
   if (rest.length) throw new UsageError(`unrecognized arguments: ${rest.join(" ")}`);
-  if (!values["output-dir"]) throw new UsageError("--output-dir is required");
+  const outputDir = values["output-dir"] ?? values["out-dir"];
+  if (!outputDir) throw new UsageError("--output-dir is required");
   const { path: configPath } = loadConfig(values.config);
-  return runEvalTasks(
-    { outputDir: values["output-dir"], taskIds: values["task-ids"], sites: values.sites, configPath },
-    io,
-  );
+  runEvalTasks({ outputDir, taskIds: values["task-ids"], sites: values.sites, configPath }, io);
+  return OK;
 }
 
 /** Runs one WebArena-Verified research command and returns its exit code. */
@@ -337,6 +552,9 @@ export async function run(argv: string[], io: IO = processIO): Promise<number> {
   const [command, ...args] = argv;
   try {
     if (command === "info") return await commandInfo(args, io);
+    if (command === "list") return await commandList(args, io);
+    if (command === "doctor") return await commandDoctor(args, io);
+    if (command === "report") return await commandReport(args, io);
     if (command === "start") return await commandStart(args, io);
     if (command === "finish") return await commandFinish(args, io);
     if (command === "eval") return await commandEval(args, io);
