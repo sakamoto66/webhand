@@ -30,10 +30,10 @@ const DEFAULT_SITE_URLS: Record<string, string> = {
   map: "http://localhost:3030",
 };
 
+// webarena-verified 1.2.3 only implements HTTP header Auto-Login for shopping_admin
+// (WebArenaVerified.get_custom_auth_header_name). Other sites (shopping, reddit, gitlab) use UI login / `--auth`.
 const AUTO_LOGIN_HEADERS: Record<string, { header: string; userFields: string[] }> = {
   shopping_admin: { header: "X-M2-Admin-Auto-Login", userFields: ["username", "email"] },
-  shopping: { header: "X-M2-Customer-Auto-Login", userFields: ["email", "username"] },
-  reddit: { header: "X-Postmill-Auto-Login", userFields: ["username", "email"] },
 };
 
 interface EnvironmentEntry {
@@ -189,9 +189,16 @@ function resolveAutoLoginTarget(config: WebArenaConfig, site: string): AutoLogin
   if (custom && typeof custom.name === "string" && typeof custom.value === "string" && custom.name && custom.value) {
     return { site: key, url, header: { name: custom.name, value: custom.value } };
   }
-  if (!env.use_header_login || !env.credentials) return null;
+  if (!env.use_header_login) return null;
   const spec = AUTO_LOGIN_HEADERS[key];
-  if (!spec) return null;
+  if (!spec) {
+    throw new WebArenaError(
+      `Site "${key}" does not support built-in header Auto-Login in webarena-verified; sign in with --headed and save with \`webhand auth save ${key}\`, then pass \`--auth ${key}\` (or set extra.auto_login_header)`,
+    );
+  }
+  if (!env.credentials) {
+    throw new WebArenaError(`Site "${key}" has use_header_login=true but is missing credentials`);
+  }
   const user = spec.userFields.map((field) => env.credentials?.[field]).find((v) => typeof v === "string" && v);
   const password = env.credentials.password;
   if (!user || !password) {

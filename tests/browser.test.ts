@@ -1228,3 +1228,39 @@ test("a multi-select can add and deselect options without clearing existing sele
     "2",
   ]);
 });
+
+test("a stacked star-rating radio input covered by earlier labels is clicked via its own label", async () => {
+  const url = fixture(
+    "star_rating.html",
+    `<!doctype html><style>
+      .stars { position: relative; height: 28px; width: 150px; }
+      .stars input { position: absolute; left: 0; top: 0; width: 16px; height: 16px; margin: 0; }
+      .stars label { position: absolute; left: 0; top: 0; height: 28px; display: block; }
+      .stars .r1 { width: 28px; z-index: 6; }
+      .stars .r2 { width: 56px; z-index: 5; }
+      .stars .r3 { width: 84px; z-index: 4; }
+      .stars .r4 { width: 112px; z-index: 3; }
+      .stars .r5 { width: 140px; z-index: 2; }
+    </style><body><div class="stars">
+      <input type="radio" name="rating" id="r1" value="1"><label class="r1" for="r1"><span>1 star</span></label>
+      <input type="radio" name="rating" id="r2" value="2"><label class="r2" for="r2"><span>2 stars</span></label>
+      <input type="radio" name="rating" id="r3" value="3"><label class="r3" for="r3"><span>3 stars</span></label>
+      <input type="radio" name="rating" id="r4" value="4"><label class="r4" for="r4"><span>4 stars</span></label>
+      <input type="radio" name="rating" id="r5" value="5"><label class="r5" for="r5"><span>5 stars</span></label>
+    </div></body>`,
+  );
+  await browser.close();
+  const instance = await open(url);
+  for (const [label, id] of [
+    ["5 stars", "r5"],
+    ["3 stars", "r3"],
+    ["1 star", "r1"],
+  ] as const) {
+    const page = await instance.observe();
+    await instance.act(
+      find(page, (a) => a.label === label),
+      page,
+    );
+    expect(await instance.evaluate(`document.getElementById('${id}').checked`)).toBe(true);
+  }
+});

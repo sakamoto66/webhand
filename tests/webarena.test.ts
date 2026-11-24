@@ -63,10 +63,14 @@ describe("research/webarena-config", () => {
             use_header_login: true,
             credentials: { username: "admin", password: "secret" },
           },
+          shopping: {
+            urls: ["http://127.0.0.1:7770"],
+            use_header_login: false,
+          },
           reddit: {
             urls: ["http://127.0.0.1:9999"],
-            use_header_login: true,
-            credentials: { username: "user1", password: "pw" },
+            use_header_login: false,
+            extra: { auto_login_header: { name: "X-Custom-Login", value: "user1:pw" } },
           },
         },
       }),
@@ -75,7 +79,7 @@ describe("research/webarena-config", () => {
     expect(path).toBe(configPath);
     expect(renderTaskUrl("__SHOPPING_ADMIN__/sales/order/", config)).toBe("http://127.0.0.1:7780/admin/sales/order/");
 
-    const targets = resolveAutoLoginTargets(config, ["shopping_admin", "reddit", "shopping_admin"]);
+    const targets = resolveAutoLoginTargets(config, ["shopping_admin", "shopping", "reddit", "shopping_admin"]);
     expect(targets).toEqual([
       {
         site: "shopping_admin",
@@ -85,9 +89,20 @@ describe("research/webarena-config", () => {
       {
         site: "reddit",
         url: "http://127.0.0.1:9999",
-        header: { name: "X-Postmill-Auto-Login", value: "user1:pw" },
+        header: { name: "X-Custom-Login", value: "user1:pw" },
       },
     ]);
+
+    const unsupportedPath = join(workDir, "bad-header.json");
+    writeFileSync(
+      unsupportedPath,
+      JSON.stringify({
+        environments: {
+          shopping: { urls: ["http://127.0.0.1:7770"], use_header_login: true },
+        },
+      }),
+    );
+    expect(() => resolveAutoLoginTargets(loadConfig(unsupportedPath).config, ["shopping"])).toThrow(WebArenaError);
 
     const datasetPath = join(workDir, "dataset.json");
     writeFileSync(
