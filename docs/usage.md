@@ -193,6 +193,7 @@ If it is not installed, read `webhand` as `npx -y webhand@0.5`. See `webhand COM
 | --- | --- | --- |
 | `catalog` | Agent | List known services, runbooks, and saved profiles |
 | `doctor` | Person | Check Node.js, Chrome, `TYPESAFE_API_KEY`, and local workspace readiness |
+| `batch` | Agent / Person | Initialize, inspect, skip rows, list, or clear a multi-row CSV/JSON runbook batch |
 | `start` | Agent | Record the plan and open the start URL in Chrome |
 | `run` | Jev | Operate toward the GOAL |
 | `replan` | Agent | Revise the plan and start the next attempt |

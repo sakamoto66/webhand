@@ -14,6 +14,7 @@ import type { Driver } from "../ipc/remote.ts";
 import { describePlan, headline } from "../output.ts";
 import { planText } from "../policies/base.ts";
 import * as auth from "../storage/auth.ts";
+import * as batch from "../storage/batch.ts";
 import * as runbook from "../storage/runbook/index.ts";
 import * as session from "../storage/session.ts";
 import { CliExit, deps, getContext, named, OK, print } from "./context.ts";
@@ -46,13 +47,30 @@ interface StartTarget {
   note: string | null;
   engine: Engine;
   login: auth.SavedLogin | null;
+  batchRow: batch.ResolvedBatchRow | null;
+  resolvedParams: Record<string, string>;
 }
 
 /** The runbook, service, saved login, engine and Chrome the arguments ask for. Nothing is opened. */
 function resolveTarget(args: Args): StartTarget {
+  if (args.row != null && !args.batch) {
+    throw new CliExit("--row needs --batch");
+  }
   let book: runbook.Runbook | null = null;
-  if (args.runbook) {
-    book = runbook.load(args.runbook, runbook.parseValues(args.param));
+  let batchRow: batch.ResolvedBatchRow | null = null;
+  let resolvedParams: Record<string, string> = {};
+  if (args.batch) {
+    batchRow = batch.resolveBatchRow(args.batch, args.row);
+    resolvedParams = { ...batchRow.params, ...runbook.parseValues(args.param) };
+    book = runbook.load(batchRow.state.runbook, resolvedParams);
+    if (book.status !== "approved" && !batchRow.state.allow_draft && !args.allow_draft) {
+      throw new CliExit(
+        `Runbook ${batchRow.state.runbook} is a draft. Trial it with --allow-draft, then get it approved`,
+      );
+    }
+  } else if (args.runbook) {
+    resolvedParams = runbook.parseValues(args.param);
+    book = runbook.load(args.runbook, resolvedParams);
     if (book.status !== "approved" && !args.allow_draft) {
       throw new CliExit(`Runbook ${args.runbook} is a draft. Trial it with --allow-draft, then get it approved`);
     }
@@ -75,7 +93,7 @@ function resolveTarget(args: Args): StartTarget {
   if (args.download_dir && chrome !== "linux") {
     throw new CliExit("--download-dir needs Chrome on this machine: the Windows Chrome cannot save to its paths");
   }
-  return { book, service, serviceName, profile, chrome, note, engine, login };
+  return { book, service, serviceName, profile, chrome, note, engine, login, batchRow, resolvedParams };
 }
 
 /**
@@ -137,8 +155,8 @@ function planStart(args: Args, target: StartTarget): { plan: Plan; goal: string;
   let values = parseValues(args.value);
   const files = parseFiles(args.file);
   if (book) {
-    // Runbook parameters are Claude's values too, unless Claude labelled them itself.
-    const params = Object.entries(runbook.parseValues(args.param)).map(([label, value]) => ({ label, value }));
+    // Runbook parameters (including batch row params) are Claude's values too, unless Claude labelled them itself.
+    const params = Object.entries(target.resolvedParams).map(([label, value]) => ({ label, value }));
     values = mergeValues(params, values);
   }
   if (args.explore && !hostAllowed(url, exploreRule(args).allow)) {
@@ -199,6 +217,9 @@ function initialState(
     ...(hooks.meta ? { meta: hooks.meta } : {}),
     ...(args.read_only ? { read_only: { allow: args.allow_control } } : {}),
     ...(args.explore ? { explore: exploreRule(args) } : {}),
+    ...(target.batchRow
+      ? { batch: { id: target.batchRow.state.id, row: target.batchRow.row, total: target.batchRow.total } }
+      : {}),
     plan: planned.plan,
     runbook: book ? { name: book.name, status: book.status, digest: book.digest, scope: book.scope } : null,
     service: serviceName,
@@ -319,6 +340,9 @@ function printStarted(args: Args, target: StartTarget, plan: Plan, state: sessio
   if (state.har) {
     print(`HAR: recording to ${state.har.path} (contains cookies and page traffic; do not commit)`);
   }
+  if (state.batch) {
+    print(`BATCH: ${state.batch.id} row ${state.batch.row}/${state.batch.total}`);
+  }
   print("NEXT: webhand run");
 }
 
@@ -349,6 +373,7 @@ async function commandStart(args: Args): Promise<number> {
   getContext().log = state.log;
   const skipped = await openStartPage(args, target, planned, chromeState, state);
   session.save(state);
+  if (target.batchRow) batch.markRowRunning(target.batchRow.state.id, target.batchRow.row);
   printStarted(args, target, planned.plan, state, skipped);
   return OK;
 }
@@ -398,6 +423,13 @@ export const startCommand: CommandDef = {
       },
       { name: "service", type: "string", help: "Saved service information to give Jev, such as hotel-site" },
       { name: "runbook", type: "string", help: "A saved procedure (runbook), such as hotel/filter" },
+      {
+        name: "batch",
+        type: "string",
+        metavar: "ID",
+        help: "Run the next pending row (or --row N) of a batch created by `webhand batch init`",
+      },
+      { name: "row", type: "int", metavar: "N", help: "With --batch, run this 1-based row number" },
       { name: "param", type: "string", multiple: true, metavar: "KEY=VALUE", help: "A runbook parameter" },
       { name: "allow-draft", type: "boolean", help: "Trial a runbook no person has approved yet" },
       ...viewOptions(),
@@ -425,7 +457,10 @@ export const startCommand: CommandDef = {
       { name: "max-actions", type: "int", default: Budget.MAX_ACTIONS, help: "Per attempt" },
       { name: "max-decisions", type: "int", default: Budget.MAX_DECISIONS, help: "Per attempt" },
     ],
-    conflicts: [["auth", "id"]],
+    conflicts: [
+      ["auth", "id"],
+      ["batch", "runbook"],
+    ],
   }),
   run: commandStart,
 };

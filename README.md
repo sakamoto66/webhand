@@ -35,7 +35,7 @@ webhand provides **6 purpose-built skills** so every job has the right safety po
 
 | Job | Skill | What you get back | Example request |
 | --- | --- | --- | --- |
-| **Get things done** | `/webhand` | Completed booking, form submission, or admin task with final-page verification | `/webhand On HOTEL PLANISPHERE, book 2 nights for 2 people starting next month's first Saturday` |
+| **Get things done** | `/webhand` | Completed booking, form submission, admin task, or CSV/JSON batch run with final-page verification | `/webhand On HOTEL PLANISPHERE, book 2 nights for 2 people starting next month's first Saturday` |
 | **Extract data safely** | `/webhand-extract` | Clean tables, lists, or links read directly from the page (`--read-only`, with counts and gaps) | `/webhand-extract Read all plan names and monthly prices from https://example.test/plans` |
 | **Check acceptance criteria** | `/webhand-verify` | Per-criterion `PASS` / `FAIL` / `INCONCLUSIVE` verdict with quoted on-page evidence | `/webhand-verify On https://staging.example.com, check: results sort by price ascending / total includes tax` |
 | **Catch regressions** | `/webhand-regress` | Re-run saved checks against fixed expectations (`NEW FAIL`, `STILL FAILING`, `RECOVERED`) | `/webhand-regress shop/checkout` |
