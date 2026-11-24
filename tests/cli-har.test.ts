@@ -2,7 +2,7 @@ import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { alive } from "../src/engines/process.ts";
 import type { HarDocument } from "../src/har.ts";
 import { stopHarRecorder } from "../src/har-session.ts";
@@ -123,9 +123,23 @@ test("records HAR 1.2 across start, run, act, redirects, cookies, JSON API, and 
   ];
   const ran = await cli("run");
   expect(ran.out).toContain("OUTCOME GOAL_REPORTED");
-  // Switch to the popup tab in a separate CLI command so it finishes loading and cross-command capture is exercised.
-  await cli("act", "WAIT");
-  await cli("act", "TAB_2");
+  // Wait until the popup tab is loaded, then switch to it in a separate CLI command so cross-command capture is exercised.
+  let popupTab = "";
+  await vi.waitFor(
+    async () => {
+      const observed = await cli("observe");
+      expect(observed.code).toBe(0);
+      const tab = session.load()?.page?.actions?.find((a: { kind: string }) => a.kind === "tab") as
+        | { tab: number; title?: string }
+        | undefined;
+      expect(tab?.title).toBe("Popup");
+      popupTab = `TAB_${tab?.tab}`;
+    },
+    { timeout: 10_000, interval: 100 },
+  );
+  const switched = await cli("act", popupTab);
+  expect(switched.code).toBe(0);
+  expect(switched.out).toContain("Popup page");
 
   const finished = await cli("finish", "--status", "done", "--reason", "all actions completed");
   expect(finished.code).toBe(0);
