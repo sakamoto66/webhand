@@ -23,26 +23,9 @@
 
 Ask right from your coding agent session — no test script required:
 
-```text
-You:
-  /webhand On HOTEL PLANISPHERE, book 2 nights for 2 people starting next month's first Saturday
+![How webhand handles a request in 4 steps: ask in plain language, review plan and values, operate observed elements safely, and verify on the actual page](docs/media/flow-en.png)
 
-Agent (plans & confirms before making changes):
-  Loaded service "hotel-planisphere" and approved runbook "hotel-planisphere/reserve".
-  Plan: open reservation form -> set date (next month's 1st Sat), 2 nights, 2 guests -> confirm booking.
-  Values to type: Guest name (from your request), ...
-  Session: new (throwaway profile). Proceed? [y/n]
-
-webhand + Jev (operates Chrome using only observed elements and your approved values):
-  -> Selects date, nights, and guests -> Submits -> Reaches confirmation screen (GOAL_REPORTED)
-
-Agent (verifies the actual page, never trusting DONE alone):
-  Confirmed on the booking confirmation screen:
-  - Check-in: 1st Saturday of next month (2 nights, 2 guests)
-  - Status: done (1 attempt) | Log: ~/.webhand/runs/...
-```
-
-<!-- Demo GIF placeholder: replace with docs/media/demo.gif once recorded -->
+<!-- Demo GIF placeholder: replace or supplement with docs/media/demo.gif once recorded -->
 
 ---
 
