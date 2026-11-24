@@ -20,6 +20,7 @@ import * as session from "../storage/session.ts";
 import { CliExit, deps, getContext, named, OK, print } from "./context.ts";
 import {
   allowControlOption,
+  autonomyOptions,
   chromeOption,
   collectOption,
   compareOption,
@@ -180,6 +181,9 @@ function planStart(args: Args, target: StartTarget): { plan: Plan; goal: string;
   if (!process.env.TYPESAFE_API_KEY) {
     throw new CliExit("TYPESAFE_API_KEY is not set. Set it as an environment variable");
   }
+  const twoStage = Boolean(args.two_stage || process.env.WEBHAND_TWO_STAGE === "1");
+  const recover = Boolean(args.recover || process.env.WEBHAND_RECOVER === "1");
+  const expects = (args.expect ?? []).map((c: string) => c.trim()).filter(Boolean);
   const plan: Plan = {
     goal,
     steps,
@@ -191,6 +195,9 @@ function planStart(args: Args, target: StartTarget): { plan: Plan; goal: string;
     ...(args.compare ? { compare: args.compare } : {}),
     ...(args.collect ? { collect: args.collect } : {}),
     ...(args.more ? { more: args.more } : {}),
+    ...(expects.length ? { expects } : {}),
+    ...(twoStage ? { two_stage: true } : {}),
+    ...(recover ? { recover: true } : {}),
     ...(args.flow === "v2" ? { flow: "v2" as const } : {}),
   };
   if (plan.compare && plan.collect) throw new CliExit("Use --compare or --collect, not both");
@@ -358,7 +365,13 @@ function printStarted(args: Args, target: StartTarget, plan: Plan, state: sessio
   if (!args.run) print("NEXT: webhand run");
 }
 
-async function commandStart(args: Args): Promise<number> {
+/** Shared session bootstrap used by `start` and `query`. */
+export async function startSession(args: Args): Promise<{
+  target: StartTarget;
+  planned: { plan: Plan; goal: string; url: string; values: Value[] };
+  state: session.State;
+  skipped: string[];
+}> {
   if (session.load()) {
     throw new CliExit(named("A session is active. Run: webhand finish --status abandoned, or start another with --id"));
   }
@@ -386,6 +399,11 @@ async function commandStart(args: Args): Promise<number> {
   const skipped = await openStartPage(args, target, planned, chromeState, state);
   session.save(state);
   if (target.batchRow) batch.markRowRunning(target.batchRow.state.id, target.batchRow.row);
+  return { target, planned, state, skipped };
+}
+
+async function commandStart(args: Args): Promise<number> {
+  const { target, planned, state, skipped } = await startSession(args);
   printStarted(args, target, planned.plan, state, skipped);
   if (args.run) return commandRun({ ...args, value: [], file: [], human_done: false });
   return OK;
@@ -449,6 +467,7 @@ export const startCommand: CommandDef = {
       compareOption(),
       collectOption(),
       moreOption(),
+      ...autonomyOptions(),
       {
         name: "flow",
         type: "string",

@@ -141,6 +141,9 @@ export function describePlan(plan: Plan, view: runbook.View | null = null): stri
   if (plan.compare) lines.push(`COMPARE: ${plan.compare}`);
   if (plan.collect) lines.push(`COLLECT: ${plan.collect}`);
   if (plan.more) lines.push(`MORE: ${plan.more}`);
+  if (plan.expects?.length) lines.push(`EXPECTS: ${plan.expects.join(" | ")}`);
+  if (plan.two_stage) lines.push("TWO-STAGE: on");
+  if (plan.recover) lines.push("RECOVER: on");
   if (plan.flow) lines.push(`FLOW: ${plan.flow}`);
   return lines.join("\n");
 }

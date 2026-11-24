@@ -10,6 +10,7 @@ import * as session from "../storage/session.ts";
 import { BUDGET, FAILED, OK, print, UNCERTAIN } from "./context.ts";
 import {
   allowControlOption,
+  autonomyOptions,
   collectOption,
   compareOption,
   fileOption,
@@ -62,6 +63,12 @@ function applyReplanPlan(args: Args, state: session.State): void {
     state.read_only.allow = [...new Set([...state.read_only.allow, ...args.allow_control])];
   }
   if (args.more) plan.more = switched(args.more);
+  if (args.expect?.length) {
+    const expects = args.expect.map((c: string) => c.trim()).filter(Boolean);
+    plan.expects = expects.length === 1 && expects[0] === "none" ? undefined : expects;
+  }
+  if (args.two_stage) plan.two_stage = true;
+  if (args.recover) plan.recover = true;
   if (plan.compare && plan.collect) {
     throw new ReplanRejected("use --compare or --collect, not both (turn one off with none)");
   }
@@ -162,6 +169,7 @@ export const replanCommand: CommandDef = {
       compareOption(),
       collectOption(),
       moreOption(),
+      ...autonomyOptions(),
       allowControlOption(),
       { name: "run", type: "boolean", help: "Hand to Jev right away for the next attempt in the same command" },
     ],
