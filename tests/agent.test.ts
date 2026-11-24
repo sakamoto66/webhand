@@ -3,8 +3,8 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { type Actor, Budget, runAgent } from "../src/agent.ts";
-import { Recorder } from "../src/metrics.ts";
+import { type Actor, Budget, runAgent } from "../src/agent/index.ts";
+import { Recorder } from "../src/core/metrics.ts";
 import {
   Decision,
   type HistoryEntry,
@@ -15,7 +15,7 @@ import {
   type Plan,
   PolicyError,
   StalePage,
-} from "../src/types.ts";
+} from "../src/core/types.ts";
 import { readEvents, tmpPath } from "./helpers.ts";
 
 const FILL = { id: "e1", kind: "fill", label: "Destination", node: 1, value: "" };
@@ -305,7 +305,7 @@ test("a failed screenshot is logged and the run goes on", async () => {
 });
 
 test("maskUrls hides query values in any URL inside a message", async () => {
-  const { maskUrls } = await import("../src/metrics.ts");
+  const { maskUrls } = await import("../src/core/metrics.ts");
   expect(maskUrls('navigating to "https://a.example/p?id=7&k=v", waiting')).toBe(
     'navigating to "https://a.example/p?id=%3Credacted%3E&k=%3Credacted%3E", waiting',
   );

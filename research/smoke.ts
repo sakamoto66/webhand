@@ -2,12 +2,12 @@
 
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { Budget, GOAL_REPORTED, runAgent } from "../src/agent.ts";
-import { Browser } from "../src/browser.ts";
-import { describeError, show, stamp } from "../src/format.ts";
-import { gitState, Recorder, summarize } from "../src/metrics.ts";
+import { Budget, GOAL_REPORTED, runAgent } from "../src/agent/index.ts";
+import { Browser } from "../src/browser/index.ts";
+import { describeError, show, stamp } from "../src/core/format.ts";
+import { gitState, Recorder, summarize } from "../src/core/metrics.ts";
+import type { Verdict } from "../src/core/types.ts";
 import { ScriptedPolicy } from "../src/policies/scripted.ts";
-import type { Verdict } from "../src/types.ts";
 import { listTasks, loadTask, type Task } from "./tasks.ts";
 
 const ROOT = process.cwd();
@@ -27,7 +27,10 @@ export function skipReason(taskName: string, task: Task, includeRemote: boolean,
   const url = task.startUrl(root);
   if (!includeRemote && !url.startsWith("file://")) return "remote";
   if (REPLAN_ONLY_TASKS.has(taskName)) return "replan-only";
-  if (!task.SCRIPT.length || task.SCRIPT.every((step) => step.operation === "SCROLL_DOWN" || step.operation === "BLOCKED")) {
+  if (
+    !task.SCRIPT.length ||
+    task.SCRIPT.every((step) => step.operation === "SCROLL_DOWN" || step.operation === "BLOCKED")
+  ) {
     return "scan-or-replan";
   }
   return null;

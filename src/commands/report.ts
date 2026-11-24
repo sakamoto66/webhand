@@ -1,9 +1,8 @@
-import * as agent from "../agent.ts";
-import { show, toJson } from "../format.ts";
+import * as agent from "../agent/index.ts";
+import { show, toJson } from "../core/format.ts";
+import type { HistoryEntry, Page } from "../core/types.ts";
 import { headline, recentActions, render } from "../output.ts";
-import type * as session from "../session.ts";
-import type { HistoryEntry, Page } from "../types.ts";
-
+import type * as session from "../storage/session.ts";
 import { OK, print, UNCERTAIN } from "./context.ts";
 import { attemptLabel } from "./shared.ts";
 
@@ -17,6 +16,26 @@ export const ANSWERABLE: string[] = [
   agent.READ_ONLY,
 ];
 
+const PAGE_STATUS_DIAGNOSIS: Record<string, string> = {
+  check: "the page is a bot check or CAPTCHA; a person must pass it",
+  sign_in: "the page asks for a sign-in; a person must sign in",
+  error: "the page is an error page",
+  dialog: "a dialog covers the page",
+};
+
+const OUTCOME_DIAGNOSIS: Record<string, string> = {
+  [agent.READ_ONLY]:
+    "the session is read-only and Jev chose an action it refuses; nothing ran. Answer with another way that only reads, or finish",
+  [agent.GOAL_REPORTED]: "Jev thinks the goal is met and asks Claude to check the page",
+  [agent.JEV_FAILED]: "Jev gave no usable decision; nothing was executed",
+};
+
+const DEFAULT_NEXT_HINT = "NEXT: replan --reason '...' [--restart], act, or finish";
+const OUTCOME_NEXT_HINTS: Record<string, string> = {
+  [agent.GOAL_REPORTED]: "Check the page against the goal. If it is met: finish --status done. Otherwise: replan",
+  [agent.JEV_FAILED]: "Nothing was executed. Run again, replan, or act",
+};
+
 /** v2: parts of the page webhand cannot see into, said plainly so that Claude looks for another way. */
 function unseenHint(page: Page): string {
   if (!agent.unseenParts(page)) return "";
@@ -28,28 +47,28 @@ function unseenHint(page: Page): string {
   );
 }
 
+function diagnoseStuck(state: session.State): string {
+  const history = state.history as HistoryEntry[];
+  const attempt = state.plan.attempt;
+  if (agent.looping(history, attempt)) {
+    return "Jev scrolled up and down three times and chose nothing: what it needs may not be on this page, or is elsewhere on it";
+  }
+  const recent = history.filter((h) => (h.attempt ?? 1) === attempt).slice(-3);
+  if (recent.some((h) => h.kind === "stale")) {
+    return "the last choices were refused as stale: the page keeps changing under the target";
+  }
+  if (recent.some((h) => h.kind === "missing")) {
+    return `Jev could not find the element it needs in what was offered${unseenHint(state.page)}`;
+  }
+  return "the last three actions did not change the page";
+}
+
 /** Why the run came back, from the log of this attempt only. No page text. */
 function diagnose(state: session.State, outcome: string): string {
-  const status = state.page?.status as { kind?: string } | undefined;
-  if (status?.kind === "check") return "the page is a bot check or CAPTCHA; a person must pass it";
-  if (status?.kind === "sign_in") return "the page asks for a sign-in; a person must sign in";
-  if (status?.kind === "error") return "the page is an error page";
-  if (status?.kind === "dialog") return "a dialog covers the page";
-  const rows = (state.history as HistoryEntry[]).filter((h) => (h.attempt ?? 1) === state.plan.attempt).slice(-3);
-  const count = (kind: string) => rows.filter((h) => h.kind === kind).length;
-  if (outcome === agent.STUCK) {
-    if (agent.looping(state.history as HistoryEntry[], state.plan.attempt)) {
-      return "Jev scrolled up and down three times and chose nothing: what it needs may not be on this page, or is elsewhere on it";
-    }
-    if (count("stale")) return "the last choices were refused as stale: the page keeps changing under the target";
-    if (count("missing")) return `Jev could not find the element it needs in what was offered${unseenHint(state.page)}`;
-    return "the last three actions did not change the page";
-  }
-  if (outcome === agent.READ_ONLY) {
-    return "the session is read-only and Jev chose an action it refuses; nothing ran. Answer with another way that only reads, or finish";
-  }
-  if (outcome === agent.GOAL_REPORTED) return "Jev thinks the goal is met and asks Claude to check the page";
-  if (outcome === agent.JEV_FAILED) return "Jev gave no usable decision; nothing was executed";
+  const pageKind = (state.page?.status as { kind?: string } | undefined)?.kind;
+  if (pageKind && pageKind in PAGE_STATUS_DIAGNOSIS) return PAGE_STATUS_DIAGNOSIS[pageKind];
+  if (outcome === agent.STUCK) return diagnoseStuck(state);
+  if (outcome in OUTCOME_DIAGNOSIS) return OUTCOME_DIAGNOSIS[outcome];
   const handed =
     "Jev handed the decision to Claude: the page is not what the plan expects, nothing offered fits, or the operation cannot be undone";
   return `${handed}${unseenHint(state.page)}`;
@@ -81,12 +100,6 @@ export function report(state: session.State, result: agent.AgentResult): number 
     );
     return OK;
   }
-  if (outcome === agent.GOAL_REPORTED) {
-    print("Check the page against the goal. If it is met: finish --status done. Otherwise: replan");
-  } else if (outcome === agent.JEV_FAILED) {
-    print("Nothing was executed. Run again, replan, or act");
-  } else {
-    print("NEXT: replan --reason '...' [--restart], act, or finish");
-  }
+  print(OUTCOME_NEXT_HINTS[outcome] ?? DEFAULT_NEXT_HINT);
   return OK;
 }

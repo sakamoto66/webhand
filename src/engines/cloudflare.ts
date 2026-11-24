@@ -1,7 +1,8 @@
 /** Browser Run on Cloudflare: a Chrome reached over CDP with the account's API key. Nothing runs locally. */
 
-import { SessionError } from "../errors.ts";
-import type { State } from "../session.ts";
+import { Browser } from "../browser/index.ts";
+import { SessionError } from "../core/errors.ts";
+import type { State } from "../storage/session.ts";
 import { type Engine, rejectWindowAndProfile, type StartOptions } from "./types.ts";
 
 const API = "https://api.cloudflare.com/client/v4/accounts";
@@ -31,6 +32,7 @@ export function cloudflareEngine(spec: { id: string; label: string; query: strin
   return {
     id: spec.id,
     label: spec.label,
+    capabilities: { localFiles: false, har: false, explore: false },
     notes: spec.notes,
     async start(options: StartOptions): Promise<State> {
       rejectWindowAndProfile(spec.label, options);
@@ -86,6 +88,9 @@ export function cloudflareEngine(spec: { id: string; label: string; query: strin
       } catch {
         // Gone already, or the key is not set here: it closes after its idle time.
       }
+    },
+    async attach(state, url, view) {
+      return await Browser.open(url, { endpoint: { url: state.cdp, headers: browserRunHeaders() }, view });
     },
   };
 }

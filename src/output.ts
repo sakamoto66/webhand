@@ -1,9 +1,9 @@
-import { type Collected, MAX_COLLECTED } from "./collect.ts";
-import { type Compared, MAX_PAGES, MAX_SCROLLS } from "./compare.ts";
-import { quote, show } from "./format.ts";
+import { quote, show } from "./core/format.ts";
+import type { HistoryEntry, Page, Plan } from "./core/types.ts";
 import { actionSpace, offscreen, planText } from "./policies/base.ts";
-import type * as runbook from "./runbook.ts";
-import type { HistoryEntry, Page, Plan } from "./types.ts";
+import { type Collected, MAX_COLLECTED } from "./scans/collect.ts";
+import { type Compared, MAX_PAGES, MAX_SCROLLS } from "./scans/compare.ts";
+import type * as runbook from "./storage/runbook/index.ts";
 
 const RECENT = 8; // Actions shown to Claude when an attempt stops.
 

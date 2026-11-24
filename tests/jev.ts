@@ -2,12 +2,12 @@
 
 import { join } from "node:path";
 import { vi } from "vitest";
-import type { Row } from "../src/collect.ts";
 import { deps } from "../src/commands/context.ts";
-import { type Best, type Candidate, KEEP, NONE } from "../src/compare.ts";
+import { Decision, type HistoryEntry, type ModelCall, modelCall, type Page, type Plan } from "../src/core/types.ts";
 import { actionSpace, modelState, resolve, valueChoices } from "../src/policies/base.ts";
-import * as session from "../src/session.ts";
-import { Decision, type HistoryEntry, type ModelCall, modelCall, type Page, type Plan } from "../src/types.ts";
+import type { Row } from "../src/scans/collect.ts";
+import { type Best, type Candidate, KEEP, NONE } from "../src/scans/compare.ts";
+import * as session from "../src/storage/session.ts";
 import { tmpPath } from "./helpers.ts";
 
 /** [operation, element label, value label]. The value label picks one of Claude's values; null: none fits. */

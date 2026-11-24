@@ -1,12 +1,12 @@
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import { loadTask } from "../research/tasks.ts";
-import { Browser } from "../src/browser.ts";
-import { type Best, type Candidate, type Comparer, compareScan, KEEP, NONE } from "../src/compare.ts";
-import { Recorder } from "../src/metrics.ts";
+import { Browser } from "../src/browser/index.ts";
+import { Recorder } from "../src/core/metrics.ts";
+import { type Action, type ModelCall, type Plan, PolicyError } from "../src/core/types.ts";
 import { JevPolicy } from "../src/policies/jev.ts";
 import { buildCompare } from "../src/policies/jev-questions.ts";
-import { type Action, type ModelCall, type Plan, PolicyError } from "../src/types.ts";
+import { type Best, type Candidate, type Comparer, compareScan, KEEP, NONE } from "../src/scans/compare.ts";
 import { ROOT, tmpPath } from "./helpers.ts";
 
 let browser: Browser | null = null;

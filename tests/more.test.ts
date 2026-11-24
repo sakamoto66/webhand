@@ -1,14 +1,21 @@
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import { loadTask } from "../research/tasks.ts";
-import { Browser } from "../src/browser.ts";
-import { collectScan } from "../src/collect.ts";
-import { type Candidate, compareScan, NONE } from "../src/compare.ts";
-import { Recorder } from "../src/metrics.ts";
-import { loadMore, type MoreChooser } from "../src/more.ts";
+import { Browser } from "../src/browser/index.ts";
+import { Recorder } from "../src/core/metrics.ts";
+import {
+  type Action,
+  type ModelCall,
+  MutationUncertain,
+  type Page,
+  type Plan,
+  PolicyError,
+} from "../src/core/types.ts";
 import { JevPolicy } from "../src/policies/jev.ts";
 import { buildMore } from "../src/policies/jev-questions.ts";
-import { type Action, type ModelCall, MutationUncertain, type Page, type Plan, PolicyError } from "../src/types.ts";
+import { collectScan } from "../src/scans/collect.ts";
+import { type Candidate, compareScan, NONE } from "../src/scans/compare.ts";
+import { loadMore, type MoreChooser } from "../src/scans/more.ts";
 import { ROOT, tmpPath } from "./helpers.ts";
 import { ScriptedJev } from "./jev.ts";
 

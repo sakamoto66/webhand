@@ -3,10 +3,10 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { Browser } from "../src/browser.ts";
+import { Browser } from "../src/browser/index.ts";
 import { browserRunHeaders } from "../src/engines/cloudflare.ts";
 import { chooseEngine, hostName } from "../src/engines/index.ts";
-import * as session from "../src/session.ts";
+import * as session from "../src/storage/session.ts";
 
 const API = "https://api.cloudflare.com/client/v4/accounts/acct/browser-run/devtools/browser";
 

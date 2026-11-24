@@ -7,9 +7,9 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { Browser } from "../src/browser.ts";
+import type { Browser } from "../src/browser/index.ts";
+import type { Verdict } from "../src/core/types.ts";
 import type { ScriptStep } from "../src/policies/scripted.ts";
-import type { Verdict } from "../src/types.ts";
 
 export interface Task {
   GOAL: string;

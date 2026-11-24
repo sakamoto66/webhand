@@ -3,23 +3,22 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { run as runWebArena } from "../research/webarena.ts";
 import {
   defaultConfig,
   inspectSiteConfigs,
-  listTasksPublic,
   loadConfig,
-  loadTaskPublic,
   renderTaskUrl,
   resolveAutoLoginTargets,
-  summarizeRunDir,
-  validateAgentResponse,
-  WebArenaError,
-} from "../research/webarena-config.ts";
+} from "../research/webarena/config.ts";
+import { listTasksPublic, loadTaskPublic } from "../research/webarena/dataset.ts";
+import { summarizeRunDir } from "../research/webarena/report.ts";
+import { validateAgentResponse } from "../research/webarena/response.ts";
+import { WebArenaError } from "../research/webarena/sites.ts";
+import { run as runWebArena } from "../research/webarena.ts";
 import { CliExit } from "../src/commands/context.ts";
-import type { HarDocument } from "../src/har.ts";
-import { stopHarRecorder } from "../src/har-session.ts";
-import * as session from "../src/session.ts";
+import type { HarDocument } from "../src/har/index.ts";
+import { stopHarRecorder } from "../src/har/session.ts";
+import * as session from "../src/storage/session.ts";
 import { tmpPath } from "./helpers.ts";
 import { isolate, ScriptedJev } from "./jev.ts";
 

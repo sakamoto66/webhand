@@ -8,9 +8,9 @@
 
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { Browser } from "../src/browser.ts";
+import type { Browser } from "../src/browser/index.ts";
+import type { Verdict } from "../src/core/types.ts";
 import type { ScriptStep } from "../src/policies/scripted.ts";
-import type { Verdict } from "../src/types.ts";
 
 export const GOAL =
   "On the Kinari shop, add one Moss Towel 23 to the cart and place the order. Stop when Order placed is shown.";

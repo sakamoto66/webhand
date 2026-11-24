@@ -1,14 +1,15 @@
 /** Model contracts with stubbed transports. Tests must never call a paid API. */
 
 import { expect, test, vi } from "vitest";
-import { summarize } from "../src/metrics.ts";
+import { refusal } from "../src/agent/readonly.ts";
+import { summarize } from "../src/core/metrics.ts";
+import { modelCall, type Plan, PolicyError } from "../src/core/types.ts";
 import { render } from "../src/output.ts";
 import { actionSpace, modelState, resolve } from "../src/policies/base.ts";
 import { type Fetch, JevPolicy, validateChoice } from "../src/policies/jev.ts";
-import { buildQuestions, estimateTokens } from "../src/policies/jev-questions.ts";
+import { estimateTokens } from "../src/policies/jev-fit.ts";
+import { buildQuestions } from "../src/policies/jev-questions.ts";
 import { ScriptedPolicy } from "../src/policies/scripted.ts";
-import { refusal } from "../src/readonly.ts";
-import { modelCall, type Plan, PolicyError } from "../src/types.ts";
 
 const PAGE = {
   url: "http://local",

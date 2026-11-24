@@ -1,30 +1,38 @@
 import { resolve } from "node:path";
-import * as agent from "../agent.ts";
+import * as agent from "../agent/index.ts";
+import { Budget } from "../agent/index.ts";
 import type { Args } from "../args.ts";
-import * as auth from "../auth.ts";
+import { describeError, quote } from "../core/format.ts";
+import { gitState, maskUrls, pageEvent, Recorder, safeUrl } from "../core/metrics.ts";
+import type { Plan, Step, Value } from "../core/types.ts";
 import { browserUrl, chooseChrome as pickChrome } from "../engines/chrome.ts";
 import { chooseEngine, engineFor, hostName } from "../engines/index.ts";
-import { ExploreError, hostAllowed, parseAllow } from "../explore.ts";
-import { describeError, quote } from "../format.ts";
-import { type HarState, startHarRecorder, stopHarRecorder } from "../har-session.ts";
-import { gitState, maskUrls, pageEvent, Recorder, safeUrl } from "../metrics.ts";
+import type { Engine } from "../engines/types.ts";
+import { hostAllowed, parseAllow } from "../explore.ts";
+import { type HarState, startHarRecorder, stopHarRecorder } from "../har/session.ts";
+import type { Driver } from "../ipc/remote.ts";
 import { describePlan, headline } from "../output.ts";
 import { planText } from "../policies/base.ts";
-import type { Driver } from "../remote.ts";
-import * as runbook from "../runbook.ts";
-import * as session from "../session.ts";
-import type { Plan, Step, Value } from "../types.ts";
+import * as auth from "../storage/auth.ts";
+import * as runbook from "../storage/runbook/index.ts";
+import * as session from "../storage/session.ts";
 import { CliExit, deps, getContext, named, OK, print } from "./context.ts";
+import {
+  allowControlOption,
+  chromeOption,
+  collectOption,
+  compareOption,
+  engineOption,
+  fileOption,
+  idOption,
+  moreOption,
+  valueOption,
+  viewOptions,
+} from "./options.ts";
 import { attach, browserView, defaultLog, FLOWS, mergeValues, parseFiles, parseSteps, parseValues } from "./shared.ts";
+import type { CommandDef } from "./types.ts";
 
-export function chooseChrome(choice: string): [string, string | null] {
-  try {
-    return pickChrome(choice);
-  } catch (error) {
-    if (error instanceof session.SessionError) throw new CliExit(error.message);
-    throw error;
-  }
-}
+const DEFAULT_ATTEMPTS = 3;
 
 /** What `start` resolves from its arguments before anything is opened. */
 interface StartTarget {
@@ -36,44 +44,38 @@ interface StartTarget {
   /** Where Chrome runs, and the note for the person when auto fell back. */
   chrome: string;
   note: string | null;
-  engine: string;
+  engine: Engine;
   login: auth.SavedLogin | null;
 }
 
 /** The runbook, service, saved login, engine and Chrome the arguments ask for. Nothing is opened. */
 function resolveTarget(args: Args): StartTarget {
-  try {
-    let book: runbook.Runbook | null = null;
-    if (args.runbook) {
-      book = runbook.load(args.runbook, runbook.parseValues(args.param));
-      if (book.status !== "approved" && !args.allow_draft) {
-        throw new CliExit(`Runbook ${args.runbook} is a draft. Trial it with --allow-draft, then get it approved`);
-      }
+  let book: runbook.Runbook | null = null;
+  if (args.runbook) {
+    book = runbook.load(args.runbook, runbook.parseValues(args.param));
+    if (book.status !== "approved" && !args.allow_draft) {
+      throw new CliExit(`Runbook ${args.runbook} is a draft. Trial it with --allow-draft, then get it approved`);
     }
-    const serviceName = args.service || (book ? book.service : null);
-    const service = serviceName ? runbook.loadService(serviceName) : null;
-    const profile = session.parseSession(args.session);
-    const login = args.auth ? loadLogin(args.auth, profile) : null;
-    const engine = chooseEngine(args.engine, { headed: args.headed, profile, chrome: args.chrome });
-    // --chrome says where Chrome runs; the other engines have no such choice.
-    const [chrome, note] = engine === "chrome" ? pickChrome(args.chrome) : ["linux", null];
-    checkExplore(args, profile, engine, chrome);
-    if ((args.download_dir || args.file.length) && !["chrome", "headless-shell"].includes(engine)) {
-      throw new CliExit("--file and --download-dir need a local Chrome (--engine chrome or headless-shell)");
-    }
-    if (args.har && !["chrome", "headless-shell"].includes(engine)) {
-      throw new CliExit("--har needs Chrome or headless-shell (--engine chrome or headless-shell)");
-    }
-    if (args.download_dir && chrome !== "linux") {
-      throw new CliExit("--download-dir needs Chrome on this machine: the Windows Chrome cannot save to its paths");
-    }
-    return { book, service, serviceName, profile, chrome, note, engine, login };
-  } catch (error) {
-    if (error instanceof runbook.RunbookError || error instanceof session.SessionError) {
-      throw new CliExit(error.message);
-    }
-    throw error;
   }
+  const serviceName = args.service || (book ? book.service : null);
+  const service = serviceName ? runbook.loadService(serviceName) : null;
+  const profile = session.parseSession(args.session);
+  const login = args.auth ? loadLogin(args.auth, profile) : null;
+  const engineId = chooseEngine(args.engine, { headed: args.headed, profile, chrome: args.chrome });
+  const engine = engineFor(engineId);
+  // --chrome says where Chrome runs; the other engines have no such choice.
+  const [chrome, note] = engine.id === "chrome" ? pickChrome(args.chrome) : ["linux", null];
+  checkExplore(args, profile, engine, chrome);
+  if ((args.download_dir || args.file.length) && !engine.capabilities.localFiles) {
+    throw new CliExit("--file and --download-dir need a local Chrome (--engine chrome or headless-shell)");
+  }
+  if (args.har && !engine.capabilities.har) {
+    throw new CliExit("--har needs Chrome or headless-shell (--engine chrome or headless-shell)");
+  }
+  if (args.download_dir && chrome !== "linux") {
+    throw new CliExit("--download-dir needs Chrome on this machine: the Windows Chrome cannot save to its paths");
+  }
+  return { book, service, serviceName, profile, chrome, note, engine, login };
 }
 
 /**
@@ -81,7 +83,7 @@ function resolveTarget(args: Args): StartTarget {
  * limit on actions in all. A saved profile (profile:NAME) is never used; a login saved by `auth save` (--auth) may be,
  * for a test account, and a file may be attached.
  */
-function checkExplore(args: Args, profile: string | null, engine: string, chrome: string): void {
+function checkExplore(args: Args, profile: string | null, engine: Engine, chrome: string): void {
   if (!args.explore) {
     if (args.allow_domain.length || args.max_total_actions != null) {
       throw new CliExit("--allow-domain and --max-total-actions are for --explore");
@@ -94,7 +96,7 @@ function checkExplore(args: Args, profile: string | null, engine: string, chrome
     );
   }
   if (args.read_only) throw new CliExit("--explore and --read-only are different postures: use one");
-  if (!["chrome", "headless-shell"].includes(engine) || chrome !== "linux") {
+  if (!engine.capabilities.explore || chrome !== "linux") {
     throw new CliExit(
       "--explore needs a local Chrome on this machine (--engine chrome or headless-shell, --chrome linux)",
     );
@@ -105,14 +107,9 @@ function checkExplore(args: Args, profile: string | null, engine: string, chrome
   exploreRule(args);
 }
 
-/** The session's explore rule from the arguments. Checked already, except the hosts. */
+/** The session's explore rule from the arguments. */
 function exploreRule(args: Args): { allow: string[]; max_total: number } {
-  try {
-    return { allow: parseAllow(args.allow_domain), max_total: args.max_total_actions };
-  } catch (error) {
-    if (error instanceof ExploreError) throw new CliExit(error.message);
-    throw error;
-  }
+  return { allow: parseAllow(args.allow_domain), max_total: args.max_total_actions };
 }
 
 /** The saved login --auth names. It is for a new session: a saved profile already keeps its own sign-in. */
@@ -248,7 +245,7 @@ async function openStartPage(
       goal,
       chrome: browser.version,
       chrome_host: chrome,
-      ...(engine !== "chrome" ? { engine } : {}),
+      ...(engine.id !== "chrome" ? { engine: engine.id } : {}),
       session: profile ? "profile" : "new",
       ...(args.auth ? { auth: args.auth } : {}),
       ...(state.har ? { har: true } : {}),
@@ -281,7 +278,7 @@ async function openStartPage(
       error: maskUrls(describeError(error).split("\n")[0]),
       url: safeUrl(state.start_url),
       chrome_host: chrome,
-      ...(engine !== "chrome" ? { engine } : {}),
+      ...(engine.id !== "chrome" ? { engine: engine.id } : {}),
       session: profile ? "profile" : "new",
       started_at: new Date().toISOString(),
     });
@@ -298,16 +295,15 @@ async function openStartPage(
 /** What `start` tells the person once the page is open. */
 function printStarted(args: Args, target: StartTarget, plan: Plan, state: session.State, skipped: string[]): void {
   const { note, engine, chrome } = target;
-  const engineNotes = engineFor(engine).notes;
   if (note) print(`NOTE: ${note}`);
-  if (engineNotes?.start) print(`NOTE: ${engineNotes.start}`);
+  if (engine.notes?.start) print(`NOTE: ${engine.notes.start}`);
   if (args.auth) {
     print(`SIGNED IN with saved login ${args.auth}. Pages opened signed in are sent to Jev`);
-    if (engineNotes?.auth) print(`NOTE: ${engineNotes.auth}`);
+    if (engine.notes?.auth) print(`NOTE: ${engine.notes.auth}`);
     if (skipped.length) print(`NOTE: localStorage of other sites was not restored: ${skipped.join(", ")}`);
   }
   print(
-    `${describePlan(plan, state.view)}\nSESSION: ${args.session} (${hostName(engine, chrome)})\n${headline(state.page)}`,
+    `${describePlan(plan, state.view)}\nSESSION: ${args.session} (${hostName(engine.id, chrome)})\n${headline(state.page)}`,
   );
   if (state.read_only) {
     const allow: string[] = state.read_only.allow;
@@ -326,24 +322,18 @@ function printStarted(args: Args, target: StartTarget, plan: Plan, state: sessio
   print("NEXT: webhand run");
 }
 
-export async function commandStart(args: Args): Promise<number> {
+async function commandStart(args: Args): Promise<number> {
   if (session.load()) {
     throw new CliExit(named("A session is active. Run: webhand finish --status abandoned, or start another with --id"));
   }
   const target = resolveTarget(args);
   const planned = planStart(args, target);
-  let chromeState: session.State;
-  try {
-    chromeState = await deps.startChrome({
-      headed: args.headed,
-      profile: target.profile,
-      chrome: target.chrome,
-      engine: target.engine,
-    });
-  } catch (error) {
-    if (error instanceof session.SessionError) throw new CliExit(error.message);
-    throw error;
-  }
+  const chromeState = await deps.startChrome({
+    headed: args.headed,
+    profile: target.profile,
+    chrome: target.chrome,
+    engine: target.engine.id,
+  });
   let harState: HarState | null = null;
   try {
     await getContext().hooks.beforeStart?.(chromeState);
@@ -353,7 +343,6 @@ export async function commandStart(args: Args): Promise<number> {
   } catch (error) {
     if (harState) await stopHarRecorder(harState);
     await session.stopChrome(chromeState);
-    if (error instanceof session.SessionError) throw new CliExit(error.message);
     throw error;
   }
   const state = initialState(args, target, planned, chromeState, harState);
@@ -363,3 +352,80 @@ export async function commandStart(args: Args): Promise<number> {
   printStarted(args, target, planned.plan, state, skipped);
   return OK;
 }
+
+export const startCommand: CommandDef = {
+  name: "start",
+  session: "required",
+  spec: () => ({
+    help: "Record Claude's plan and open the start page",
+    options: [
+      idOption(),
+      { name: "goal", type: "string" },
+      { name: "url", type: "string" },
+      { name: "step", type: "string", multiple: true, help: 'A plan step. "[person] ..." is done by a person' },
+      valueOption("Text Jev may type"),
+      fileOption(),
+      { name: "download-dir", type: "string", help: "Save files the page downloads here (local Chrome only)" },
+      {
+        name: "har",
+        type: "string",
+        metavar: "PATH",
+        help: "Record HTTP traffic of the session to a HAR 1.2 file (Chrome or headless-shell only; contains cookies and page data)",
+      },
+      {
+        name: "read-only",
+        type: "boolean",
+        help: "Refuse actions it can tell may change something: a non-GET form submit, a file, a button outside a form",
+      },
+      allowControlOption(),
+      {
+        name: "explore",
+        type: "boolean",
+        help: "Look for faults in a test environment: refuse requests outside --allow-domain, note console errors, 5xx and dead ends (webhand findings)",
+      },
+      {
+        name: "allow-domain",
+        type: "string",
+        multiple: true,
+        metavar: "HOST",
+        help: "With --explore, a host the session may reach (and its subdomains), such as shop.test or localhost:8080",
+      },
+      {
+        name: "max-total-actions",
+        type: "int",
+        metavar: "N",
+        help: "With --explore, the most actions the whole session may take, across attempts",
+      },
+      { name: "service", type: "string", help: "Saved service information to give Jev, such as hotel-site" },
+      { name: "runbook", type: "string", help: "A saved procedure (runbook), such as hotel/filter" },
+      { name: "param", type: "string", multiple: true, metavar: "KEY=VALUE", help: "A runbook parameter" },
+      { name: "allow-draft", type: "boolean", help: "Trial a runbook no person has approved yet" },
+      ...viewOptions(),
+      compareOption(),
+      collectOption(),
+      moreOption(),
+      {
+        name: "flow",
+        type: "string",
+        choices: [...FLOWS],
+        default: process.env.WEBHAND_FLOW || "v2",
+        help: "v2 (default): offer Jev the whole page; v1: only what is in view. Default: WEBHAND_FLOW, else v2",
+      },
+      { name: "session", type: "string", default: "new", help: "new (temporary) or profile:NAME (saved sign-in)" },
+      {
+        name: "auth",
+        type: "string",
+        metavar: "NAME",
+        help: "Start signed in with a login saved by `auth save`. For a new session only: not with --id or profile:NAME",
+      },
+      chromeOption(),
+      engineOption(),
+      { name: "headed", type: "boolean" },
+      { name: "max-attempts", type: "int", default: DEFAULT_ATTEMPTS },
+      { name: "max-actions", type: "int", default: Budget.MAX_ACTIONS, help: "Per attempt" },
+      { name: "max-decisions", type: "int", default: Budget.MAX_DECISIONS, help: "Per attempt" },
+    ],
+    conflicts: [["auth", "id"]],
+  }),
+  run: commandStart,
+};

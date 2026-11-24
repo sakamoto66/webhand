@@ -102,8 +102,8 @@ test("the session-wide action limit stops further runs", async () => {
   await cli("finish", "--status", "abandoned");
 });
 
-import { executed } from "../src/agent.ts";
-import * as session from "../src/session.ts";
+import { executed } from "../src/agent/index.ts";
+import * as session from "../src/storage/session.ts";
 
 function session_actions(): number {
   return executed(session.load()?.history ?? []).length;

@@ -1,9 +1,9 @@
 /** What every command shares: exit codes, CliExit, the test seams, and what a command prints. */
 
-import type { Browser } from "../browser.ts";
+import type { Browser } from "../browser/index.ts";
+import type { Policy, Verdict } from "../core/types.ts";
 import { JevPolicy } from "../policies/jev.ts";
-import * as session from "../session.ts";
-import type { Policy, Verdict } from "../types.ts";
+import * as session from "../storage/session.ts";
 
 export const OK = 0;
 

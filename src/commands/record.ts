@@ -1,48 +1,30 @@
 /** The `record` command (also callable via the hidden `learn` alias). */
 
 import type { Args } from "../args.ts";
-import { Browser } from "../browser.ts";
+import { Browser } from "../browser/index.ts";
+import { quote } from "../core/format.ts";
+import { gitState, Recorder } from "../core/metrics.ts";
 import { browserUrl } from "../engines/chrome.ts";
-import { quote } from "../format.ts";
-import { gitState, Recorder } from "../metrics.ts";
 import * as recorderMod from "../record.ts";
-import * as runbook from "../runbook.ts";
-import * as session from "../session.ts";
-
-import { CliExit, getContext, OK, print } from "./context.ts";
-import { stopSignals } from "./finish.ts";
-import { defaultLog } from "./shared.ts";
-import { chooseChrome } from "./start.ts";
+import * as runbook from "../storage/runbook/index.ts";
+import * as session from "../storage/session.ts";
+import { getContext, OK, print } from "./context.ts";
+import { chromeOption } from "./options.ts";
+import { chooseChrome, defaultLog } from "./shared.ts";
+import { stopSignals } from "./signals.ts";
+import type { CommandDef } from "./types.ts";
 
 /** A person demonstrates a procedure. A long-running command, so run it in the background. */
-export async function commandRecord(args: Args): Promise<number> {
-  let profile: string | null;
-  let chrome: string;
-  let note: string | null;
-  let runbookFile: string;
-  let serviceFile: string | null;
-  try {
-    runbookFile = runbook.path(args.name, args.scope);
-    const parts = String(args.name).split("/");
-    serviceFile = parts.length > 1 ? runbook.servicePath(parts[0], args.scope) : null;
-    profile = session.parseSession(args.session);
-    [chrome, note] = chooseChrome(args.chrome);
-  } catch (error) {
-    if (error instanceof runbook.RunbookError || error instanceof session.SessionError) {
-      throw new CliExit(error.message);
-    }
-    throw error;
-  }
+async function commandRecord(args: Args): Promise<number> {
+  const runbookFile = runbook.path(args.name, args.scope);
+  const parts = String(args.name).split("/");
+  const serviceFile = parts.length > 1 ? runbook.servicePath(parts[0], args.scope) : null;
+  const profile = session.parseSession(args.session);
+  const [chrome, note] = chooseChrome(args.chrome);
   const stem = String(args.name).replaceAll("/", "-");
   const log = defaultLog(`record-${stem}`);
   getContext().log = log;
-  let chromeState: session.State;
-  try {
-    chromeState = await session.startChrome({ headed: !args.headless, profile, chrome });
-  } catch (error) {
-    if (error instanceof session.SessionError) throw new CliExit(error.message);
-    throw error;
-  }
+  const chromeState = await session.startChrome({ headed: !args.headless, profile, chrome });
   const deadline = performance.now() + args.max_minutes * 60_000;
   let browser: Browser | null = null;
   const recorder = new Recorder(log);
@@ -82,3 +64,27 @@ export async function commandRecord(args: Args): Promise<number> {
   }
   return OK;
 }
+
+export const recordCommand: CommandDef = {
+  name: "record",
+  aliases: ["learn"],
+  spec: () => ({
+    help: "Record a person demonstrating a procedure",
+    options: [
+      { name: "name", type: "string", required: true, help: "Runbook name, such as hotel/filter" },
+      { name: "url", type: "string", required: true },
+      {
+        name: "scope",
+        type: "string",
+        choices: ["project", "user"],
+        default: "project",
+        help: "Where the runbook belongs: this project's .webhand or your ~/.webhand",
+      },
+      { name: "session", type: "string", default: "new", help: "new or profile:NAME, to demonstrate signed in" },
+      chromeOption(),
+      { name: "max-minutes", type: "float", default: 30 },
+      { name: "headless", type: "boolean", hidden: true },
+    ],
+  }),
+  run: commandRecord,
+};

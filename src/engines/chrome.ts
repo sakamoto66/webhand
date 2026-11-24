@@ -13,10 +13,12 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
-import { SessionError } from "../errors.ts";
-import { quote, sleep } from "../format.ts";
-import type { State } from "../session.ts";
-import * as workspace from "../workspace.ts";
+import { Browser, type ViewChoice } from "../browser/index.ts";
+import { SessionError } from "../core/errors.ts";
+import { quote, sleep } from "../core/format.ts";
+import * as workspace from "../core/workspace.ts";
+import type { Driver } from "../ipc/remote.ts";
+import type { State } from "../storage/session.ts";
 import { childExited, children, exited, isFile, reachable, run, which } from "./process.ts";
 import type { Engine, StartOptions } from "./types.ts";
 
@@ -226,9 +228,20 @@ export async function stopLocal(state: State): Promise<void> {
   }
 }
 
+/** Connects to a local Chrome or headless-shell instance over its debugging port. */
+export async function attachLocal(state: State, url: string | null, view?: ViewChoice | null): Promise<Driver> {
+  return await Browser.open(url, {
+    port: state.port,
+    view,
+    downloadDir: state.download_dir ?? null,
+    explore: state.explore ?? null,
+  });
+}
+
 export const chrome: Engine = {
   id: "chrome",
   label: null,
+  capabilities: { localFiles: true, har: true, explore: true },
   async start(options) {
     let executable: string | null;
     if (options.chrome === "windows") {
@@ -241,4 +254,5 @@ export const chrome: Engine = {
     return launchChrome(executable, options);
   },
   stop: stopLocal,
+  attach: attachLocal,
 };

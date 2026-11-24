@@ -1,7 +1,7 @@
 import type { Args } from "../args.ts";
+import { logOnce } from "../core/metrics.ts";
 import {
   build,
-  ExtractError,
   expression,
   FORMATS,
   type Format,
@@ -12,17 +12,17 @@ import {
   ROWS,
   type Rows,
   WITHIN,
-} from "../extract.ts";
-import { logOnce } from "../metrics.ts";
-
+} from "../extract/index.ts";
 import { CHECK_FAIL, CHECK_INCONCLUSIVE, CliExit, EXTRACT_PARTIAL, OK, print } from "./context.ts";
+import { idOption } from "./options.ts";
 import { attach, browserView, requireSession } from "./shared.ts";
+import type { CommandDef } from "./types.ts";
 
 /**
  * Reads the data of the page as it is now. Read-only: it never acts, scrolls or asks a model, so what it prints is
  * the page's own text, not Claude's transcription.
  */
-export async function commandExtract(args: Args): Promise<number> {
+async function commandExtract(args: Args): Promise<number> {
   const kind = args.kind as Kind;
   if (!KINDS.includes(kind)) throw new CliExit(`Unknown kind ${JSON.stringify(kind)}. Kinds: ${KINDS.join(", ")}`);
   const style = args.format as Format;
@@ -47,19 +47,13 @@ export async function commandExtract(args: Args): Promise<number> {
   } finally {
     await browser.close();
   }
-  let extraction: ReturnType<typeof build>;
-  try {
-    extraction = build(kind, raw, {
-      columns,
-      index: args.table ?? null,
-      expectCount: args.expect_count ?? null,
-      within,
-      rows: (args.rows ?? "raw") as Rows,
-    });
-  } catch (error) {
-    if (error instanceof ExtractError) throw new CliExit(error.message);
-    throw error;
-  }
+  const extraction = build(kind, raw, {
+    columns,
+    index: args.table ?? null,
+    expectCount: args.expect_count ?? null,
+    within,
+    rows: (args.rows ?? "raw") as Rows,
+  });
   print(format(extraction, style));
   // Counts and sources only: the values themselves, which may be personal, are not written to the log.
   logOnce(state.log, "extract", {
@@ -75,3 +69,44 @@ export async function commandExtract(args: Args): Promise<number> {
   if (extraction.result === "INCONCLUSIVE") return CHECK_INCONCLUSIVE;
   return extraction.result === "PARTIAL" ? EXTRACT_PARTIAL : OK;
 }
+
+export const extractCommand: CommandDef = {
+  name: "extract",
+  session: "required",
+  spec: () => ({
+    help: "Claude: read the data of the page as it is now (table, list, link, fields, text); read-only, the page's own text",
+    options: [
+      idOption(),
+      { name: "within", type: "string", metavar: "REGION", help: `Only inside this region: ${WITHIN.join(", ")}` },
+      {
+        name: "columns",
+        type: "string",
+        metavar: "A,B",
+        help: "Table only: these columns, by header name; a column the page lacks is reported missing",
+      },
+      { name: "table", type: "int", metavar: "N", help: "Table only: the Nth table of the page" },
+      {
+        name: "expect-count",
+        type: "int",
+        metavar: "N",
+        help: "The number of rows or items expected; a different count is COUNT_MISMATCH",
+      },
+      {
+        name: "rows",
+        type: "string",
+        default: "raw",
+        choices: [...ROWS],
+        help: "Table only: raw (every row as the page has it; a row spanning the whole table is marked) or data (those rows are left out and named)",
+      },
+      {
+        name: "format",
+        type: "string",
+        default: "table",
+        choices: [...FORMATS],
+        help: "table (default), json or csv",
+      },
+    ],
+    positionals: [{ name: "kind", choices: [...KINDS] }],
+  }),
+  run: commandExtract,
+};

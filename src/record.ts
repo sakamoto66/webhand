@@ -4,8 +4,8 @@
  * The record is untrusted: pages can forge binding calls, so it only ever becomes a draft for review.
  */
 
-import { asset, type Browser, READ_STATE } from "./browser.ts";
-import type { Recorder } from "./metrics.ts";
+import { asset, type Browser, READ_STATE } from "./browser/index.ts";
+import type { Recorder } from "./core/metrics.ts";
 
 // A function replacer: the snapshot holds "$" sequences that a string replacement would expand.
 const RECORDER = asset("recorder.js").replaceAll("__SNAPSHOT__", () => READ_STATE.trim());

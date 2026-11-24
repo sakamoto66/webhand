@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
-import { memoryEnabled, memoryUseEnabled, pageShape, plainLabel, SiteMemory } from "../src/memory.ts";
-import { home } from "../src/workspace.ts";
+import { home } from "../src/core/workspace.ts";
+import { memoryEnabled, memoryUseEnabled, pageShape, plainLabel, SiteMemory } from "../src/storage/memory.ts";
 import { tmpPath } from "./helpers.ts";
 
 afterEach(() => {

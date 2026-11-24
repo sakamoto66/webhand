@@ -7,11 +7,11 @@
  */
 
 import { pathToFileURL } from "node:url";
-import type { Browser } from "../src/browser.ts";
 import { UsageError } from "../src/args.ts";
+import type { Browser } from "../src/browser/index.ts";
 import { type IO, main } from "../src/cli.ts";
 import { CliExit, type Hooks } from "../src/commands/context.ts";
-import * as session from "../src/session.ts";
+import * as session from "../src/storage/session.ts";
 import { loadTask, TaskError } from "./tasks.ts";
 
 /** Takes `--task NAME` or `--task=NAME` out of the arguments. */
@@ -95,7 +95,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     code = await run(process.argv.slice(2));
   } catch (error) {
     const known = error instanceof CliExit || error instanceof UsageError;
-    process.stderr.write(`${known ? error.message : error instanceof Error ? (error.stack ?? error.message) : error}\n`);
+    process.stderr.write(
+      `${known ? error.message : error instanceof Error ? (error.stack ?? error.message) : error}\n`,
+    );
     code = error instanceof UsageError ? 2 : 1;
   }
   // A leftover connection must not keep the process alive after its output is written.

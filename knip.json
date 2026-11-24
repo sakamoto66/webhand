@@ -2,8 +2,8 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
     "src/bin.ts",
-    "src/daemon.ts",
-    "src/har-daemon.ts",
+    "src/ipc/daemon.ts",
+    "src/har/daemon.ts",
     "research/webhand.ts",
     "research/webarena.ts",
     "research/engines.ts",

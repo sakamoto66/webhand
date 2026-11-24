@@ -5,9 +5,7 @@
  */
 
 import { Agent, fetch as undiciFetch } from "undici";
-import { MATCH, NO, type Row } from "../collect.ts";
-import { type Best, type Candidate, KEEP, NONE } from "../compare.ts";
-import { sleep, toJson } from "../format.ts";
+import { toJson } from "../core/format.ts";
 import {
   Decision,
   type HistoryEntry,
@@ -18,107 +16,16 @@ import {
   type Policy,
   PolicyError,
   type Value,
-} from "../types.ts";
-import { actionSpace, fileChoices, modelState, NOT_VISIBLE, resolve, valueChoices } from "./base.ts";
-import {
-  buildCollect,
-  buildCompare,
-  buildMore,
-  buildQuestions,
-  compareState,
-  estimateTokens,
-  FIT_TRIES,
-  fitChoose,
-  NO_VALUE,
-  OVER_LIMIT,
-  requestSize,
-  SHRINK,
-  TOKEN_BUDGET,
-} from "./jev-questions.ts";
+} from "../core/types.ts";
+import { MATCH, NO, type Row } from "../scans/collect.ts";
+import { type Best, type Candidate, KEEP, NONE } from "../scans/compare.ts";
+import { actionSpace, fileChoices, modelState, resolve, valueChoices } from "./base.ts";
+import { type Fetch, type Json, postJson, validateChoice } from "./jev-client.ts";
+import { estimateTokens, FIT_TRIES, fitChoose, OVER_LIMIT, requestSize, SHRINK, TOKEN_BUDGET } from "./jev-fit.ts";
+import { buildCollect, buildCompare, buildMore, buildQuestions, compareState, NO_VALUE } from "./jev-questions.ts";
+import { NOT_VISIBLE } from "./prompts.ts";
 
-const URL = "https://api.typesafe.ai/v1/systemone";
-const TIMEOUT_MS = 25_000;
-
-/** The subset of fetch that JevPolicy uses, so tests can answer without a network. */
-export type Fetch = (
-  url: string,
-  init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal },
-) => Promise<{ status: number; json(): Promise<unknown> }>;
-
-// biome-ignore lint/suspicious/noExplicitAny: Jev's response is validated field by field.
-type Json = any;
-
-/** The start of Jev's error body, for the run log. */
-const ERROR_CHARS = 500;
-
-async function errorBody(response: Awaited<ReturnType<Fetch>>): Promise<string | null> {
-  try {
-    const body = await response.json();
-    return (typeof body === "string" ? body : JSON.stringify(body)).slice(0, ERROR_CHARS);
-  } catch {
-    return null;
-  }
-}
-
-async function postJson(fetchJson: Fetch, key: string, body: unknown): Promise<Json> {
-  const request = toJson(body);
-  for (let attempt = 0; attempt < 3; attempt++) {
-    let response: Awaited<ReturnType<Fetch>>;
-    try {
-      response = await fetchJson(URL, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: request,
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
-    } catch {
-      throw new PolicyError("Jev connection failed; no action executed.");
-    }
-    if ([429, 503, 529].includes(response.status) && attempt < 2) {
-      await sleep(500 * 2 ** attempt);
-      continue;
-    }
-    if (response.status >= 400) {
-      throw new PolicyError(`Jev returned HTTP ${response.status}; no action executed.`, {
-        http_status: response.status,
-        request_chars: request.length,
-        error: await errorBody(response),
-      });
-    }
-    try {
-      return await response.json();
-    } catch {
-      throw new PolicyError("Invalid Jev response; no action executed.");
-    }
-  }
-  throw new PolicyError("Jev unavailable; no action executed.");
-}
-
-export function validateChoice(answer: Json, ids: Iterable<string>): Json {
-  const keys = new Set(ids);
-  let valid = false;
-  try {
-    const probabilities = answer.probabilities;
-    if (probabilities && typeof probabilities === "object" && !Array.isArray(probabilities)) {
-      const given = Object.keys(probabilities);
-      const values = Object.values(probabilities) as unknown[];
-      const numbers = [...values, answer.confidence];
-      const max = Math.max(...(values as number[]));
-      valid =
-        typeof answer.choice === "string" &&
-        keys.has(answer.choice) &&
-        given.length === keys.size &&
-        given.every((k) => keys.has(k)) &&
-        numbers.every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1) &&
-        Math.abs((values as number[]).reduce((a, b) => a + b, 0) - 1) < 0.02 &&
-        probabilities[answer.choice] >= max - 1e-6;
-    }
-  } catch {
-    valid = false;
-  }
-  if (!valid) throw new PolicyError("Invalid Jev response; no action executed.");
-  return answer;
-}
+export { type Fetch, validateChoice };
 
 export class JevPolicy implements Policy {
   name = "jev";
@@ -170,8 +77,6 @@ export class JevPolicy implements Policy {
   }
 
   async more(page: Page, plan: Plan, control: string, candidates: Candidate[]): Promise<string> {
-    // The page is in the state here: with the plan only, Jev was unsure whether the control was there (about
-    // 0.5); with the page, it chose the control at 0.98 or more.
     const body = { model: this.model, state: modelState(page, [], plan), questions: buildMore(control, candidates) };
     const result = await this.post(body, "more");
     const keys = [...candidates.map((item) => item.key), NONE];
@@ -194,7 +99,6 @@ export class JevPolicy implements Policy {
     const isObject = result && typeof result === "object" && !Array.isArray(result);
     const usage = (isObject && result.usage) || {};
     this.servedModel = isObject && "model" in result ? result.model : this.model;
-    // The response carries token counts but no billed amount.
     this.calls.push(
       modelCall(
         "typesafe",
@@ -244,7 +148,6 @@ export class JevPolicy implements Policy {
       } catch (error) {
         const over = error instanceof PolicyError && String(error.diagnostic?.error ?? "").includes(OVER_LIMIT);
         if (!over) throw error;
-        // What Jev refused is kept in the log (counts only, no page text): its limit is not known.
         refused.push({ ...requestSize(fitted), budget: this.budget });
         if (tries >= FIT_TRIES) {
           throw new PolicyError(error.message, { ...error.diagnostic, refused });
@@ -261,7 +164,6 @@ export class JevPolicy implements Policy {
     let target: string | null = null;
     const candidates = targets.get(operation);
     if (candidates) {
-      // Unused target heads cannot cause an action. Validate only the selected head.
       const targetAnswer = validateChoice(answers[`${operation.toLowerCase()}_target`] ?? {}, [
         ...candidates.keys(),
         NOT_VISIBLE,
@@ -269,7 +171,6 @@ export class JevPolicy implements Policy {
       target = targetAnswer.choice;
       confidences.push(targetAnswer.confidence);
       if (target === NOT_VISIBLE) {
-        // Jev looked for a target it cannot see. Nothing runs; the loop asks again with this noted.
         return new Decision(NOT_VISIBLE, null, { confidence: Math.min(...confidences), wanted: operation });
       }
     }
