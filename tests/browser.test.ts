@@ -1265,3 +1265,212 @@ test("a stacked star-rating radio input covered by earlier labels is clicked via
     expect(await instance.evaluate(`document.getElementById('${id}').checked`)).toBe(true);
   }
 });
+
+test("opacity:0 and display:none custom checkboxes/radios are observed and clicked via their visible labels", async () => {
+  const url = fixture(
+    "custom_toggles.html",
+    `<!doctype html><style>
+      .custom-control { position: relative; padding-left: 24px; margin: 12px 0; }
+      .custom-control-input { position: absolute; left: 0; z-index: -1; width: 16px; height: 20px; opacity: 0; }
+      .custom-control-label { display: inline-block; cursor: pointer; }
+      .hidden-radio { display: none; }
+    </style><body>
+      <div class="custom-control">
+        <input type="checkbox" class="custom-control-input" id="busy">
+        <label class="custom-control-label" for="busy">Set yourself as busy</label>
+      </div>
+      <div>
+        <input type="radio" class="hidden-radio" name="vis" id="vis_pub" value="public">
+        <label for="vis_pub">Public visibility</label>
+      </div>
+      <div style="display:none">
+        <input type="checkbox" class="custom-control-input" id="ghost">
+        <label class="custom-control-label" for="ghost">Hidden panel option</label>
+      </div>
+      <div style="position:relative;width:160px;height:30px;margin-top:16px">
+        <input type="checkbox" class="custom-control-input" id="covered_cb">
+        <label class="custom-control-label" for="covered_cb">Covered option</label>
+        <div role="dialog" aria-modal="true" style="position:absolute;inset:0;background:#eee">Modal</div>
+      </div>
+    </body>`,
+  );
+  await browser.close();
+  const instance = await open(url, { whole: true });
+  let page = await instance.observe();
+  const labels = page.actions.map((a: { label: string }) => a.label);
+  expect(labels).toContain("Set yourself as busy");
+  expect(labels).toContain("Public visibility");
+  expect(labels).not.toContain("Hidden panel option");
+
+  await instance.act(
+    find(page, (a) => a.label === "Set yourself as busy"),
+    page,
+  );
+  expect(await instance.evaluate("document.getElementById('busy').checked")).toBe(true);
+
+  page = await instance.observe();
+  await instance.act(
+    find(page, (a) => a.label === "Public visibility"),
+    page,
+  );
+  expect(await instance.evaluate("document.getElementById('vis_pub').checked")).toBe(true);
+
+  page = await instance.observe();
+  await expect(
+    instance.act(
+      find(page, (a) => a.label === "Covered option"),
+      page,
+    ),
+  ).rejects.toMatchObject({ changed: ["target_covered"] });
+});
+
+test("duplicate (role, label) actions receive disambiguating context without reading field values", async () => {
+  const url = fixture(
+    "duplicate_labels.html",
+    `<!doctype html><body>
+      <aside>
+        <form>
+          <div class="block">
+            <div class="title"><span>Assignee</span> <a href="#assignee">Edit</a></div>
+          </div>
+          <div class="block">
+            <div class="title"><span>0 Reviewers</span> <a href="#reviewers">Edit</a></div>
+          </div>
+          <div class="block">
+            <div class="title"><span>Labels</span> <a href="#labels">Edit</a></div>
+            <input type="password" value="TopSecretPw">
+          </div>
+          <button type="button">Save</button>
+        </form>
+      </aside>
+    </body>`,
+  );
+  await browser.close();
+  const page = await (await open(url, { whole: true })).observe();
+  const edits = page.actions.filter((a: { label: string }) => a.label === "Edit");
+  expect(edits.map((a: { context?: string }) => a.context)).toEqual(["Assignee", "0 Reviewers", "Labels"]);
+  expect(JSON.stringify(page.actions)).not.toContain("TopSecretPw");
+  const save = find(page, (a) => a.label === "Save");
+  expect(save.context).toBeUndefined();
+});
+
+test("monaco code editor textarea accepts fill via its own view-lines while modals and unrelated covers still block", async () => {
+  const url = fixture(
+    "monaco_editor.html",
+    `<!doctype html><body>
+      <div class="monaco-editor" style="position:relative;width:400px;height:120px;border:1px solid #999">
+        <textarea id="code_ta" class="inputarea" aria-label="Editor content" style="position:absolute;left:4px;top:4px;width:4px;height:16px">old()</textarea>
+        <div id="view_lines" class="view-lines" style="position:absolute;inset:0;background:rgba(255,255,255,0.9)"
+          onmousedown="event.preventDefault(); document.getElementById('code_ta').focus()">old()</div>
+      </div>
+      <div style="position:relative;width:300px;height:80px;margin-top:16px">
+        <textarea id="plain_ta" aria-label="Plain notes" style="width:100%;height:100%"></textarea>
+        <div style="position:absolute;inset:0;background:rgba(200,0,0,0.4)">Overlay</div>
+      </div>
+      <div id="covered_editor" class="monaco-editor" style="position:relative;width:300px;height:80px;margin-top:16px">
+        <textarea id="blocked_ta" class="inputarea" aria-label="Blocked editor" style="position:absolute;left:4px;top:4px;width:4px;height:16px"></textarea>
+        <div class="view-lines" style="position:absolute;inset:0"></div>
+        <dialog open style="position:fixed;inset:0;width:100%;height:100%;margin:0;border:0;background:rgba(0,0,0,0.2)">Confirm</dialog>
+      </div>
+    </body>`,
+  );
+  await browser.close();
+  const instance = await open(url, { whole: true });
+
+  // Remove the full-screen modal first to test normal Monaco fill and plain covered textarea.
+  await instance.evaluate("document.querySelector('dialog').remove()");
+  let page = await instance.observe();
+  await instance.act(
+    find(page, (a) => a.kind === "fill" && a.label === "Editor content"),
+    page,
+    "newCode()",
+  );
+  expect(await instance.evaluate("document.getElementById('code_ta').value")).toBe("newCode()");
+
+  // Unrelated div covering a normal textarea must still be rejected as target_covered.
+  page = await instance.observe();
+  await expect(
+    instance.act(
+      find(page, (a) => a.kind === "fill" && a.label === "Plain notes"),
+      page,
+      "nope",
+    ),
+  ).rejects.toMatchObject({ changed: ["target_covered"] });
+
+  // A modal covering a Monaco editor must still be rejected as target_covered.
+  await instance.evaluate(
+    "const d=document.createElement('dialog'); d.open=true; d.textContent='Modal'; d.style.cssText='position:fixed;inset:0;width:100%;height:100%;margin:0'; document.body.append(d);",
+  );
+  page = await instance.observe();
+  await expect(
+    instance.act(
+      find(page, (a) => a.kind === "fill" && a.label === "Editor content"),
+      page,
+      "blocked",
+    ),
+  ).rejects.toMatchObject({ changed: ["target_covered"] });
+
+  // If clicking a widget surface does not focus its textarea, fail safely before sending keystrokes.
+  await instance.evaluate("document.querySelector('dialog').remove()");
+  page = await instance.observe();
+  await expect(
+    instance.act(
+      find(page, (a) => a.kind === "fill" && a.label === "Blocked editor"),
+      page,
+      "shouldNotType",
+    ),
+  ).rejects.toThrow("Editor did not receive focus after click");
+  expect(await instance.evaluate("document.getElementById('blocked_ta').value")).toBe("");
+});
+
+test("HOVER opens a hidden sidebar submenu without navigating, letting the next CLICK reach submenu items", async () => {
+  const url = fixture(
+    "hover_menu.html",
+    `<!doctype html><style>
+      .sub { display: none; }
+      .nav-item.open .sub { display: block; }
+    </style><body>
+      <header>
+        <a href="#content">Skip to content</a>
+        <div><a href="#help">Help</a><ul class="sub"><li><a href="#docs">Docs</a></li></ul></div>
+      </header>
+      <aside>
+        <ul>
+          <li class="nav-item" onmouseenter="this.classList.add('open')">
+            <a href="#repo-tree" onclick="document.title='tree'">Repository</a>
+            <ul class="sub">
+              <li><a href="#contributors" onclick="document.title='contributors'">Contributors</a></li>
+            </ul>
+          </li>
+          <li><a href="#plain">Plain link</a></li>
+        </ul>
+      </aside>
+    </body>`,
+  );
+  await browser.close();
+  const instance = await open(url, { whole: true });
+  let page = await instance.observe();
+  expect(
+    page.actions.some((a: { kind: string; label: string }) => a.kind === "hover" && a.label === "Repository"),
+  ).toBe(true);
+  expect(
+    page.actions.some((a: { kind: string; label: string }) => a.kind === "hover" && a.label === "Skip to content"),
+  ).toBe(false);
+  expect(
+    page.actions.some((a: { kind: string; label: string }) => a.kind === "hover" && a.label === "Plain link"),
+  ).toBe(false);
+  expect(page.actions.some((a: { label: string }) => a.label === "Contributors")).toBe(false);
+
+  await instance.act(
+    find(page, (a) => a.kind === "hover" && a.label === "Repository"),
+    page,
+  );
+  expect(await instance.evaluate("document.title")).not.toBe("tree");
+
+  page = await instance.observe();
+  await instance.act(
+    find(page, (a) => a.kind === "click" && a.label === "Contributors"),
+    page,
+  );
+  expect(await instance.evaluate("document.title")).toBe("contributors");
+});

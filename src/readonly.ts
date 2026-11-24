@@ -27,7 +27,13 @@ const normalize = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase
 export function refusal(action: Action, readOnly: ReadOnly): string | null {
   const name = quote(action.label);
   if (action.kind === "upload") return `${name} attaches a file`;
-  if (action.kind === "tab" || action.kind === "scroll" || action.kind === "wait" || action.kind === "reveal") {
+  if (
+    action.kind === "tab" ||
+    action.kind === "scroll" ||
+    action.kind === "wait" ||
+    action.kind === "reveal" ||
+    action.kind === "hover"
+  ) {
     return null;
   }
   if (action.change === "form") return `${name} submits a form that is not a plain GET`;

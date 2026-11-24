@@ -2,10 +2,12 @@
 
 import { expect, test, vi } from "vitest";
 import { summarize } from "../src/metrics.ts";
+import { render } from "../src/output.ts";
 import { actionSpace, modelState, resolve } from "../src/policies/base.ts";
 import { type Fetch, JevPolicy, validateChoice } from "../src/policies/jev.ts";
 import { buildQuestions, estimateTokens } from "../src/policies/jev-questions.ts";
 import { ScriptedPolicy } from "../src/policies/scripted.ts";
+import { refusal } from "../src/readonly.ts";
 import { modelCall, type Plan, PolicyError } from "../src/types.ts";
 
 const PAGE = {
@@ -449,4 +451,43 @@ test("when select choices exceed 255, fitChoose drops the largest select without
   expect(labels).toEqual(["Street", "State", "City", "Save Order Address"]);
   expect(Object.keys(body.questions.select_target.criteria)).toHaveLength(61);
   expect(policy.calls[0].dropped_elements).toBe(1);
+});
+
+test("HOVER and duplicate-element context propagate through actionSpace, render, modelState, questions, and readonly", () => {
+  const page = {
+    url: "http://local/mr",
+    title: "MR",
+    text: "Assignee Edit Reviewers Edit",
+    actions: [
+      { id: "e1", kind: "click", node: 1, role: "link", label: "Repository", value: "" },
+      { id: "e2", kind: "hover", node: 1, role: "link", label: "Repository", value: "" },
+      { id: "e3", kind: "click", node: 2, role: "link", label: "Edit", context: "Assignee", value: "" },
+      { id: "e4", kind: "click", node: 3, role: "link", label: "Edit", context: "0 Reviewers", value: "" },
+      { id: "wait", kind: "wait", label: "Wait for the page to update" },
+    ],
+  };
+  const [elements, targets, controls] = actionSpace(page.actions);
+  expect(elements[0].operations).toEqual(["CLICK", "HOVER"]);
+  expect(elements[1].context).toBe("Assignee");
+  expect(elements[2].context).toBe("0 Reviewers");
+
+  const rendered = render(page);
+  expect(rendered).toContain('[1] link "Repository"  (CLICK,HOVER)');
+  expect(rendered).toContain('[2] link "Edit" context="Assignee" (CLICK)');
+  expect(rendered).toContain('[3] link "Edit" context="0 Reviewers" (CLICK)');
+
+  const state = modelState(page, [], PLAN) as { elements: Array<{ context?: string; operations: string[] }> };
+  expect(state.elements[0].operations).toEqual(["CLICK", "HOVER"]);
+  expect(state.elements[2].context).toBe("0 Reviewers");
+
+  const [questions, ops] = buildQuestions(PLAN, targets, controls, new Map());
+  expect("HOVER" in ops).toBe(true);
+  // biome-ignore lint/suspicious/noExplicitAny: inspecting question structure.
+  const q = questions as any;
+  expect(q.hover_target.criteria.get("1")).toMatchObject({ element: "[1] Repository", role: "link" });
+  expect(q.click_target.criteria.get("3")).toMatchObject({ element: "[3] Edit", context: "0 Reviewers" });
+
+  const resolved = resolve(page, "HOVER", "1");
+  expect(resolved.action?.kind).toBe("hover");
+  expect(resolved.action ? refusal(resolved.action, { allow: [] }) : "missing").toBeNull();
 });

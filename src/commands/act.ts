@@ -3,10 +3,10 @@ import { execute } from "../agent.ts";
 import type { Args } from "../args.ts";
 import { Recorder } from "../metrics.ts";
 import { render } from "../output.ts";
-import { resolve } from "../policies/base.ts";
+import { actionSpace, resolve } from "../policies/base.ts";
 import { inForce, refusal } from "../readonly.ts";
 import * as session from "../session.ts";
-import { MutationUncertain, PolicyError, StalePage } from "../types.ts";
+import { Decision, MutationUncertain, PolicyError, StalePage } from "../types.ts";
 
 import { BUDGET, FAILED, OK, print, STALE, UNCERTAIN } from "./context.ts";
 import { attach, browserView, exploreActionsLeft, loggable, recordFindings, requireSession } from "./shared.ts";
@@ -39,8 +39,20 @@ function decideAct(args: Args, state: session.State): ReturnType<typeof resolve>
     decision = resolve(state.page, args.operation, args.target);
   } catch (error) {
     if (!(error instanceof PolicyError)) throw error;
-    print(`REJECTED: ${error.message}`);
-    return FAILED;
+    // Allow Claude to manually HOVER any observed clickable element even if it had no static submenu trigger.
+    if (args.operation === "HOVER" && args.target !== null && args.target !== undefined) {
+      const [, targets] = actionSpace(state.page.actions);
+      const fallback = targets.get("CLICK")?.get(args.target);
+      if (fallback) {
+        decision = new Decision("HOVER", { ...fallback, kind: "hover" });
+      } else {
+        print(`REJECTED: ${error.message}`);
+        return FAILED;
+      }
+    } else {
+      print(`REJECTED: ${error.message}`);
+      return FAILED;
+    }
   }
   if (decision.action === null) {
     print("REJECTED: act runs one operation. Use run, replan, or finish");

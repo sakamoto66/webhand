@@ -16,7 +16,7 @@ Read `skills/webhand/SKILL.md` and follow it exactly, with these differences onl
   - Before a batch run, verify dataset, host memory, site reachability, and auth mode without reading secrets via `node research/webarena.ts doctor [--sites SITE]`.
 - **Resource & state discipline**:
   - Keep unused site containers stopped and run heavy sites (especially `gitlab`) sequentially (one session at a time) so headless Chrome starts reliably on memory-constrained hosts.
-  - `MUTATE` tasks leave state in the container across runs. When strict isolation or repeatable comparison is needed, have the user reset the site container (`uvx webarena-verified env reset --site SITE`) before/after the round and record whether a reset was performed.
+  - `MUTATE` tasks leave state in the container across runs. When strict isolation or repeatable comparison is needed, have the user recreate the site container (`uvx webarena-verified env stop --site SITE && uvx webarena-verified env start --site SITE`) before/after the round and record whether it was reset.
 - Start the task with `node research/webarena.ts start --task-id ID [--out-dir DIR] ...`. The task supplies the GOAL, start URL, and HAR output path (`network.har`), so do not pass `--goal`, `--url`, or `--har`. Write `--step` and `--value` as `skills/webhand/SKILL.md` says.
 - When `START_URLS:` lists more than one URL (a multi-site task), the first URL is already open; visit the others during the run when needed (`answer --url` or `replan --url`).
 - Always end with `node research/webarena.ts finish`, supplying both webhand's `--status` and WebArena-Verified's structured `FinalAgentResponse` fields:
