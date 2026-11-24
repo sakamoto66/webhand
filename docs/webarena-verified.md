@@ -46,24 +46,27 @@ uvx webarena-verified subset-export --name webarena-verified-hard --output state
     "shopping": {
       "urls": ["http://localhost:7770"],
       "active_url_idx": 0,
-      "use_header_login": false
+      "use_header_login": false,
+      "credentials": { "email": "emma.lopez@gmail.com", "password": "Password.123" }
     },
     "reddit": {
       "urls": ["http://localhost:9999"],
       "active_url_idx": 0,
-      "use_header_login": false
+      "use_header_login": false,
+      "credentials": { "username": "MarvelsGrantMan136", "password": "test1234" }
     },
     "gitlab": {
       "urls": ["http://localhost:8023"],
       "active_url_idx": 0,
-      "use_header_login": false
+      "use_header_login": false,
+      "credentials": { "username": "byteblaze", "password": "hello1234" }
     }
   }
 }
 ```
 
-- `webarena-verified` 1.2.3 で HTTP ヘッダー Auto-Login（`X-M2-Admin-Auto-Login`）に対応しているのは `shopping_admin` のみです。`use_header_login: true` の `shopping_admin` は、`start` 時に **HAR 記録の開始前** にヘッダーで事前アクセスして Chrome にセッション Cookie を定着させます。資格情報は CLI 引数・ホストエージェント・Jev・`network.har` のいずれにも渡りません。
-- `shopping`・`reddit`・`gitlab` などヘッダー認証がないサイトは、`--headed` セッションでテスト用アカウント（例: `shopping` は `emma.lopez@gmail.com` / `Password.123`、`reddit` は `MarvelsGrantMan136` / `test1234`）へ人が直接サインインして `node research/webarena.ts auth save <site>` で保存し、タスク開始時に `--auth <site>` を指定してください（`--auth` で開いたページは Jev に送信されます）。
+- `shopping_admin`（`use_header_login: true`）は `X-M2-Admin-Auto-Login` ヘッダーで、`shopping`・`reddit`・`gitlab`（`use_header_login: false` + `credentials`）はローカルテスト環境向けフォーム送信で、いずれも `start` 時の **HAR 記録開始前** に事前認証して Chrome にセッション Cookie を定着させます。資格情報は CLI 引数・ホストエージェント・Jev・`network.har` のいずれにも渡りません。
+- `--auth NAME` を明示した場合は事前認証をスキップし、保存済みログインをそのまま使用します（`--auth` や事前認証で開いたページは Jev に送信されます）。
 
 ## 4. タスクの実行
 

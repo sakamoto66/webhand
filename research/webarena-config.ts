@@ -31,9 +31,48 @@ const DEFAULT_SITE_URLS: Record<string, string> = {
 };
 
 // webarena-verified 1.2.3 only implements HTTP header Auto-Login for shopping_admin
-// (WebArenaVerified.get_custom_auth_header_name). Other sites (shopping, reddit, gitlab) use UI login / `--auth`.
+// (WebArenaVerified.get_custom_auth_header_name). Other sites (shopping, reddit, gitlab) use form pre-login.
 const AUTO_LOGIN_HEADERS: Record<string, { header: string; userFields: string[] }> = {
   shopping_admin: { header: "X-M2-Admin-Auto-Login", userFields: ["username", "email"] },
+};
+
+interface FormLoginSpec {
+  loginPath: string;
+  userFields: string[];
+  userSelector: string;
+  passwordSelector: string;
+  submitSelector: string;
+}
+
+const FORM_LOGIN_SPECS: Record<string, FormLoginSpec> = {
+  shopping: {
+    loginPath: "/customer/account/login",
+    userFields: ["email", "username"],
+    userSelector: 'input#email[name="login[username]"], input[name="login[username]"]',
+    passwordSelector: 'input#pass[name="login[password]"], input[name="login[password]"]',
+    submitSelector: 'button#send2, form#login-form button[type="submit"]',
+  },
+  shopping_admin: {
+    loginPath: "",
+    userFields: ["username", "email"],
+    userSelector: 'input#username, input[name="login[username]"]',
+    passwordSelector: 'input#login, input[name="login[password]"]',
+    submitSelector: 'button.action-login, button[type="submit"]',
+  },
+  reddit: {
+    loginPath: "/login",
+    userFields: ["username", "email"],
+    userSelector: 'input#login-username, input[name="_username"]',
+    passwordSelector: 'input#login-password, input[name="_password"]',
+    submitSelector: 'button[type="submit"]',
+  },
+  gitlab: {
+    loginPath: "/users/sign_in",
+    userFields: ["username", "email"],
+    userSelector: 'input#user_login, input[name="user[login]"]',
+    passwordSelector: 'input#user_password, input[name="user[password]"]',
+    submitSelector: 'button[type="submit"], input[type="submit"][name="commit"]',
+  },
 };
 
 interface EnvironmentEntry {
@@ -55,11 +94,23 @@ export interface WebArenaConfig {
   output_dir?: string;
 }
 
-export interface AutoLoginTarget {
-  site: string;
-  url: string;
-  header: { name: string; value: string };
-}
+export type AutoLoginTarget =
+  | {
+      mode: "header";
+      site: string;
+      url: string;
+      header: { name: string; value: string };
+    }
+  | {
+      mode: "form";
+      site: string;
+      loginUrl: string;
+      userSelector: string;
+      passwordSelector: string;
+      submitSelector: string;
+      user: string;
+      password: string;
+    };
 
 /** Public task metadata safe to hand to the planning agent. Never contains `eval` or `expected`. */
 export interface WebArenaTaskPublic {
@@ -179,7 +230,7 @@ export function renderTaskUrl(templateUrl: string, config: WebArenaConfig): stri
   return rendered;
 }
 
-/** Resolves optional Auto-Login header for one site from local config. Never exposed to CLI args or HAR. */
+/** Resolves optional Auto-Login target (header or local test-env form login) from config. Never exposed to CLI or HAR. */
 function resolveAutoLoginTarget(config: WebArenaConfig, site: string): AutoLoginTarget | null {
   const key = normalizeSiteKey(site);
   const env = config.environments[key];
@@ -187,24 +238,41 @@ function resolveAutoLoginTarget(config: WebArenaConfig, site: string): AutoLogin
   const url = activeSiteUrl(config, key);
   const custom = env.extra?.auto_login_header as { name?: string; value?: string } | undefined;
   if (custom && typeof custom.name === "string" && typeof custom.value === "string" && custom.name && custom.value) {
-    return { site: key, url, header: { name: custom.name, value: custom.value } };
+    return { mode: "header", site: key, url, header: { name: custom.name, value: custom.value } };
   }
-  if (!env.use_header_login) return null;
-  const spec = AUTO_LOGIN_HEADERS[key];
-  if (!spec) {
-    throw new WebArenaError(
-      `Site "${key}" does not support built-in header Auto-Login in webarena-verified; sign in with --headed and save with \`webhand auth save ${key}\`, then pass \`--auth ${key}\` (or set extra.auto_login_header)`,
-    );
+  if (env.use_header_login) {
+    const spec = AUTO_LOGIN_HEADERS[key];
+    if (!spec) {
+      throw new WebArenaError(
+        `Site "${key}" does not support built-in header Auto-Login in webarena-verified; set use_header_login=false with credentials for automatic form pre-login (or set extra.auto_login_header)`,
+      );
+    }
+    if (!env.credentials) {
+      throw new WebArenaError(`Site "${key}" has use_header_login=true but is missing credentials`);
+    }
+    const user = spec.userFields.map((field) => env.credentials?.[field]).find((v) => typeof v === "string" && v);
+    const password = env.credentials.password;
+    if (!user || !password) {
+      throw new WebArenaError(`Site "${key}" has use_header_login=true but is missing credentials`);
+    }
+    return { mode: "header", site: key, url, header: { name: spec.header, value: `${user}:${password}` } };
   }
-  if (!env.credentials) {
-    throw new WebArenaError(`Site "${key}" has use_header_login=true but is missing credentials`);
-  }
-  const user = spec.userFields.map((field) => env.credentials?.[field]).find((v) => typeof v === "string" && v);
+  if (!env.credentials) return null;
+  const form = FORM_LOGIN_SPECS[key];
+  if (!form) return null;
+  const user = form.userFields.map((field) => env.credentials?.[field]).find((v) => typeof v === "string" && v);
   const password = env.credentials.password;
-  if (!user || !password) {
-    throw new WebArenaError(`Site "${key}" has use_header_login=true but is missing credentials`);
-  }
-  return { site: key, url, header: { name: spec.header, value: `${user}:${password}` } };
+  if (!user || !password) return null;
+  return {
+    mode: "form",
+    site: key,
+    loginUrl: `${url}${form.loginPath}`,
+    userSelector: form.userSelector,
+    passwordSelector: form.passwordSelector,
+    submitSelector: form.submitSelector,
+    user,
+    password,
+  };
 }
 
 export function resolveAutoLoginTargets(config: WebArenaConfig, sites: string[]): AutoLoginTarget[] {

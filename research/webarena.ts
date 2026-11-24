@@ -97,10 +97,14 @@ function parseTaskId(raw: string | null): number {
   return Number.parseInt(raw.trim(), 10);
 }
 
+function normalizeLoginUrl(url: string): string {
+  return url.split(/[?#]/)[0].replace(/\/+$/, "");
+}
+
 /**
- * Visits each configured Auto-Login site in Chrome BEFORE HAR recording begins so the site's
- * session cookies are stored in Chrome's cookie jar while the Auto-Login header itself never
- * appears in network.har or CLI arguments.
+ * Authenticates each configured WebArena test-environment site in Chrome BEFORE HAR recording
+ * begins (via Auto-Login header or local form submit), so session cookies are stored in Chrome's
+ * cookie jar while credentials never appear in network.har, CLI arguments, host agent, or Jev.
  */
 async function preAuthenticate(chromeState: session.State, targets: AutoLoginTarget[]): Promise<void> {
   if (!targets.length || !chromeState.port) return;
@@ -110,8 +114,35 @@ async function preAuthenticate(chromeState: session.State, targets: AutoLoginTar
     for (const target of targets) {
       const page = await context.newPage();
       try {
-        await page.setExtraHTTPHeaders({ [target.header.name]: target.header.value });
-        await page.goto(target.url, { waitUntil: "domcontentloaded" });
+        if (target.mode === "header") {
+          await page.setExtraHTTPHeaders({ [target.header.name]: target.header.value });
+          await page.goto(target.url, { waitUntil: "domcontentloaded" });
+        } else {
+          await page.goto(target.loginUrl, { waitUntil: "domcontentloaded" });
+          await page.locator(target.userSelector).first().fill(target.user);
+          await page.locator(target.passwordSelector).first().fill(target.password);
+          const loginNorm = normalizeLoginUrl(target.loginUrl);
+          await Promise.all([
+            page.waitForResponse((res) => res.request().method() === "POST", { timeout: 15_000 }).catch(() => null),
+            page.locator(target.submitSelector).first().click(),
+          ]);
+          await page.waitForLoadState("load").catch(() => {});
+          if (normalizeLoginUrl(page.url()) === loginNorm) {
+            await page
+              .waitForURL((url) => normalizeLoginUrl(url.href) !== loginNorm, { waitUntil: "load", timeout: 2_000 })
+              .catch(() => {});
+          }
+          if (
+            normalizeLoginUrl(page.url()) === loginNorm &&
+            (await page
+              .locator(target.passwordSelector)
+              .first()
+              .isVisible()
+              .catch(() => false))
+          ) {
+            throw new CliExit(`Form pre-login failed for ${target.site} at ${target.loginUrl}`);
+          }
+        }
       } finally {
         await page.close().catch(() => {});
       }
@@ -194,7 +225,8 @@ async function commandStart(args: string[], io: IO): Promise<number> {
   const taskDir = join(outDir, String(taskId));
   mkdirSync(taskDir, { recursive: true });
   const harPath = join(taskDir, config.trace_file_name);
-  const autoLoginTargets = resolveAutoLoginTargets(config, task.sites);
+  const explicitAuth = rest.some((arg) => /^--auth(=|$)/.test(arg));
+  const autoLoginTargets = explicitAuth ? [] : resolveAutoLoginTargets(config, task.sites);
 
   const meta: WebArenaSessionMeta = {
     task_id: taskId,
@@ -228,7 +260,7 @@ async function commandStart(args: string[], io: IO): Promise<number> {
     }
     if (autoLoginTargets.length) {
       io.out(
-        `AUTO_LOGIN: pre-authenticated ${autoLoginTargets.map((t) => t.site).join(", ")} (cookies only; excluded from HAR)\n`,
+        `AUTO_LOGIN: pre-authenticated ${autoLoginTargets.map((t) => `${t.site} (${t.mode})`).join(", ")} (cookies only; excluded from HAR)\n`,
       );
     }
   }
