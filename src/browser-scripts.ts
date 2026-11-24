@@ -175,13 +175,30 @@ export const RESOLVE_TARGET = `(action => {
   if (!e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return {reason:'hidden'};
   if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return {reason:'read_only'};
   // The center of the whole box first. An inline element that wraps can leave that center between its lines,
-  // so the center of each line box is tried next.
-  let covered=null;
-  for (const r of [e.getBoundingClientRect(), ...e.getClientRects()]) {
-    const x=r.x+r.width/2, y=r.y+r.height/2;
-    if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
+  // so the center of each line box is tried next. If a labeled control (such as a stacked star-rating radio
+  // input) is covered at its own box, try points on its own visible <label> elements while still requiring
+  // c.hit(e, x, y) so only clicks landing on e or its own label are accepted.
+  const tryPoint=(x,y)=>{
+    if (x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
     if (c.hit(e,x,y)) return {x,y};
     covered ??= c.cover(x,y);
+    return null;
+  };
+  let covered=null;
+  for (const r of [e.getBoundingClientRect(), ...e.getClientRects()]) {
+    if (!r.width || !r.height) continue;
+    const hit=tryPoint(r.x+r.width/2, r.y+r.height/2);
+    if (hit) return hit;
+  }
+  for (const label of e.labels || []) {
+    if (!label.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) continue;
+    const r=label.getBoundingClientRect();
+    if (!r.width || !r.height) continue;
+    const y=r.y+r.height/2, edge=Math.min(8, r.width/4);
+    for (const x of [r.x+r.width/2, r.right-edge, r.left+edge, r.x+r.width*0.75, r.x+r.width*0.25]) {
+      const hit=tryPoint(x, y);
+      if (hit) return hit;
+    }
   }
   return covered ? {reason:'covered', cover:covered} : {reason:'outside'};
 })`;
