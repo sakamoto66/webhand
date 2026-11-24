@@ -15,6 +15,7 @@ function printService(entry: runbook.CatalogEntry): void {
   print(`SERVICE ${entry.service}${info ? ` (${info.scope})` : ""}`);
   if (info) {
     print(`  ${info.description}\n  base_url: ${info.base_url}`);
+    if (info.allowed_domains?.length) print(`  allowed_domains: ${info.allowed_domains.join(", ")}`);
     const login = info.login;
     print(`  login: ${login.required ? "required" : "not required"}${login.url ? ` (${login.url})` : ""}`);
     for (const page of info.pages) {

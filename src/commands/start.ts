@@ -162,6 +162,11 @@ function planStart(args: Args, target: StartTarget): { plan: Plan; goal: string;
   if (args.explore && !hostAllowed(url, exploreRule(args).allow)) {
     throw new CliExit("The start URL is outside --allow-domain: exploring only visits the hosts it was given");
   }
+  if (!args.explore && service?.allowed_domains?.length && !hostAllowed(url, service.allowed_domains)) {
+    throw new CliExit(
+      `The start URL is outside service ${service.service}'s allowed_domains (${service.allowed_domains.join(", ")})`,
+    );
+  }
   if (args.allow_control.length && !args.read_only) throw new CliExit("--allow-control needs --read-only");
   if (args.read_only && steps.some((step) => step.actor === "human")) {
     throw new CliExit("A read-only session has no [person] steps: start from a saved login (--auth or profile:NAME)");
@@ -217,6 +222,7 @@ function initialState(
     ...(hooks.meta ? { meta: hooks.meta } : {}),
     ...(args.read_only ? { read_only: { allow: args.allow_control } } : {}),
     ...(args.explore ? { explore: exploreRule(args) } : {}),
+    ...(!args.explore && service?.allowed_domains?.length ? { allowed_domains: service.allowed_domains } : {}),
     ...(target.batchRow
       ? { batch: { id: target.batchRow.state.id, row: target.batchRow.row, total: target.batchRow.total } }
       : {}),
@@ -336,6 +342,9 @@ function printStarted(args: Args, target: StartTarget, plan: Plan, state: sessio
     print(
       `EXPLORING: requests to hosts other than ${state.explore.allow.join(", ")} are refused. At most ${state.explore.max_total} actions in all. Anomalies are candidates, not verdicts: after each run or act, webhand findings`,
     );
+  }
+  if (state.allowed_domains?.length) {
+    print(`ALLOWED DOMAINS: ${state.allowed_domains.join(", ")} (navigations outside this list are refused)`);
   }
   if (state.har) {
     print(`HAR: recording to ${state.har.path} (contains cookies and page traffic; do not commit)`);

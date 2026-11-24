@@ -1,0 +1,47 @@
+# Starter runbook for HOTEL PLANISPHERE. Review, trial with --allow-draft, then set status = "approved".
+service = "hotel-planisphere"
+name = "reserve"
+status = "draft"
+goal = "Reserve the default plan for check-in {check_in}, {term} nights, {head_count} guests, under name {username} with email confirmation to {email}. Review the confirmation page and submit. Stop when 予約を完了しました is shown."
+start_url = "https://hotel-example-site.takeyaqa.dev/ja/reserve.html?plan-id=0"
+
+[params.check_in]
+description = "Check-in date as YYYY/MM/DD (within 3 months)"
+
+[params.term]
+description = "Number of nights"
+
+[params.head_count]
+description = "Number of guests"
+
+[params.username]
+description = "Guest name (use a dummy value for practice)"
+
+[params.email]
+description = "Confirmation email address (use a dummy value for practice)"
+
+[[steps]]
+instruction = "Set 宿泊日 to {check_in}"
+hints = ["Picking the date in the calendar fills the field and closes it."]
+done_when = "宿泊日 shows {check_in}"
+
+[[steps]]
+instruction = "Set 宿泊数 to {term} and 人数 to {head_count}"
+done_when = "宿泊数 shows {term} and 人数 shows {head_count}"
+
+[[steps]]
+instruction = "Enter {username} into 氏名"
+done_when = "氏名 shows {username}"
+
+[[steps]]
+instruction = "Select メールでのご連絡 for 確認のご連絡 and enter {email} into メールアドレス"
+hints = ["メールアドレス appears only after choosing メールでのご連絡."]
+done_when = "確認のご連絡 shows メールでのご連絡 and メールアドレス shows {email}"
+
+[[steps]]
+instruction = "Press 予約内容を確認する"
+done_when = "The page heading is 宿泊予約確認"
+
+[[steps]]
+instruction = "Press この内容で予約する"
+done_when = "The dialog 予約を完了しました is shown"

@@ -28,18 +28,21 @@ export interface Finding {
 
 const HOST = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d+)?$/;
 
-/** Hosts from --allow-domain, lower-cased. A scheme, a path or a wildcard is refused: only a host is a boundary. */
-export function parseAllow(values: string[]): string[] {
-  if (!values.length) throw new ExploreError("--explore needs --allow-domain HOST: the hosts it may visit");
+/** Validates a list of hosts (no scheme, path, or wildcard), lower-cased and deduplicated. */
+export function parseHostList(values: string[], label: string): string[] {
   const hosts = values.map((value) => value.trim().toLowerCase());
   for (const host of hosts) {
     if (!HOST.test(host)) {
-      throw new ExploreError(
-        `--allow-domain takes a host such as shop.test or localhost:8080, not ${JSON.stringify(host)}`,
-      );
+      throw new ExploreError(`${label} takes a host such as shop.test or localhost:8080, not ${JSON.stringify(host)}`);
     }
   }
   return [...new Set(hosts)];
+}
+
+/** Hosts from --allow-domain, lower-cased. A scheme, a path or a wildcard is refused: only a host is a boundary. */
+export function parseAllow(values: string[]): string[] {
+  if (!values.length) throw new ExploreError("--explore needs --allow-domain HOST: the hosts it may visit");
+  return parseHostList(values, "--allow-domain");
 }
 
 /**

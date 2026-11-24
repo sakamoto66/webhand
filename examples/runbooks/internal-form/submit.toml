@@ -1,0 +1,33 @@
+# Template runbook for an internal form requiring user sign-in.
+# Credentials are never stored here: the [person] step hands Chrome to you for sign-in.
+service = "internal-form"
+name = "submit"
+status = "draft"
+goal = "Submit a {category} request titled {title} with summary {summary}. Stop when the request confirmation number is shown."
+start_url = "https://portal.example.internal/requests/new"
+
+[params.category]
+description = "Request category label as shown in the dropdown"
+
+[params.title]
+description = "Short request title"
+
+[params.summary]
+description = "Details to enter into the summary field"
+
+[[steps]]
+actor = "human"
+instruction = "Sign in to the portal in Chrome if prompted"
+done_when = "The New Request form is visible"
+
+[[steps]]
+instruction = "Choose {category} for Category"
+done_when = "Category shows {category}"
+
+[[steps]]
+instruction = "Enter {title} into Title and {summary} into Summary"
+done_when = "Title shows {title} and Summary shows {summary}"
+
+[[steps]]
+instruction = "Press Submit request"
+done_when = "A confirmation banner with a request ID is shown"

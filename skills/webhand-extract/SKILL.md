@@ -60,7 +60,7 @@ webhand extract list | link | fields | text [--within REGION]
 - `--columns` takes the header names exactly as the page writes them. A column the page does not have is reported as missing; it is never filled with a blank.
 - `--rows` is `raw` by default: every row as the page has it, and a row that is one cell spanning the whole table (a footnote, a section title, a total) is marked `spans the whole table: a note or title, not a record`. Do not put a marked row in the data. `--rows data` leaves those rows out and names each one in a `NOTE`, so you can use it when the user wants records only; say in the report that rows were left out and which.
 - `--expect-count N` is the number you agreed on in step 1, not one you derived from the output. A different number is `COUNT_MISMATCH`: report both numbers.
-- `--format json|csv` for files; the default table is for reading. Values keep the page's own notation (`1,980` stays `1,980`). If the user needs a normalized form, convert after extraction and say in the report which values you converted.
+- `--format json|csv|markdown` for files or Markdown reports; the default table is for reading. Pass `--out PATH` (under the current directory) when the user explicitly asked to save the result to a file. Values keep the page's own notation (`1,980` stays `1,980`). If the user needs a normalized form, convert after extraction and say in the report which values you converted.
 - Exit codes: 0 `COMPLETE`, 6 `COUNT_MISMATCH`, 7 `INCONCLUSIVE` (still loading, nothing found, no such region), 8 `PARTIAL` (a missing column, merged cells expanded, hidden rows left out, a frame, canvas or plugin whose content cannot be read).
 - For `INCONCLUSIVE stale`, run `extract` again after a moment; do not `replan`.
 

@@ -10,7 +10,7 @@ import {
 } from "playwright-core";
 import { sleep } from "../core/format.ts";
 import { type Action, type Page, StalePage } from "../core/types.ts";
-import type { Finding } from "../explore.ts";
+import { type Finding, hostAllowed } from "../explore.ts";
 import type { StorageState } from "../storage/auth.ts";
 import { dispatchAction } from "./actions/index.ts";
 import { DownloadTracker } from "./downloads.ts";
@@ -59,6 +59,8 @@ export interface OpenOptions {
   downloadDir?: string | null;
   /** Exploring: refuse requests to hosts outside this list, and note what the pages report going wrong. Local Chrome only. */
   explore?: { allow: string[] } | null;
+  /** Service boundary: refuse document navigations, redirects, and new tabs outside these hosts. */
+  allowedDomains?: string[] | null;
   /** Fill in what the engine lacks (Obscura: iterable select.selectedOptions) so snapshot reads the page as in Chrome. */
   compat?: boolean;
 }
@@ -99,6 +101,14 @@ export class Browser {
           : await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
         instance.context = instance.browser.contexts()[0] ?? (await instance.browser.newContext());
         await instance.tabs.findPlaceholder(instance.context);
+        if (!options.explore && options.allowedDomains?.length) {
+          const allow = options.allowedDomains;
+          await instance.context.route("**/*", async (route) => {
+            const request = route.request();
+            if (!request.isNavigationRequest() || hostAllowed(request.url(), allow)) return route.continue();
+            return route.abort("blockedbyclient");
+          });
+        }
         if (url) {
           // A saved profile may restore old tabs. The run owns exactly one fresh tab.
           const stale = instance.tabs.openTabs(instance.context);

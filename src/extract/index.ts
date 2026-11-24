@@ -7,6 +7,7 @@
 import { readFileSync } from "node:fs";
 import { formatCsv } from "./formats/csv.ts";
 import { formatJson } from "./formats/json.ts";
+import { formatMarkdown } from "./formats/markdown.ts";
 import { formatTable } from "./formats/table.ts";
 import { simpleExtractor } from "./kinds/simple.ts";
 import { extractTables } from "./kinds/table.ts";
@@ -49,6 +50,7 @@ const FORMATTERS: Record<Format, Formatter> = {
   table: formatTable,
   json: formatJson,
   csv: formatCsv,
+  markdown: formatMarkdown,
 };
 
 /** Builds the extraction from what the page script returned. */

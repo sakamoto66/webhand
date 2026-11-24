@@ -121,3 +121,6 @@ Run the draft through the `webhand` skill (for a runbook created or updated from
 ## 4. Approve
 
 Show the user the service information, the runbook, and the trial result: `status`, `verified`, `attempts`, and what you changed. Set `status = "approved"` only after the user approves. `verified=null` means nothing checked the result independently, so say so.
+
+- Add `allowed_domains = ["host.example.com"]` to `service.toml` when the service should stay on specific host(s) during runs (navigations, redirects, and new tabs outside this list are refused).
+- If the user also asks for human-readable documentation (SOP / guide), write a clean Markdown guide from the approved runbook's steps, hints, and `params` — never including passwords, tokens, or personal data.

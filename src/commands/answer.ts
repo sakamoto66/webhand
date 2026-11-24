@@ -2,6 +2,7 @@
 
 import type { Args } from "../args.ts";
 import { logOnce, safeUrl } from "../core/metrics.ts";
+import { hostAllowed } from "../explore.ts";
 import * as session from "../storage/session.ts";
 import { FAILED, print } from "./context.ts";
 import { fileOption, idOption, valueOption } from "./options.ts";
@@ -28,6 +29,10 @@ async function commandAnswer(args: Args): Promise<number> {
     const resolved = resolveCliUrl(args.url, state.chrome ?? "linux");
     if (!resolved.ok) {
       print(`REJECTED: ${resolved.reason}`);
+      return FAILED;
+    }
+    if (state.allowed_domains?.length && !hostAllowed(resolved.url, state.allowed_domains)) {
+      print(`REJECTED: --url is outside allowed_domains (${state.allowed_domains.join(", ")})`);
       return FAILED;
     }
     await openPage(state, resolved.url, true);
