@@ -492,3 +492,46 @@ test("HOVER and duplicate-element context propagate through actionSpace, render,
   expect(resolved.action?.kind).toBe("hover");
   expect(resolved.action ? refusal(resolved.action, { allow: [] }) : "missing").toBeNull();
 });
+
+test("render supports compact handoff modes: omitting elements, omitting offscreen elements, and capping options", () => {
+  const page = {
+    url: "http://local/list",
+    title: "List",
+    text: "Summary text",
+    actions: [
+      { id: "e1", kind: "click", node: 1, role: "button", label: "Apply", value: "" },
+      { id: "e2", kind: "click", node: 2, role: "link", label: "Far row", at: "below 900px", offscreen: true },
+      { id: "e3", kind: "click", node: 3, role: "link", label: "Farther row", at: "below 1400px", offscreen: true },
+      ...Array.from({ length: 15 }, (_, i) => ({
+        id: `s${i + 1}`,
+        kind: "select",
+        node: 4,
+        role: "combobox",
+        label: `Country → Country ${i + 1}`,
+        value: `c${i + 1}`,
+        current_value: "Japan",
+      })),
+      { id: "wait", kind: "wait", label: "Wait" },
+    ],
+  };
+
+  // GOAL_REPORTED mode: omits element list entirely while keeping URL, title, page text, and count.
+  const noElements = render(page, { elements: false });
+  expect(noElements).toContain("Summary text");
+  expect(noElements).toContain("ELEMENTS: 4 omitted (run observe to inspect indices)");
+  expect(noElements).not.toContain('[1] button "Apply"');
+
+  // Escalation report mode: keeps visible elements, omits offscreen elements, and caps huge select option lists.
+  const compact = render(page, { offscreenElements: false, maxOptions: 3 });
+  expect(compact).toContain('[1] button "Apply"');
+  expect(compact).not.toContain("Far row");
+  expect(compact).toContain("... 2 offscreen elements omitted (run observe to list all)");
+  expect(compact).toContain("  [4:3] Country 3");
+  expect(compact).not.toContain("  [4:4] Country 4");
+  expect(compact).toContain("  ... 12 more options (run observe to list all)");
+
+  // Default observe/act mode remains complete.
+  const full = render(page);
+  expect(full).toContain("Far row");
+  expect(full).toContain("  [4:15] Country 15");
+});

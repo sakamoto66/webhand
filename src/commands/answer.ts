@@ -61,7 +61,7 @@ async function commandAnswer(args: Args): Promise<number> {
   });
   state.outcome = null;
   session.save(state);
-  return commandRun({ ...args, value: [], human_done: false });
+  return commandRun({ ...args, value: [], file: [], human_done: false });
 }
 
 export const answerCommand: CommandDef = {

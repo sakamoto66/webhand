@@ -245,13 +245,14 @@ test("history is extended in place with the attempt", async () => {
   expect(history.at(-1)?.attempt).toBe(2);
 });
 
-test("a target Jev cannot see runs nothing and is noted", async () => {
+test("a target Jev cannot see runs nothing, re-observes the page, and is noted", async () => {
   const browser = new FakeBrowser();
   const missing = new Decision("NOT_VISIBLE", null, { wanted: "CLICK" });
   const history: HistoryEntry[] = [];
   const result = await run(browser, [missing, new Decision("CLICK", CLICK), new Decision("DONE")], undefined, history);
   expect(result.outcome).toBe("GOAL_REPORTED");
   expect(browser.acts).toEqual([["e2", null]]);
+  expect(browser.observes).toBe(3); // Initial observe + read-only re-observe after NOT_VISIBLE + observe after CLICK.
   expect(history[0].kind).toBe("missing");
   expect(history[0].page_changed).toBe(false);
   expect(result.actions).toBe(1); // Not counted against the budget.

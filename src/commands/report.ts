@@ -74,6 +74,8 @@ function diagnose(state: session.State, outcome: string): string {
   return `${handed}${unseenHint(state.page)}`;
 }
 
+const REPORT_MAX_OPTIONS = 12;
+
 /** What Claude needs for this outcome, and nothing more. */
 export function report(state: session.State, result: agent.AgentResult): number {
   const outcome = result.outcome;
@@ -91,7 +93,11 @@ export function report(state: session.State, result: agent.AgentResult): number 
     print("Give the value with: run --value 'LABEL=VALUE'. Never invent personal data; ask the person");
     return OK;
   }
-  print(`${recentActions(state)}\n${render(state.page)}`);
+  const pageView =
+    outcome === agent.GOAL_REPORTED
+      ? render(state.page, { elements: false })
+      : render(state.page, { offscreenElements: false, maxOptions: REPORT_MAX_OPTIONS });
+  print(`${recentActions(state)}\n${pageView}`);
   if (state.plan.flow === "v2" && ANSWERABLE.includes(outcome)) {
     print(`WHY: ${diagnose(state, outcome)}`);
     print(

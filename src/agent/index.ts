@@ -130,6 +130,7 @@ export async function runAgent(
       flushCalls();
       if (decision.operation === "NOT_VISIBLE") {
         await noteNotVisible(browser, recorder, history, page, decision, attempt);
+        page = await browser.observe();
         onChange(page);
         continue;
       }

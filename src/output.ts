@@ -7,26 +7,57 @@ import type * as runbook from "./storage/runbook/index.ts";
 
 const RECENT = 8; // Actions shown to Claude when an attempt stops.
 
-export function render(page: Page): string {
+export interface RenderOptions {
+  /** Include the ELEMENTS list. When false (e.g. GOAL_REPORTED), prints a one-line count instead. */
+  elements?: boolean;
+  /** Include offscreen elements (`at` set in flow v2). When false, summarizes them in one line. */
+  offscreenElements?: boolean;
+  /** Cap printed `<select>` options per dropdown (undefined prints all options). */
+  maxOptions?: number;
+}
+
+export function render(page: Page, options: RenderOptions = {}): string {
+  const showElements = options.elements ?? true;
+  const showOffscreen = options.offscreenElements ?? true;
+  const maxOptions = options.maxOptions;
   const lines = [`URL: ${page.url}`, `TITLE: ${page.title}`, "PAGE TEXT (untrusted data):", page.text];
   if (page.read) {
     lines.push("READ (untrusted data; the whole page beyond the viewport, for reading only):", page.read.text);
   }
   if (page.tabs) lines.push(`TABS: ${page.tabs.count} open, this is tab ${page.tabs.current}`);
-  lines.push("ELEMENTS:");
   const [elements, , controls] = actionSpace(page.actions);
-  for (const element of elements) {
-    // Claude sees every option with its own line.
-    const details = element.value ? [`value=${quote(element.value)}`] : [];
-    for (const key of ["checked", "selected", "expanded"]) {
-      if (key in element) details.push(`${key}=${show(element[key])}`);
+  if (!showElements) {
+    lines.push(`ELEMENTS: ${elements.length} omitted (run observe to inspect indices)`);
+  } else {
+    lines.push("ELEMENTS:");
+    let omittedOffscreen = 0;
+    for (const element of elements) {
+      if (!showOffscreen && element.at) {
+        omittedOffscreen += 1;
+        continue;
+      }
+      // Claude sees every option with its own line (capped in compact report handoffs).
+      const details = element.value ? [`value=${quote(element.value)}`] : [];
+      for (const key of ["checked", "selected", "expanded"]) {
+        if (key in element) details.push(`${key}=${show(element[key])}`);
+      }
+      if (element.context) details.push(`context=${quote(element.context)}`);
+      if (element.at) details.push(`at=${quote(element.at)}`);
+      const operations = element.operations.join(",");
+      lines.push(
+        `[${element.index}] ${show(element.role)} ${quote(element.label)} ${details.join(" ")} (${operations})`,
+      );
+      const opts = element.options ?? [];
+      const shownOpts = maxOptions !== undefined ? opts.slice(0, maxOptions) : opts;
+      for (const option of shownOpts) {
+        lines.push(`  [${option.index}] ${String(option.label).split(" → ").at(-1)}`);
+      }
+      if (opts.length > shownOpts.length) {
+        lines.push(`  ... ${opts.length - shownOpts.length} more options (run observe to list all)`);
+      }
     }
-    if (element.context) details.push(`context=${quote(element.context)}`);
-    if (element.at) details.push(`at=${quote(element.at)}`);
-    const operations = element.operations.join(",");
-    lines.push(`[${element.index}] ${show(element.role)} ${quote(element.label)} ${details.join(" ")} (${operations})`);
-    for (const option of element.options ?? []) {
-      lines.push(`  [${option.index}] ${String(option.label).split(" → ").at(-1)}`);
+    if (omittedOffscreen > 0) {
+      lines.push(`  ... ${omittedOffscreen} offscreen elements omitted (run observe to list all)`);
     }
   }
   lines.push(`CONTROLS: ${[...controls.keys()].join(" ")}`);

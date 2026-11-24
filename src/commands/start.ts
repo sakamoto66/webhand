@@ -30,6 +30,7 @@ import {
   valueOption,
   viewOptions,
 } from "./options.ts";
+import { commandRun } from "./run.ts";
 import { attach, browserView, defaultLog, FLOWS, mergeValues, parseFiles, parseSteps, parseValues } from "./shared.ts";
 import type { CommandDef } from "./types.ts";
 
@@ -329,9 +330,11 @@ function printStarted(args: Args, target: StartTarget, plan: Plan, state: sessio
     if (engine.notes?.auth) print(`NOTE: ${engine.notes.auth}`);
     if (skipped.length) print(`NOTE: localStorage of other sites was not restored: ${skipped.join(", ")}`);
   }
-  print(
-    `${describePlan(plan, state.view)}\nSESSION: ${args.session} (${hostName(engine.id, chrome)})\n${headline(state.page)}`,
-  );
+  if (!args.run) {
+    print(
+      `${describePlan(plan, state.view)}\nSESSION: ${args.session} (${hostName(engine.id, chrome)})\n${headline(state.page)}`,
+    );
+  }
   if (state.read_only) {
     const allow: string[] = state.read_only.allow;
     print(
@@ -352,7 +355,7 @@ function printStarted(args: Args, target: StartTarget, plan: Plan, state: sessio
   if (state.batch) {
     print(`BATCH: ${state.batch.id} row ${state.batch.row}/${state.batch.total}`);
   }
-  print("NEXT: webhand run");
+  if (!args.run) print("NEXT: webhand run");
 }
 
 async function commandStart(args: Args): Promise<number> {
@@ -384,6 +387,7 @@ async function commandStart(args: Args): Promise<number> {
   session.save(state);
   if (target.batchRow) batch.markRowRunning(target.batchRow.state.id, target.batchRow.row);
   printStarted(args, target, planned.plan, state, skipped);
+  if (args.run) return commandRun({ ...args, value: [], file: [], human_done: false });
   return OK;
 }
 
@@ -462,6 +466,11 @@ export const startCommand: CommandDef = {
       chromeOption(),
       engineOption(),
       { name: "headed", type: "boolean" },
+      {
+        name: "run",
+        type: "boolean",
+        help: "Hand to Jev right away in the same command instead of stopping after opening the start page",
+      },
       { name: "max-attempts", type: "int", default: DEFAULT_ATTEMPTS },
       { name: "max-actions", type: "int", default: Budget.MAX_ACTIONS, help: "Per attempt" },
       { name: "max-decisions", type: "int", default: Budget.MAX_DECISIONS, help: "Per attempt" },
