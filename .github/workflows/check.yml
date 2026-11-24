@@ -52,3 +52,21 @@ jobs:
           name: coverage
           path: coverage/
           if-no-files-found: ignore
+
+  # Standalone local tasks/ regression check: ScriptedPolicy + independent verify(), no paid API calls.
+  verify-tasks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run verify:tasks
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: verify-tasks-logs
+          path: runs/
+          if-no-files-found: ignore
