@@ -45,6 +45,7 @@ webhand は、コーディングエージェント（Claude Code・Antigravity�
 
    ```bash
    npx -y webhand@0.5 --version
+   npx -y webhand@0.5 doctor
    npx -y webhand@0.5 catalog
    ```
 
@@ -191,6 +192,7 @@ Jev はデータのあるページまで進めるだけ（検索、絞り込み�
 | コマンド | 担当 | 内容 |
 | --- | --- | --- |
 | `catalog` | エージェント | 覚えたサービス情報、手順書、保存プロファイルを一覧する |
+| `doctor` | 人 | Node.js、Chrome、`TYPESAFE_API_KEY`、ローカル環境の状態を一括診断する |
 | `start` | エージェント | 計画を記録し、Chrome で開始 URL を開く |
 | `run` | Jev | GOAL まで操作する |
 | `replan` | エージェント | 計画を見直して、次の試行を始める |
