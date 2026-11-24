@@ -19,10 +19,10 @@ import { CliExit, getContext, type Hooks, OK, setContext } from "./commands/cont
 import { commandExtract } from "./commands/extract.ts";
 import { commandFindings } from "./commands/findings.ts";
 import { commandFinish } from "./commands/finish.ts";
-import { commandKnowledge } from "./commands/knowledge.ts";
-import { commandLearn } from "./commands/learn.ts";
+import { commandMemory } from "./commands/memory.ts";
 import { commandObserve } from "./commands/observe.ts";
 import { commandProfile } from "./commands/profile.ts";
+import { commandRecord } from "./commands/record.ts";
 import { commandReplan } from "./commands/replan.ts";
 import { commandRun } from "./commands/run.ts";
 import { FLOWS } from "./commands/shared.ts";
@@ -103,7 +103,7 @@ function commands(): Record<string, CommandSpec> {
   };
   return {
     catalog: {
-      help: "List learned services, procedures, and saved profiles",
+      help: "List known services, runbooks, and saved profiles",
       options: [chromeOption],
       run: commandCatalog,
     },
@@ -153,8 +153,8 @@ function commands(): Record<string, CommandSpec> {
           metavar: "N",
           help: "With --explore, the most actions the whole session may take, across attempts",
         },
-        { name: "service", type: "string", help: "Learned service information to give Jev, such as hotel-site" },
-        { name: "runbook", type: "string", help: "A learned procedure, such as hotel/filter" },
+        { name: "service", type: "string", help: "Saved service information to give Jev, such as hotel-site" },
+        { name: "runbook", type: "string", help: "A saved procedure (runbook), such as hotel/filter" },
         { name: "param", type: "string", multiple: true, metavar: "KEY=VALUE", help: "A runbook parameter" },
         { name: "allow-draft", type: "boolean", help: "Trial a runbook no person has approved yet" },
         ...viewOptions,
@@ -342,7 +342,7 @@ function commands(): Record<string, CommandSpec> {
       ],
       run: commandFinish,
     },
-    learn: {
+    record: {
       help: "Record a person demonstrating a procedure",
       options: [
         { name: "name", type: "string", required: true, help: "Runbook name, such as hotel/filter" },
@@ -359,7 +359,27 @@ function commands(): Record<string, CommandSpec> {
         { name: "max-minutes", type: "float", default: 30 },
         { name: "headless", type: "boolean", hidden: true },
       ],
-      run: commandLearn,
+      run: commandRecord,
+    },
+    learn: {
+      help: "Alias for record (kept for backward compatibility)",
+      hidden: true,
+      options: [
+        { name: "name", type: "string", required: true, help: "Runbook name, such as hotel/filter" },
+        { name: "url", type: "string", required: true },
+        {
+          name: "scope",
+          type: "string",
+          choices: ["project", "user"],
+          default: "project",
+          help: "Where the runbook belongs: this project's .webhand or your ~/.webhand",
+        },
+        { name: "session", type: "string", default: "new", help: "new or profile:NAME, to demonstrate signed in" },
+        chromeOption,
+        { name: "max-minutes", type: "float", default: 30 },
+        { name: "headless", type: "boolean", hidden: true },
+      ],
+      run: commandRecord,
     },
     auth: {
       help: "Saved logins: list, save NAME (from a session), delete NAME",
@@ -370,14 +390,24 @@ function commands(): Record<string, CommandSpec> {
       ],
       run: commandAuth,
     },
-    knowledge: {
-      help: "What webhand learned about sites from its own runs: list, show HOST, clear [HOST]",
+    memory: {
+      help: "What webhand remembers about sites from its own runs: list, show HOST, clear [HOST]",
       options: [],
       positionals: [
         { name: "action", choices: ["list", "show", "clear"] },
         { name: "name", optional: true },
       ],
-      run: commandKnowledge,
+      run: commandMemory,
+    },
+    knowledge: {
+      help: "Alias for memory (kept for backward compatibility)",
+      hidden: true,
+      options: [],
+      positionals: [
+        { name: "action", choices: ["list", "show", "clear"] },
+        { name: "name", optional: true },
+      ],
+      run: commandMemory,
     },
     profile: {
       help: "Saved profiles: list, login NAME --url URL, delete NAME",

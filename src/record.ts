@@ -1,5 +1,5 @@
 /**
- * Records what a person demonstrates in a disposable Chrome. Claude turns the record into a runbook.
+ * Records what a person demonstrates in a disposable Chrome. The agent turns the record into a runbook.
  *
  * The record is untrusted: pages can forge binding calls, so it only ever becomes a draft for review.
  */

@@ -45,7 +45,7 @@ Use a **new session per check** by default (temporary profile, signed out), so o
 
 ## 4. Operate
 
-Run `webhand catalog` to find a learned service and procedure for the site; pass `--service SERVICE` when one exists. Then:
+Run `webhand catalog` to find a known service and procedure for the site; pass `--service SERVICE` when one exists. Then:
 
 ```
 webhand start --goal "..." --url "..." --step "..." --value "LABEL=VALUE" --service SERVICE --session new

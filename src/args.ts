@@ -39,6 +39,8 @@ export interface CommandSpec {
   run: (args: Args) => Promise<number>;
   /** Options that cannot be given together. */
   conflicts?: [string, string][];
+  /** Hidden aliases stay callable for backward compatibility without cluttering main help. */
+  hidden?: boolean;
 }
 
 function usage(name: string, spec: CommandSpec): string {
@@ -79,13 +81,14 @@ function version(): string {
 }
 
 function mainHelp(specs: Record<string, CommandSpec>): string {
+  const visible = Object.entries(specs).filter(([, spec]) => !spec.hidden);
   const lines = [
-    `usage: webhand {${Object.keys(specs).join(",")}} ...`,
+    `usage: webhand {${visible.map(([name]) => name).join(",")}} ...`,
     "",
     "CLI for the Claude + Jev agent. Each call is one short process.",
     "",
   ];
-  for (const [name, spec] of Object.entries(specs)) lines.push(`  ${name.padEnd(9)} ${spec.help}`);
+  for (const [name, spec] of visible) lines.push(`  ${name.padEnd(9)} ${spec.help}`);
   lines.push(
     "",
     "  --version  Print the version",

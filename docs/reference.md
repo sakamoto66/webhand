@@ -2,7 +2,7 @@
 
 English | [日本語](reference.ja.md)
 
-Details behind the [README](../README.md): where files live, what each role does, sessions, commands, learning mode, page regions, and logs.
+Details behind the [README](../README.md): where files live, what each role does, sessions, commands, teaching a service (recording & runbooks), page regions, and logs.
 
 ## Where things are stored
 
@@ -10,16 +10,16 @@ webhand uses two locations: one per user (`~/.webhand/`) and one per project (`.
 
 | Scope | Path | Contents |
 | --- | --- | --- |
-| User | `~/.webhand/` (override with `WEBHAND_HOME`) | `runbooks/` (service information and runbooks used in every project), `runs/` (run and learning logs, including page text, and screenshots when `WEBHAND_SCREENSHOTS=1`), `state/` (active sessions and saved profiles) |
+| User | `~/.webhand/` (override with `WEBHAND_HOME`) | `runbooks/` (service information and runbooks used in every project), `memory/` (site memory remembered by flow v2 from earlier runs; migrates any legacy `knowledge/` automatically), `runs/` (run and demonstration logs, including page text, and screenshots when `WEBHAND_SCREENSHOTS=1`), `state/` (active sessions and saved profiles) |
 | Project | The first `.webhand/` found walking up from the current directory (stops at the home directory) | `runbooks/` (the project's service information and runbooks; can be shared through git) |
 
 - Runbooks and service information are looked up in the project first, then the user folder. When names collide, the project's version wins. `catalog` lists both and marks each entry `(project)` or `(user)`.
-- `learn` writes to the project by default (creating `.webhand/` at the git root if none exists, or in the current directory outside git). Use `--scope user` to write to the user folder.
+- `record` writes to the project by default (creating `.webhand/` at the git root if none exists, or in the current directory outside git). Use `--scope user` to write to the user folder.
 - Login state and run logs live only in the user folder, never in the project. The API key is never stored in a file; it is read only from the `TYPESAFE_API_KEY` environment variable.
 
 ```mermaid
 flowchart LR
-  AG["Coding Agent"] -->|"/webhand-learn"| RB["Runbooks<br>.webhand/runbooks/#lt;service#gt;/<br>or ~/.webhand/runbooks/#lt;service#gt;/"]
+  AG["Coding Agent"] -->|"/webhand-teach"| RB["Runbooks<br>.webhand/runbooks/#lt;service#gt;/<br>or ~/.webhand/runbooks/#lt;service#gt;/"]
   AG -->|"/webhand<br>plan, values, checks, replans"| CLI["webhand CLI"]
   RB -.->|"catalog"| CLI
   CLI -->|"CDP"| CH["Chrome<br>fresh / saved profile<br>Windows side from WSL"]
@@ -119,7 +119,7 @@ Then restart WSL by running `wsl --shutdown` in PowerShell. Local file URLs are 
 
 - Install: Playwright's `chromium_headless_shell` build is found in its browser cache (`~/.cache/ms-playwright`, or `PLAYWRIGHT_BROWSERS_PATH`), or set `WEBHAND_HEADLESS_SHELL` to the binary, or put `chrome-headless-shell` on `PATH`.
 - The page is 1120x780, the same as Chrome. Chrome's window includes 87px of browser UI (`--window-size=1120,867`); the shell has none, so it is started with `1120,780`. With the same window size the two read different elements.
-- No window and no saved profile (`--headed`, `[person]` steps, `learn`, `profile` are refused, and `--chrome windows` does not apply). A profile made by Chrome may be newer than the shell's build.
+- No window and no saved profile (`--headed`, `[person]` steps, `record`, `profile` are refused, and `--chrome windows` does not apply). A profile made by Chrome may be newer than the shell's build.
 - It is the default for a run that needs no window and no saved profile (`--engine auto`, the default; or `WEBHAND_ENGINE`). A window (`--headed`), a saved profile, or `--chrome windows` keeps Chrome, and so does a missing shell, quietly. `--engine chrome` always uses Chrome. The `SESSION:` line says which one ran.
 
 ## Lightpanda
@@ -128,7 +128,7 @@ Then restart WSL by running `wsl --shutdown` in PowerShell. Local file URLs are 
 
 Limits:
 
-- No saved profile (`--session new` only), no window (`--headed`, `[person]` steps, `learn` and `profile` are refused).
+- No saved profile (`--session new` only), no window (`--headed`, `[person]` steps, `record` and `profile` are refused).
 - `file:` URLs cannot be opened (serve the page over http), and a second tab cannot be opened. A link with `target="_blank"` or `window.open` does nothing and raises no error: the page stays as it was. The run log records a `window_ignored` event (step and URLs) after such a step, so a click that "did nothing" can be told from one that was refused. Jev gets no new option for it.
 - No layout: element positions are simulated and screenshots are placeholders, so what Jev is shown differs from Chrome. Compare results with Chrome as a separate experiment.
 - `lightpanda` must be on `PATH`.
@@ -139,7 +139,7 @@ Limits:
 
 - Install: unpack the release archive (`obscura` and `obscura-worker` side by side) and set `WEBHAND_OBSCURA` to the `obscura` path, or put it on `PATH`.
 - Obscura refuses loopback and private addresses by default (its SSRF guard). For local pages only, set `WEBHAND_OBSCURA_ALLOW_PRIVATE=1`; leave it unset for real sites.
-- Same limits as Lightpanda: no saved profile, no window (`--headed`, `[person]` steps, `learn` and `profile` are refused).
+- Same limits as Lightpanda: no saved profile, no window (`--headed`, `[person]` steps, `record` and `profile` are refused).
 - New windows: `window.open` opens nothing and is recorded as `window_ignored`, as for Lightpanda. A `target="_blank"` link loads its target in the same tab instead (the page changes, so there is no `window_ignored`).
 - Tabs: Obscura has several pages and webhand switches between them (`TAB_n`), but nothing a page does opens a second tab (see above), so in practice a run has one. Its `Page.bringToFront` is not implemented, which webhand tolerates.
 - An inline element straight under `<body>` (not inside a paragraph, a block or a flex container) gets no size and is not offered; inside any block it is.
@@ -151,7 +151,7 @@ Limits:
 
 - Set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (the "Browser Rendering - Edit" permission) as environment variables. They are read from the environment only and never saved in the session state.
 - **The pages the run opens are sent to Cloudflare**, and with `--auth` the saved login is injected into the Browser Run session. `start` says so. Tell the user before running.
-- No saved profile (`--session new` only), no window (`--headed`, `[person]` steps, `learn`, `profile` are refused). `--auth` works.
+- No saved profile (`--session new` only), no window (`--headed`, `[person]` steps, `record`, `profile` are refused). `--auth` works.
 - A session closes after 60 seconds without a command unless `keep_alive` extends it; webhand asks for the longest, 20 minutes. If the session has gone, the next command fails (a change to the browser is never retried): `start` again.
 - Limits depend on the Cloudflare plan (Workers Free: 3 concurrent browsers and 10 minutes a day; Paid: 200 concurrent). Results have not been compared with Chrome; treat that as a separate experiment.
 - `--engine kitesurf` uses Cloudflare's other browser for the same API: Kitesurf, a stateless browser made for agents (beta, free behind per-account limits; not Chromium, so it reads some pages differently). Everything above applies, with one difference: Cloudflare does not allow `keep_alive` with it, so the session closes after the default 60 seconds without a command. Run the commands of a run without long pauses, or use `browser-run`. Checked with an example page, a form submit, `--auth` and screenshots. A link that opens a new window (`target=_blank`) can end the session about 3 seconds later, and the command then fails (2 of 3 tries; the third switched to the new tab). Do not rely on a second tab. Right after creation a session was also found already closed (`410 Gone`) twice, so Kitesurf, still in beta, may need a second `start`. The causes were not traced. Not for video, WebGL, bot challenges, or long signed-in sessions (Cloudflare's own list).
@@ -162,7 +162,7 @@ If the CLI is not installed globally, read `webhand` in the table below as `npx 
 
 | Command | Used by | Description |
 | --- | --- | --- |
-| `webhand catalog` | Agent | Lists learned services, runbooks, and saved profiles |
+| `webhand catalog` | Agent | Lists known services, runbooks, and saved profiles |
 | `webhand start --goal G --url U --step S ... --value L=V ... [--file L=PATH ...] [--download-dir DIR] [--har PATH] --session ...` | Agent | Records the plan and opens the start URL in Chrome |
 | `webhand run` | Jev | Operates the page toward the GOAL |
 | `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | Agent | Revises the plan and starts the next attempt, from the start URL again (`--restart`) or from another page (`--url`) |
@@ -173,10 +173,10 @@ If the CLI is not installed globally, read `webhand` in the table below as `npx 
 | `webhand check --saved service/name:ID [--param K=V] [--read] [--production] [--allow-draft]` | Agent | Compares the page with the expectations of a saved check (`.webhand/checks/<service>/<name>.toml`); they cannot be edited here. Refuses a `draft` (unless `--allow-draft`) and, with `--production`, a check whose `env` is not `read-only`. Records `check_run` (check, id, digest, verdict) in the run log. `MANUAL` items are printed for the agent to judge |
 | `webhand check-last service/name` | Agent | The latest recorded verdict and digest of each check of a saved check file, from the run logs (read-only); says when the check changed since |
 | `webhand finish --status STATUS` | Agent | Runs independent verification, writes the log, and closes Chrome |
-| `webhand learn --name NAME --url URL [--scope project\|user]` | Person | Records a demonstration |
+| `webhand record --name NAME --url URL [--scope project\|user]` | Person | Records a demonstration (legacy alias: `learn`) |
 | `webhand profile login/list/delete` | Person | Manages saved profiles |
 | `webhand auth save/list/delete NAME` | Agent | Saves the sign-in of a session, to start a new session with `--auth NAME` |
-| `webhand knowledge list/show HOST/clear [HOST]` | Person | Shows or deletes what webhand learned about sites from its own runs (flow v2) |
+| `webhand memory list/show HOST/clear [HOST]` | Person | Shows or forgets what webhand remembers about sites from its own runs (flow v2; legacy alias: `knowledge`) |
 
 Prefix a step with `[person]` to make it a step a human performs (requires `--headed`). `--focus REGION` / `--skip REGION` on `start` and `replan` choose which regions are observed (see [Page regions](#page-regions)), and `--read KIND` adds content from beyond the viewport (see [Reading beyond the viewport](#reading-beyond-the-viewport)). With `--runbook NAME --param k=v`, the runbook's GOAL, start URL, and steps become the defaults, and the params are passed to Jev as input values.
 
@@ -194,9 +194,9 @@ With `--har PATH` on `start` (Chrome or `headless-shell` only), webhand runs a d
 | Page state | `PAGE:` line (`blocked`, `login`, `error`, ...), and a stop when the target is in a part webhand cannot see (canvas, plugin) | Not reported |
 | Earlier runs | Records what clicks and selects did on each kind of page, and offers to Jev, on the same kind of page, the operations of runs that ended `done` (at most 5) | Not used |
 
-What v2 records is kept in `~/.webhand/knowledge/<host>.json`: the kind of page (the address with ids and query values taken out) and the kind and label of the operations tried on it. Typed text, values, anything that reads as personal data, and controls inside list items (their labels are page content) are not kept. `WEBHAND_KNOWLEDGE=0` turns off recording and offering, `WEBHAND_KNOWLEDGE_USE=0` stops only the offering to Jev, and `webhand knowledge clear` deletes it.
+What v2 remembers is kept in `~/.webhand/memory/<host>.json` (migrating any legacy `~/.webhand/knowledge/` on first use): the kind of page (the address with ids and query values taken out) and the kind and label of the operations tried on it. Typed text, values, anything that reads as personal data, and controls inside list items (their labels are page content) are not kept. `WEBHAND_MEMORY=0` turns off recording and offering, `WEBHAND_MEMORY_USE=0` stops only the offering to Jev, and `webhand memory clear` deletes it (legacy `WEBHAND_KNOWLEDGE` / `WEBHAND_KNOWLEDGE_USE` also work).
 
-## Learning mode
+## Teaching a service (recording and runbooks)
 
 From a human demonstration, the service's source code, or the log of an earlier run, webhand produces two kinds of files:
 
@@ -206,22 +206,22 @@ From a human demonstration, the service's source code, or the log of an earlier 
 | `checks/<service>/<name>.toml` | Saved acceptance checks (`status` draft/approved, `env` test/read-only, params, per check: steps, `expect`, `manual`, `depends_on`). Never rewritten by a run; see [design-regression.md](design-regression.md) |
 | `runbooks/<service>/<name>.toml` | Runbook (goal, params, steps, hints, done_when, focus, skip) | The basis for the agent's plan; steps and hints are also passed to Jev |
 
-Both go in the project's `.webhand/` or the user's `~/.webhand/` (see [Where things are stored](#where-things-are-stored)). `learn` prints the destination as `WRITE THE RUNBOOK TO ...`. A relative local-file path in `start_url` is resolved from the directory that contains that `.webhand/`.
+Both go in the project's `.webhand/` or the user's `~/.webhand/` (see [Where things are stored](#where-things-are-stored)). `record` prints the destination as `WRITE THE RUNBOOK TO ...`. A relative local-file path in `start_url` is resolved from the directory that contains that `.webhand/`.
 
 ```text
-/webhand-learn --name myservice/search --url https://example.com
+/webhand-teach --name myservice/search --url https://example.com
 ```
 
-1. `webhand learn` opens Chrome and records what you do. Closing the window ends the recording. To demonstrate while logged in, add `--session profile:NAME`. If the background job is stopped (SIGTERM, or npx exiting), the recording is saved and Chrome is closed.
+1. `webhand record` opens Chrome and records what you do. Closing the window ends the recording. To demonstrate while logged in, add `--session profile:NAME`. If the background job is stopped (SIGTERM, or npx exiting), the recording is saved and Chrome is closed.
 2. The agent drafts the service information and the runbook from the recording or the source code.
 3. Try it with `--runbook NAME --param k=v --allow-draft`.
 4. You review the content and set `status = "approved"`.
 
 Runbooks are never replayed mechanically.
 
-`sources` is optional and never read by webhand. It holds only references anyone can follow, such as `code:<path>@<commit>`; demonstrations, runs, and trials are not listed, because their logs stay in the user's `runs/`. Every run log records the runbook's `digest` (`run_start` and `run_end`), so the runs of one version are found from the logs. The files change only when what was learned changes or a runbook is approved, not to record a trial; what was learned goes in the commit message.
+`sources` is optional and never read by webhand. It holds only references anyone can follow, such as `code:<path>@<commit>`; demonstrations, runs, and trials are not listed, because their logs stay in the user's `runs/`. Every run log records the runbook's `digest` (`run_start` and `run_end`), so the runs of one version are found from the logs. The files change only when the saved service information or runbook content changes or a runbook is approved, not to record a trial; what changed goes in the commit message.
 
-### A procedure not learned yet
+### A procedure with no runbook yet
 
 A known service can be used for a procedure that has no runbook yet. The agent writes the GOAL, the start URL (from the service's pages), and the steps (`--step`) from the catalog, and `--service SERVICE` passes the service information to Jev without `--runbook`:
 
@@ -231,14 +231,14 @@ webhand start --goal "..." --url "..." --step "..." --service myservice --sessio
 
 - Used as usual: the service's `facts`, and its regions with `default = "skip"`.
 - Not available: what only a runbook holds (`hints`, `done_when`, `focus`). The run relies more on the agent's plan and may need more replans.
-- To reuse the procedure, learn it from the run (below); it becomes a `draft` runbook.
+- To reuse the procedure, capture it from the run (below); it becomes a `draft` runbook.
 
-### Learning from a run
+### Remembering from a run
 
-A `/webhand` run does not change what was learned by itself. When a run was replanned, ended `blocked`, or ended `done` without a runbook, the agent points you to the log, and you can teach webhand from it:
+A `/webhand` run does not change saved service information or runbooks by itself. When a run was replanned, ended `blocked`, or ended `done` without a runbook, the agent points you to the log, and you can teach webhand from it:
 
 ```text
-/webhand-learn ~/.webhand/runs/<timestamp>/adhoc.jsonl
+/webhand-teach ~/.webhand/runs/<timestamp>/adhoc.jsonl
 ```
 
 - The agent reads its own replan reasons (`attempt_end`), where `run` stopped (`escalation`), and the elements and regions the successful attempt used (`step`, `page`).
@@ -285,7 +285,7 @@ focus = ["form:Reservation"]
 skip = ["header", "footer"]
 ```
 
-In learning logs, `page` events carry a region summary (keys and counts only) and `action` events carry the target's region key. Segments whose names look secret become `form:<redacted>`.
+In demonstration records, `page` events carry a region summary (keys and counts only) and `action` events carry the target's region key. Segments whose names look secret become `form:<redacted>`.
 
 For services without `verify()`, `verified` is `null`. A runbook's `done_when` is material for the agent's check, not evidence of success.
 

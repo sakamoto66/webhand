@@ -1,6 +1,6 @@
 ---
 name: webhand
-description: Do something on a web page through the webhand CLI. The agent plans the goal from what webhand has learned, asks for missing information, lets Jev operate the browser toward the goal, and replans when an attempt falls short. Use when asked to do something on a web page with webhand.
+description: Do something on a web page through the webhand CLI. The agent plans the goal from known services and runbooks, asks for missing information, lets Jev operate the browser toward the goal, and replans when an attempt falls short. Use when asked to do something on a web page with webhand.
 argument-hint: "what you want done"
 allowed-tools: Bash(webhand:*), Bash(npx -y webhand@0.5:*), AskUserQuestion
 ---
@@ -14,16 +14,16 @@ You plan and judge; Jev operates the browser toward your goal. Use only the `web
 | Agent (you) | The goal, the plan, the values to type, checking the result, replanning, ending the run |
 | Jev | Every operation toward the goal: which element, and which of your values |
 
-## 1. Plan from what was learned
+## 1. Plan from known services and runbooks
 
-Run `webhand catalog`. It lists learned services (description, login, pages, facts), their procedures (goal template, params, status), and saved profiles. Each comes from this project's `.webhand/` `(project)` or the user's `~/.webhand/` `(user)`; a project one wins over a user one of the same name.
+Run `webhand catalog`. It lists known services (description, login, pages, facts), their procedures (goal template, params, status), and saved profiles. Each comes from this project's `.webhand/` `(project)` or the user's `~/.webhand/` `(user)`; a project one wins over a user one of the same name.
 
 From the request and the catalog, write:
 
 - **GOAL**: one sentence with every requirement and its exact values, ending in a visible stopping point ("Stop when ... is shown").
 - **Start URL**: from the procedure's `start_url` or the service's pages. Never guess a URL for an unknown service; ask.
 - **Steps**: ordered, each ending in something visible. Start from a matching procedure (`--runbook NAME --param k=v`; only `approved` ones, or `--allow-draft` for a trial the user asked for). Otherwise write your own with `--step`. Put easy-to-skip requirements in a step, such as submitting a search. When a value is reached by pressing the same control several times (a quantity stepper, a next button), write one step per press, each ending in the count it shows ("Press Increase quantity once; done when the quantity shows 2"), instead of one step that says "until it is N". When the page offers a shortcut to a later step (a result already listed before the search), say in the first step what not to do yet ("Do not open any result yet. Search for ..."), and give the later step the visible condition it waits for ("Open X only after the results show ..."). Only do this where such a shortcut exists, and end that step with what shows it is done ("; done when ... is shown"), since the condition may no longer hold after the step (a submitted form clears its fields). Mark a step a person does as `[person] Sign in`. Do not name element indices.
-- **Service**: when the catalog lists a learned service for the site you will work on, pass `--service SERVICE` to `start`. Jev then receives the service's facts at every decision, not only what you copy into the steps.
+- **Service**: when the catalog lists a known service for the site you will work on, pass `--service SERVICE` to `start`. Jev then receives the service's facts at every decision, not only what you copy into the steps.
 - **Stale facts**: a fact in the catalog can be out of date. If the page in front of you contradicts a fact (it looks or behaves otherwise), trust the page: plan from what the page shows, not from the fact, and name the fact that was wrong in your final answer.
 - **Values**: every text Jev may type, as `--value "LABEL=VALUE"`. Name each value by the label of the field it goes into, in the page's own words (copy it; do not translate or reword it): Jev matches the label with the field. Runbook params become values automatically. **A number field** (shown as `spinbutton`, such as a quantity) is the exception: Jev does not pick a listed value for it, so also write the digits in the step that fills it ("Type 3 into the Quantity field"), and still give the value. Do this only for plain numbers, never for personal information.
 - **Read** (optional): Jev and you see only the visible part of the page. When the goal needs content from a long page (find a value, compare rows, pick from a list), add `--read KIND` for each kind it needs: `table`, `list`, `text`, `link`, `control`, `media`; a heading outline comes with any of them. Choose the fewest kinds: each one adds text to every step. The output then shows `READ`, with where each part is; use it when checking the result.
@@ -31,7 +31,7 @@ From the request and the catalog, write:
 - **Files** (optional): when the goal uploads a file, give it as `--file "LABEL=PATH"`, with LABEL the field's label as the page words it. PATH must be under the current directory. Jev chooses the label only. To keep what a page downloads, add `--download-dir DIR` to `start` (local Chrome only); `act` then prints `DOWNLOADED: ...`. Check the file against the goal yourself.
 - **Collect** (optional): when the goal needs every item of a list that meets a condition (all plans under €30, every listing from 2024), add `--collect "CONDITION"` instead of `--compare`. Write `--step` only for what to do with the items once they are collected (such as typing them into a box and submitting); the collection itself is not a step, and after it Jev works toward these steps rather than the GOAL. The first `run` scrolls through the whole list on the page it starts on, including items that load as it scrolls, asks Jev which items meet the condition, clicks and types nothing, shows `COLLECTED` with those items, and stops. So add it only once the list is on screen: when the list is on another page (behind a link, a search, or filters), first `run` without `--collect` to reach it, with the steps to get there, then `replan --collect "CONDITION"` without `--restart` to collect from that page. Check them against the goal and write the answer from them. When the answer goes into the page, give it as a value (`run --value 'LABEL=VALUE'`), since Jev types only values; without one it has nothing to type.
 - **More** (optional, with Compare or Collect): when the list shows more only after a button or link is pressed (Show more, Load more, Next page), add `--more "CONTROL"` with its name as the page shows it, such as `--more "Next page"`. When the scan reaches the end of what is shown, Jev finds that control, webhand presses it once, and the scan goes on, up to 10 times. Name only a control that shows more items of the list, never one that submits, buys, or signs in.
-- **Regions** (optional): the catalog lists each page's learned regions and each procedure's `focus` / `skip`, which apply automatically with `--runbook` and `--service`. Add `--focus REGION` for the parts of a page the goal works in and `--skip REGION` for parts that crowd them out, using keys from the catalog or from `REGIONS` in earlier output. A bare kind such as `form` matches any form. Leave them out when nothing was learned and nothing was cut.
+- **Regions** (optional): the catalog lists each page's saved regions and each procedure's `focus` / `skip`, which apply automatically with `--runbook` and `--service`. Add `--focus REGION` for the parts of a page the goal works in and `--skip REGION` for parts that crowd them out, using keys from the catalog or from `REGIONS` in earlier output. A bare kind such as `form` matches any form. Leave them out when no regions are saved and nothing was cut.
 
 If a needed value is missing, ask the user (using your question tool if available). Never invent personal information. Never ask for passwords, codes, or card numbers: make that a `[person]` step.
 
@@ -118,7 +118,7 @@ Then `run` again. `STALE` means nothing ran; decide again from the new page prin
 
 Always end with exactly one `webhand finish --status done|blocked|budget|error --reason "..."`, even after a failure. Use `done` only with visible evidence that every requirement is satisfied, and put that evidence in `--reason` ("予約を完了しました is shown"); for other statuses, say why. When part of the work could not be done, finish `blocked`, not `done`, and say in `--reason` which parts are done and which are not. Report `status`, `attempts`, and the log path in one line. Your own belief is not the result.
 
-The run is not learned by itself. If you replanned, the run ended `blocked`, or it ended `done` without a runbook, add one line: the user can teach webhand from this run with `/webhand-learn <log path>`. Do not write anything yourself.
+The run does not update runbooks by itself. If you replanned, the run ended `blocked`, or it ended `done` without a runbook, add one line: the user can teach webhand from this run with `/webhand-teach <log path>`. Do not write anything yourself.
 
 ## Safety
 

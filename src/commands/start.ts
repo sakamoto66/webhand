@@ -188,13 +188,13 @@ function initialState(
   const { book, service, serviceName, chrome } = target;
   const hooks = getContext().hooks;
   const task = hooks.task ?? null;
-  const learned = runbook.view(runbook.serviceView(service), book);
+  const saved = runbook.view(runbook.serviceView(service), book);
   const claudeView = { focus: args.focus, skip: args.skip, read: args.read };
   return {
     ...chromeState,
-    view_learned: learned,
+    view_saved: saved,
     view_claude: claudeView,
-    view: runbook.view(learned, claudeView),
+    view: runbook.view(saved, claudeView),
     task,
     start_url: browserUrl(planned.url, chrome),
     ...(args.download_dir ? { download_dir: resolve(args.download_dir) } : {}),

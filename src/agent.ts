@@ -6,7 +6,7 @@
 
 import type { PageCheck } from "./browser.ts";
 import { quote } from "./format.ts";
-import type { Knowledge } from "./knowledge.ts";
+import type { SiteMemory } from "./memory.ts";
 import { pageEvent, type Recorder, type ScreenshotAfter, safeUrl } from "./metrics.ts";
 import { type ReadOnly, refusal } from "./readonly.ts";
 import {
@@ -185,7 +185,7 @@ export async function execute(
   decision: Decision,
   history: HistoryEntry[],
   recorder: Recorder,
-  options: { decidedBy: string; attempt: number; onChange?: OnChange; values?: Value[]; knowledge?: Knowledge },
+  options: { decidedBy: string; attempt: number; onChange?: OnChange; values?: Value[]; memory?: SiteMemory },
 ): Promise<Page> {
   const onChange = options.onChange ?? (() => {});
   const action = decision.action as Page;
@@ -211,7 +211,7 @@ export async function execute(
   const newPage = await browser.observe();
   step.page_changed = !samePage(newPage, page);
   recorder.event("step_result", { step: step.step, page_changed: step.page_changed });
-  options.knowledge?.record({
+  options.memory?.record({
     from: page.url,
     to: newPage.url,
     kind: action.kind,
@@ -375,7 +375,7 @@ export async function runAgent(
     decisions?: number;
     onChange?: OnChange;
     onDecision?: (count: number) => void;
-    knowledge?: Knowledge;
+    memory?: SiteMemory;
     /** A read-only session: an action it refuses ends the attempt as READ_ONLY, before anything runs. */
     readOnly?: ReadOnly | null;
   } = {},
@@ -412,8 +412,8 @@ export async function runAgent(
       if (!(await browser.fresh(page))) page = await browser.observe();
       decisions += 1;
       onDecision(decisions);
-      // v2: what worked before on this kind of page, when the site is known (stage 3).
-      const known = options.knowledge?.hints(page.url) ?? [];
+      // v2: what worked before on this kind of page, when the site is remembered (stage 3).
+      const known = options.memory?.hints(page.url) ?? [];
       if (known.length) recorder.event("known_offered", { attempt, count: known.length });
       decision = await policy.choose(known.length ? { ...page, known } : page, plan, history);
       flushCalls();
@@ -445,7 +445,7 @@ export async function runAgent(
         attempt,
         onChange,
         values: [...plan.values, ...(plan.files ?? [])],
-        knowledge: options.knowledge,
+        memory: options.memory,
       });
     } catch (error) {
       if (error instanceof StalePage) {

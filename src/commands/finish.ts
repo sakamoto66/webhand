@@ -6,7 +6,7 @@ import type { Args } from "../args.ts";
 import type { Browser } from "../browser.ts";
 import { describeError, show } from "../format.ts";
 import { type HarStopResult, stopHarRecorder } from "../har-session.ts";
-import { Knowledge } from "../knowledge.ts";
+import { memoryEnabled, SiteMemory } from "../memory.ts";
 import { logOnce, summarize } from "../metrics.ts";
 import { planText } from "../policies/base.ts";
 import * as session from "../session.ts";
@@ -73,8 +73,8 @@ export async function commandFinish(args: Args): Promise<number> {
   }
   const plan = state.plan;
   // v2: a run that finished as done marks its steps as the way that worked.
-  if (args.status === "done" && plan.flow === "v2" && process.env.WEBHAND_KNOWLEDGE !== "0") {
-    new Knowledge().confirm(state.history);
+  if (args.status === "done" && plan.flow === "v2" && memoryEnabled()) {
+    new SiteMemory().confirm(state.history);
   }
   const outcomes = [...state.outcomes, { attempt: plan.attempt, outcome: state.outcome, reason: args.reason }];
   const totals = runTotals(state.log);
@@ -115,7 +115,7 @@ function parentAlive(pid: number): boolean {
 
 /**
  * Stops a long-running command on SIGTERM or SIGINT, or when the process that started it is gone,
- * and still saves and closes. npx does not pass SIGTERM on, so stopping an `npx webhand learn` job
+ * and still saves and closes. npx does not pass SIGTERM on, so stopping an `npx webhand record` job
  * ends npx alone; its end is the signal here.
  */
 export function stopSignals(): { stopped: () => boolean; release: () => void } {

@@ -2,15 +2,15 @@
 
 English | [日本語](README.ja.md)
 
-**A browser agent that learns a service before operating it, the way people get used to a service.** It runs as a plugin/skill suite for coding agents (Claude Code, Antigravity, Codex, and other Agent Skills-compatible tools): ask in plain words for a booking, an application, or a form to fill in, and it operates the browser based on what it has learned.
+**A browser agent that remembers how a service works before operating it, the way people get used to a service.** It runs as a plugin/skill suite for coding agents (Claude Code, Antigravity, Codex, and other Agent Skills-compatible tools): ask in plain words for a booking, an application, or a form to fill in, and it operates the browser using its saved service information, runbooks, and past experience.
 
 ```text
 /webhand On HOTEL PLANISPHERE, book 2 nights for 2 people starting next month's first Saturday
 ```
 
-- **It learns services.** From a recording of a person using a service, or from the service's source code, it learns the pages, the steps, and the pitfalls, and writes them down as service information and runbooks.
-- **It operates from what it learned.** Your coding agent plans the GOAL, steps, and input values from what was learned, and Jev picks each click and entry from the service information and the plan. If the GOAL is not reached, the agent works out why and replans.
-- **It works before learning, too.** On a site it has never seen, it plans from your request alone. You can teach it the services you use most, one at a time.
+- **It remembers how services work.** From a recording of a person using a service, the service's source code, or an earlier run, it captures the pages, the steps, and the pitfalls into service information and runbooks.
+- **It operates from runbooks and experience.** Your coding agent plans the GOAL, steps, and input values from known services and runbooks, and Jev picks each click and entry from the plan, service facts, and remembered site experience. If the GOAL is not reached, the agent works out why and replans.
+- **It works on new sites, too.** On a site it has never seen, it plans from your request alone. You can teach it the services you use most, one at a time.
 
 > ⚠️ **The content of the pages webhand operates is sent to Jev (the TypeSafe API)**, including pages you are logged in to when you use a saved profile. See [Safety and privacy](#safety-and-privacy).
 
@@ -73,8 +73,8 @@ flowchart LR
     C -->|missing value, login, CAPTCHA| U
 ```
 
-1. **Learn**: `webhand-learn` (`/webhand-learn`) turns a recorded demonstration, the service's source code, or the log of an earlier run into service information and a runbook.
-2. **Ask**: Post a request such as `/webhand book a hotel`. Your coding agent plans the GOAL, steps, and input values from what webhand has learned, and asks you for anything missing.
+1. **Teach**: `webhand-teach` (`/webhand-teach`) turns a recorded demonstration, the service's source code, or the log of an earlier run into service information and a runbook.
+2. **Ask**: Post a request such as `/webhand book a hotel`. Your coding agent plans the GOAL, steps, and input values from known services and runbooks, and asks you for anything missing.
 3. **Choose a session**: A fresh, throwaway session (the default), or a saved profile that keeps you logged in.
 4. **Run**: The planned URL opens. Jev picks the next action from the service information, the plan, the current page, and the action history, and loops until the GOAL.
 5. **Replan**: If the GOAL is not reached, the agent writes down why, revises the plan, and tries again (up to 3 attempts by default).
@@ -93,7 +93,7 @@ Your coding agent makes the judgment calls (the plan, the values, the check, the
 
 | | Chrome | Headless shell | Obscura | Lightpanda | Browser Run | Kitesurf |
 | --- | --- | --- | --- | --- | --- | --- |
-| Window (`--headed`), `[person]` steps, `learn`, saved profile | Yes | No | No | No | No | No |
+| Window (`--headed`), `[person]` steps, `record`, saved profile | Yes | No | No | No | No | No |
 | Memory for one page | about 350–470 MB (`--headless=new`) | about 240–260 MB | about 23–33 MB | about 23–33 MB | None here (runs on Cloudflare) | None here (runs on Cloudflare) |
 | Real layout and screenshots | Yes | Yes | Yes | No (simulated) | Yes (Chromium) | Screenshots work; not pixel-perfect (Cloudflare's own browser) |
 | Several tabs | Yes | Yes | In practice one (a new window opens nothing or loads in the same tab) | No | Yes | Unreliable: a link that opens a new window can end the session a few seconds later (2 of 3 tries); switching to the new tab worked once |
@@ -110,15 +110,15 @@ Chrome is the only engine with a window and saved profiles. Obscura and Lightpan
 - **No guessed input**: The only values entered are the ones the agent wrote in the plan and the ones you gave. If something is missing, it asks.
 - **No blind retries**: A change to the page is never retried. If webhand cannot tell whether an action took effect, it stops instead of trying again.
 - **Page text is untrusted**: Content on the page is treated as data, never as instructions.
-- **Recordings and logs**: Learning mode masks password, one-time code, and card fields and all URL query values. Run logs keep the label of each typed value, not the value. Screenshots, saved only with `WEBHAND_SCREENSHOTS=1`, show typed values. Logs and screenshots under `~/.webhand/runs/` still contain page text, so do not share them.
-- **What webhand remembers about sites**: The default flow (v2) records the clicks and selects it tried and whether the page changed, per kind of page, in `~/.webhand/knowledge/` on your machine, and offers the ones from runs that ended `done` to Jev on later runs. Typed text, values, personal data, and labels inside list items are not recorded. Turn it off with `WEBHAND_KNOWLEDGE=0` (`WEBHAND_KNOWLEDGE_USE=0` stops only the offering), or delete it with `webhand knowledge clear`.
+- **Recordings and logs**: webhand never trains or fine-tunes an LLM; everything it remembers is kept as local files (runbooks and site memory). Recording a demonstration (`webhand record`) masks password, one-time code, and card fields and all URL query values. Run logs keep the label of each typed value, not the value. Screenshots, saved only with `WEBHAND_SCREENSHOTS=1`, show typed values. Logs and screenshots under `~/.webhand/runs/` still contain page text, so do not share them.
+- **Site memory (experience from earlier runs)**: The default flow (v2) remembers the clicks and selects it tried and whether the page changed, per kind of page, in `~/.webhand/memory/` on your machine (migrating any existing `~/.webhand/knowledge/` automatically), and offers the ones from runs that ended `done` to Jev on later runs. Typed text, values, personal data, and labels inside list items are not recorded. Turn it off with `WEBHAND_MEMORY=0` (`WEBHAND_MEMORY_USE=0` stops only the offering), or delete it with `webhand memory clear`.
 - **Review before use**: Runbooks start as `draft` and are used for normal runs only after you set them to `approved`. Keep secrets and personal data out of runbooks; pass them as `params`.
 
 ## Documentation
 
 | Document | Contents |
 | --- | --- |
-| [Reference](docs/reference.md) | Where files live, roles and results, sessions, commands, learning mode, page regions, logs |
+| [Reference](docs/reference.md) | Where files live, roles and results, sessions, commands, teaching a service (recording & runbooks), page regions, logs |
 | [Usage guide](docs/usage.md) | Skills and CLI step by step, common pitfalls |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | For contributors: code layout, rules, tests, research, release steps |
 

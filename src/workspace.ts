@@ -1,8 +1,9 @@
 /**
- * Where webhand keeps what it learns and does, like Claude Code's ~/.claude and .claude:
+ * Where webhand keeps its saved runbooks, site memory, logs, and session state, like Claude Code's ~/.claude and .claude:
  *
  * user     $WEBHAND_HOME, or ~/.webhand
  *   runbooks/  service information and runbooks for every project
+ *   memory/    site memory from earlier runs (per host, no typed values)
  *   runs/      run logs, which hold page text
  *   state/     the active session and saved profiles
  * project  the nearest .webhand/ from the current directory up

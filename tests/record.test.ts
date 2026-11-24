@@ -6,8 +6,9 @@ import { pathToFileURL } from "node:url";
 import type { Page as PlaywrightPage } from "playwright-core";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { Browser } from "../src/browser.ts";
-import * as learn from "../src/learn.ts";
+import { parse } from "../src/cli.ts";
 import { Recorder } from "../src/metrics.ts";
+import * as demo from "../src/record.ts";
 import * as session from "../src/session.ts";
 import { readEvents, tmpPath } from "./helpers.ts";
 
@@ -34,7 +35,7 @@ beforeEach(async () => {
   writeFileSync(join(dir, "next.html"), "<title>Done</title><h1>Welcome</h1><a href='form.html'>Back</a>");
   chrome = await session.startChrome();
   browser = await Browser.open(null, { port: chrome.port });
-  log = join(dir, "learn.jsonl");
+  log = join(dir, "record.jsonl");
   recorder = new Recorder(log);
 });
 
@@ -56,7 +57,7 @@ async function play(moves: Move[]) {
     await browser.page.waitForTimeout(600);
     return true;
   };
-  return learn.record(browser, pathToFileURL(join(dir, "form.html")).href, recorder, until);
+  return demo.record(browser, pathToFileURL(join(dir, "form.html")).href, recorder, until);
 }
 
 async function fillForm(page: PlaywrightPage) {
@@ -186,11 +187,23 @@ test("actions and pages carry regions without secret names", async () => {
   const outline = events.find((e) => e.type === "page").regions;
   const keys = new Set(outline.map((r: { key: string }) => r.key));
   expect(keys.has("nav:Top") && keys.has("main/form:<redacted>")).toBe(true);
-  expect(Object.keys(outline[0]).every((key) => key in learn.REGION_FIELDS)).toBe(true);
+  expect(Object.keys(outline[0]).every((key) => key in demo.REGION_FIELDS)).toBe(true);
   expect(readFileSync(log, "utf8")).not.toContain("Card number");
 });
 
 test("a forged outline keeps only typed fields", () => {
-  expect(learn.outline("x")).toEqual([]);
-  expect(learn.outline([{ key: "nav", actions: "9", extra: 1 }, 3])).toEqual([{ key: "nav" }]);
+  expect(demo.outline("x")).toEqual([]);
+  expect(demo.outline([{ key: "nav", actions: "9", extra: 1 }, 3])).toEqual([{ key: "nav" }]);
+});
+
+test("record is shown in main help while the legacy learn alias stays hidden and callable", () => {
+  const mainHelp = parse(["--help"]);
+  expect("help" in mainHelp && mainHelp.help).toContain("record");
+  expect("help" in mainHelp && mainHelp.help).toContain("memory");
+  expect("help" in mainHelp && mainHelp.help).not.toMatch(/\blearn\b/);
+  expect("help" in mainHelp && mainHelp.help).not.toMatch(/\bknowledge\b/);
+
+  const rec = parse(["record", "--name", "demo/flow", "--url", "https://example.test"]);
+  const alias = parse(["learn", "--name", "demo/flow", "--url", "https://example.test"]);
+  expect("run" in rec && "run" in alias && rec.run === alias.run).toBe(true);
 });

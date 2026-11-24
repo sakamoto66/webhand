@@ -5,7 +5,7 @@ import { Budget, runAgent } from "../agent.ts";
 import type { Args } from "../args.ts";
 import { type Collector, collectScan } from "../collect.ts";
 import { type Comparer, compareScan, type Reader } from "../compare.ts";
-import { Knowledge } from "../knowledge.ts";
+import { memoryEnabled, memoryUseEnabled, SiteMemory } from "../memory.ts";
 import { logOnce, Recorder } from "../metrics.ts";
 import { loadMore, type MoreChooser } from "../more.ts";
 import { collectedLine, comparedLine } from "../output.ts";
@@ -184,11 +184,8 @@ async function runAttempt(ctx: RunScan): Promise<agent.AgentResult> {
       readOnly: inForce(state),
       page: state.page,
       decisions: state.attempt_decisions,
-      // v2 records what its operations did, for the next run on the site (WEBHAND_KNOWLEDGE=0 turns it off).
-      knowledge:
-        state.plan.flow === "v2" && process.env.WEBHAND_KNOWLEDGE !== "0"
-          ? new Knowledge(undefined, process.env.WEBHAND_KNOWLEDGE_USE !== "0")
-          : undefined,
+      // v2 remembers what its operations did, for the next run on the site (WEBHAND_MEMORY=0 turns it off).
+      memory: state.plan.flow === "v2" && memoryEnabled() ? new SiteMemory(undefined, memoryUseEnabled()) : undefined,
       onChange: (page) => {
         state.page = page;
         session.save(state);

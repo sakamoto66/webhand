@@ -52,7 +52,7 @@ function book(text: string) {
   return (values: Record<string, string>) => runbook.loadFile(file, "demo", "project", values);
 }
 
-/** A runbook in the user's scope, as `learn --scope user` would leave it. */
+/** A runbook in the user's scope, as `record --scope user` would leave it. */
 function userBook(name: string, text: string): string {
   const file = runbook.path(name, "user");
   mkdirSync(dirname(file), { recursive: true });
@@ -250,7 +250,7 @@ purpose = "Site links"
 default = "skip"
 `;
 
-test("regions and their defaults are learned", async () => {
+test("regions and their defaults are saved in service.toml", async () => {
   await elsewhere(() => {
     userFile("demo/service.toml", REGION_SERVICE);
     const info = runbook.loadService("demo");
@@ -276,9 +276,9 @@ test("region patterns must be a list of keys", () => {
 });
 
 test("a later layer of region choices wins", () => {
-  const learned = { focus: ["main"], skip: ["footer", "nav"] };
+  const saved = { focus: ["main"], skip: ["footer", "nav"] };
   const claude = { focus: ["nav", "form"], skip: ["main"] };
-  expect(runbook.view(learned, null, claude)).toEqual({ focus: ["nav", "form"], skip: ["footer", "main"] });
+  expect(runbook.view(saved, null, claude)).toEqual({ focus: ["nav", "form"], skip: ["footer", "main"] });
 });
 
 // --- Scopes ----------------------------------------------------------------------------------

@@ -1,11 +1,11 @@
-/** The `learn` command. */
+/** The `record` command (also callable via the hidden `learn` alias). */
 
 import type { Args } from "../args.ts";
 import { Browser } from "../browser.ts";
 import { browserUrl } from "../engines/chrome.ts";
 import { quote } from "../format.ts";
-import * as learn from "../learn.ts";
 import { gitState, Recorder } from "../metrics.ts";
+import * as recorderMod from "../record.ts";
 import * as runbook from "../runbook.ts";
 import * as session from "../session.ts";
 
@@ -15,7 +15,7 @@ import { defaultLog } from "./shared.ts";
 import { chooseChrome } from "./start.ts";
 
 /** A person demonstrates a procedure. A long-running command, so run it in the background. */
-export async function commandLearn(args: Args): Promise<number> {
+export async function commandRecord(args: Args): Promise<number> {
   let profile: string | null;
   let chrome: string;
   let note: string | null;
@@ -34,7 +34,7 @@ export async function commandLearn(args: Args): Promise<number> {
     throw error;
   }
   const stem = String(args.name).replaceAll("/", "-");
-  const log = defaultLog(`learn-${stem}`);
+  const log = defaultLog(`record-${stem}`);
   getContext().log = log;
   let chromeState: session.State;
   try {
@@ -50,7 +50,7 @@ export async function commandLearn(args: Args): Promise<number> {
   let counts: Record<string, number>;
   try {
     browser = await Browser.open(null, { port: chromeState.port });
-    recorder.event("learn_start", {
+    recorder.event("record_start", {
       name: args.name,
       url: args.url,
       scope: args.scope,
@@ -60,13 +60,13 @@ export async function commandLearn(args: Args): Promise<number> {
       git: gitState(),
       started_at: new Date().toISOString(),
     });
-    counts = await learn.record(
+    counts = await recorderMod.record(
       browser,
       browserUrl(args.url, chrome),
       recorder,
       () => signals.stopped() || performance.now() >= deadline,
     );
-    recorder.event("learn_end", { counts });
+    recorder.event("record_end", { counts });
   } finally {
     signals.release();
     await browser?.close();

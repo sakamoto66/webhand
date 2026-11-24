@@ -672,7 +672,7 @@ test("v2: a whole page over Jev's token limit is fitted; the target a few screen
   expect((await catalog.verify(browser)).success).toBe(true);
 });
 
-test("item_moved: the old link offers nothing; the shop's home page, learned as a service, finds the item", async () => {
+test("item_moved: the old link offers nothing; the shop's home page, saved as a service, finds the item", async () => {
   const moved = await loadTask("item_moved");
   await browser.close();
   await open(moved.startUrl(ROOT));
@@ -986,19 +986,19 @@ test("a tracking-pixel frame is not counted as a part webhand cannot see", async
   }
 });
 
-test("v2: a run records what its clicks did for the next run, and never what was typed", async () => {
-  const { Knowledge } = await import("../src/knowledge.ts");
+test("v2: a run remembers what its clicks did for the next run, and never what was typed", async () => {
+  const { SiteMemory } = await import("../src/memory.ts");
   const settings = await loadTask("settings_long");
   await browser.close();
   await open(settings.startUrl(ROOT), { whole: true });
-  const dir = join(tmpPath(), "knowledge");
+  const dir = join(tmpPath(), "memory");
   const plan = { goal: settings.GOAL, steps: [], values: [], flow: "v2" as const };
   const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
   const script = [
     { operation: "CLICK", label: "Weekly summary on" },
     { operation: "CLICK", label: "Save settings" },
   ];
-  await runAgent(browser, new ScriptedPolicy(script), plan, recorder, new Budget(), { knowledge: new Knowledge(dir) });
+  await runAgent(browser, new ScriptedPolicy(script), plan, recorder, new Budget(), { memory: new SiteMemory(dir) });
   recorder.close();
   const saved = JSON.parse(readFileSync(join(dir, "local.json"), "utf8"));
   const transitions = Object.values(saved.pages).flatMap((p) =>
@@ -1008,27 +1008,27 @@ test("v2: a run records what its clicks did for the next run, and never what was
 });
 
 test("v2: a run that finished as done leaves hints, and the next run's Jev state offers them on the same page", async () => {
-  const { Knowledge } = await import("../src/knowledge.ts");
+  const { SiteMemory } = await import("../src/memory.ts");
   const menu = await loadTask("menu_invoice");
-  const dir = join(tmpPath(), "knowledge");
+  const dir = join(tmpPath(), "memory");
   await browser.close();
   await open(menu.startUrl(ROOT), { whole: true });
   const plan = { goal: menu.GOAL, steps: [], values: [], flow: "v2" as const };
   const recorder = new Recorder(join(tmpPath(), "run.jsonl"));
   const history: HistoryEntry[] = [];
-  const knowledge = new Knowledge(dir);
+  const memory = new SiteMemory(dir);
   const result = await runAgent(browser, new ScriptedPolicy(menu.SCRIPT), plan, recorder, new Budget(), {
     history,
-    knowledge,
+    memory,
   });
   recorder.close();
   expect(result.outcome).toBe("GOAL_REPORTED");
   expect((await menu.verify(browser)).success).toBe(true);
-  expect(knowledge.hints(menu.startUrl(ROOT))).toEqual([]);
+  expect(memory.hints(menu.startUrl(ROOT))).toEqual([]);
   // The invoice's Download sits in a list item: its label (a month) is the page's content, so it is not kept.
   expect(readFileSync(join(dir, "local.json"), "utf8")).not.toContain("Download March");
-  knowledge.confirm(history);
-  const hints = knowledge.hints(menu.startUrl(ROOT));
+  memory.confirm(history);
+  const hints = memory.hints(menu.startUrl(ROOT));
   expect(hints.map((h) => h.label)).toEqual(["More"]);
   // The next run sees them in the state Jev is asked about, on the start page only.
   const seen: unknown[] = [];
@@ -1045,7 +1045,7 @@ test("v2: a run that finished as done leaves hints, and the next run's Jev state
   await open(menu.startUrl(ROOT), { whole: true });
   const againLog = join(tmpPath(), "again.jsonl");
   const again = new Recorder(againLog);
-  await runAgent(browser, spy as never, plan, again, new Budget(), { knowledge: new Knowledge(dir) });
+  await runAgent(browser, spy as never, plan, again, new Budget(), { memory: new SiteMemory(dir) });
   again.close();
   expect(seen[0]).toEqual(hints);
   const offered = readFileSync(againLog, "utf8")
