@@ -10,8 +10,8 @@ webhand uses two locations: one per user (`~/.webhand/`) and one per project (`.
 
 | Scope | Path | Contents |
 | --- | --- | --- |
-| User | `~/.webhand/` (override with `WEBHAND_HOME`) | `runbooks/` (service information and runbooks used in every project), `memory/` (site memory remembered by flow v2 from earlier runs; migrates any legacy `knowledge/` automatically), `runs/` (run and demonstration logs, including page text, and screenshots when `WEBHAND_SCREENSHOTS=1`), `state/` (active sessions and saved profiles) |
-| Project | The first `.webhand/` found walking up from the current directory (stops at the home directory) | `runbooks/` (the project's service information and runbooks; can be shared through git) |
+| User | `~/.webhand/` (override with `WEBHAND_HOME`) | `runbooks/` (personal service information and runbooks), `checks/` (personal saved acceptance checks), `memory/` (flow v2 site memory; migrates legacy `knowledge/` automatically), `runs/` (run & demonstration JSONL logs and optional screenshots), `state/` (active sessions, saved profiles, `auth/` saved logins, and `batches/` batch queues) |
+| Project | The first `.webhand/` found walking up from the current directory (stops at the home directory) | `runbooks/` (project service information and runbooks, shared via git), `checks/` (project saved acceptance checks) |
 
 - Runbooks and service information are looked up in the project first, then the user folder. When names collide, the project's version wins. `catalog` lists both and marks each entry `(project)` or `(user)`.
 - `record` writes to the project by default (creating `.webhand/` at the git root if none exists, or in the current directory outside git). Use `--scope user` to write to the user folder.
@@ -115,7 +115,7 @@ Then restart WSL by running `wsl --shutdown` in PowerShell. Local file URLs are 
 
 ## Headless shell
 
-`--engine headless-shell` (or `auto`, below) runs the session on `chrome-headless-shell`, Chromium's windowless build. It is the same engine as Chrome (real layout, several tabs, a page that stays when a command ends), so it needs no daemon. It uses about half the memory of Chrome's `--headless=new`: roughly 240–260 MB for one page against 350–470 MB, in the same measurement (see `docs/research-plan.md`).
+`--engine headless-shell` (or `auto`, below) runs the session on `chrome-headless-shell`, Chromium's windowless build. It is the same engine as Chrome (real layout, several tabs, a page that stays when a command ends), so it needs no daemon. It uses about half the memory of Chrome's `--headless=new`: roughly 240–260 MB for one page against 350–470 MB, in the same measurement (see [research-plan.md](research/research-plan.md)).
 
 - Install: Playwright's `chromium_headless_shell` build is found in its browser cache (`~/.cache/ms-playwright`, or `PLAYWRIGHT_BROWSERS_PATH`), or set `WEBHAND_HEADLESS_SHELL` to the binary, or put `chrome-headless-shell` on `PATH`.
 - The page is 1120x780, the same as Chrome. Chrome's window includes 87px of browser UI (`--window-size=1120,867`); the shell has none, so it is started with `1120,780`. With the same window size the two read different elements.
@@ -158,29 +158,67 @@ Limits:
 
 ## Commands
 
-If the CLI is not installed globally, read `webhand` in the table below as `npx -y webhand@0.5`. `webhand --version` prints the version.
+If the CLI is not installed globally, read `webhand` in the table below as `npx -y webhand@0.5`. `webhand --version` prints the version; `webhand COMMAND --help` shows every option of a command.
 
 | Command | Used by | Description |
 | --- | --- | --- |
-| `webhand catalog` | Agent | Lists known services, runbooks, and saved profiles |
-| `webhand start --goal G --url U --step S ... --value L=V ... [--file L=PATH ...] [--download-dir DIR] [--har PATH] --session ...` | Agent | Records the plan and opens the start URL in Chrome |
-| `webhand run` | Jev | Operates the page toward the GOAL |
-| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | Agent | Revises the plan and starts the next attempt, from the start URL again (`--restart`) or from another page (`--url`) |
-| `webhand answer --note N [--value L=V] [--url URL]` | Agent | Answers Jev in the same attempt (flow v2 only): the history and the budget are kept. Use `replan` only when the whole plan is wrong |
-| `webhand act OP [TARGET]` | Agent | Performs a single action in Jev's place |
-| `webhand observe` | Agent | Shows the current page |
-| `webhand check --expect KIND:ARGS ...` | Agent | Compares expectations with the page as it is now (read-only, no model). Kinds: `text:S`, `no-text:S`, `field:LABEL=V`, `checked:LABEL=true\|false`, `count:ROLE=N`, `url:/path`, `title:S`. Prints `PASS`/`FAIL`/`INCONCLUSIVE` per expectation with the quoted observation; exit 0, 6 (any FAIL), 7 (no FAIL, some INCONCLUSIVE). A negative result is `INCONCLUSIVE not_visible` unless the whole page was seen; `--read` reads the whole page's text for this call only (no `replan`, no attempt used) |
-| `webhand check --saved service/name:ID [--param K=V] [--read] [--production] [--allow-draft]` | Agent | Compares the page with the expectations of a saved check (`.webhand/checks/<service>/<name>.toml`); they cannot be edited here. Refuses a `draft` (unless `--allow-draft`) and, with `--production`, a check whose `env` is not `read-only`. Records `check_run` (check, id, digest, verdict) in the run log. `MANUAL` items are printed for the agent to judge |
-| `webhand check-last service/name` | Agent | The latest recorded verdict and digest of each check of a saved check file, from the run logs (read-only); says when the check changed since |
-| `webhand finish --status STATUS` | Agent | Runs independent verification, writes the log, and closes Chrome |
-| `webhand record --name NAME --url URL [--scope project\|user]` | Person | Records a demonstration (legacy alias: `learn`) |
-| `webhand profile login/list/delete` | Person | Manages saved profiles |
-| `webhand auth save/list/delete NAME` | Agent | Saves the sign-in of a session, to start a new session with `--auth NAME` |
-| `webhand memory list/show HOST/clear [HOST]` | Person | Shows or forgets what webhand remembers about sites from its own runs (flow v2; legacy alias: `knowledge`) |
+| `webhand catalog [--chrome ...]` | Agent / Person | Lists known services (with `allowed_domains`), runbooks, saved checks, saved profiles, and active sessions |
+| `webhand doctor [--chrome ...] [--json]` | Person / Agent | Read-only environment check: Node.js (>= 22), `TYPESAFE_API_KEY` (never printed), Chrome/WSL, headless shell, and workspace health |
+| `webhand start --goal G --url U --step S ... [--runbook NAME --param K=V \| --batch ID [--row N]] [--service S] [--value L=V ...] [--file L=PATH ...] [--download-dir DIR] [--har PATH] [--read-only] [--explore --allow-domain H --max-total-actions N] --session ...` | Agent | Records the plan and opens the start URL in the chosen browser engine |
+| `webhand run [--value L=V] [--human-done]` | Jev | Operates the page toward the GOAL until it stops and hands control back |
+| `webhand answer --note N [--value L=V] [--file L=PATH] [--url URL]` | Agent | Answers Jev in the same attempt (flow v2 only): keeps history and budget; respects `allowed_domains` on `--url` |
+| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | Agent | Revises the plan and starts the next attempt; respects `allowed_domains` on `--url` |
+| `webhand act OP [TARGET]` | Agent | Performs a single action in Jev's place (`CLICK`, `TYPE_TEXT`, `SELECT`, `UPLOAD_FILE`, `SCROLL_DOWN`, `SCROLL_UP`, `SCROLL_TO`, `WAIT`, `TAB_n`) |
+| `webhand observe [--read KIND ...]` | Agent | Prints the current page observation without acting |
+| `webhand check --expect KIND:ARGS ...` | Agent | Deterministic read-only check against the current page (`text:`, `no-text:`, `field:`, `checked:`, `count:`, `url:`, `title:`); `--read` reads whole-page text for this call only |
+| `webhand check --saved service/name:ID [--param K=V] [--read] [--production] [--allow-draft]` | Agent | Compares the page against fixed expectations from `.webhand/checks/<service>/<name>.toml` and logs `check_run` |
+| `webhand check-last service/name` | Agent | Shows the latest recorded verdict and digest for each check in a saved check file from the run logs |
+| `webhand extract KIND [--within R] [--columns A,B] [--table N] [--rows raw\|data] [--expect-count N] [--format table\|json\|csv\|markdown] [--out PATH]` | Agent | Deterministic read-only DOM extraction (`table`, `list`, `link`, `fields`, `text`); `--out` saves safely inside the current directory |
+| `webhand findings` | Agent | Prints anomaly candidates collected during an `--explore` session with the steps that led to them |
+| `webhand finish --status STATUS [--reason R]` | Agent | Runs independent verification (if hooked), updates any linked batch row, flushes HAR, writes `run_end`, and closes the browser |
+| `webhand record --name NAME --url URL [--scope project\|user] [--session profile:NAME]` | Person | Records a human demonstration in Chrome (legacy alias: `learn`) |
+| `webhand auth save\|list\|delete [NAME]` | Agent / Person | Manages saved login snapshots (`~/.webhand/state/auth/`) for `start --auth NAME` |
+| `webhand batch init\|status\|list\|skip\|clear [NAME]` | Agent / Person | Manages multi-row CSV/JSON batch runs of an approved runbook (`start --batch ID [--row N]`) |
+| `webhand memory list\|show HOST\|clear [HOST]` | Person | Inspects or clears local flow v2 site memory (`~/.webhand/memory/`; legacy alias: `knowledge`) |
+| `webhand profile login\|list\|delete [NAME]` | Person | Manages dedicated webhand Chrome profiles |
 
 Prefix a step with `[person]` to make it a step a human performs (requires `--headed`). `--focus REGION` / `--skip REGION` on `start` and `replan` choose which regions are observed (see [Page regions](#page-regions)), and `--read KIND` adds content from beyond the viewport (see [Reading beyond the viewport](#reading-beyond-the-viewport)). With `--runbook NAME --param k=v`, the runbook's GOAL, start URL, and steps become the defaults, and the params are passed to Jev as input values.
 
 With `--har PATH` on `start` (Chrome or `headless-shell` only), webhand runs a detached CDP recorder for the life of the session and writes a HAR 1.2 file atomically (mode `0600`) when `finish` runs, before Chrome closes. It captures requests and responses across CLI commands, redirects, and new tabs without changing what Jev sees. HAR files contain cookies, unredacted query strings, POST payloads, and text/JSON response bodies: treat them as sensitive and never commit or share them.
+
+### Exit codes
+
+| Code | Name | Meaning |
+| --- | --- | --- |
+| `0` | `OK` | Command succeeded (`doctor` ready, `check` all PASS, `extract` COMPLETE, `findings` none) |
+| `1` | `FAILED` | Error, `CliExit`, `doctor` not ready, or rejected `replan` / `answer` |
+| `2` | `USAGE` | Invalid CLI arguments (`UsageError`) |
+| `3` | `STALE` | Page changed before an `act` operation (nothing executed) |
+| `4` | `UNCERTAIN` | Outcome of a browser mutation is unclear (never retried automatically) |
+| `5` | `BUDGET` | Attempt or action budget exhausted |
+| `6` | `CHECK_FAIL` | `check` had at least one `FAIL`, or `extract --expect-count` mismatched (`COUNT_MISMATCH`) |
+| `7` | `CHECK_INCONCLUSIVE` | `check` or `extract` returned `INCONCLUSIVE` |
+| `8` | `EXTRACT_PARTIAL` | `extract` succeeded partially (`PARTIAL`: missing columns, hidden rows, unseen frames/canvases) |
+| `9` | `FINDINGS` | `findings` reported at least one anomaly candidate |
+
+### Environment variables
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `TYPESAFE_API_KEY` | *(required for `start`/`run`)* | Jev (TypeSafe API) key. Read only from the environment, never from `.env` |
+| `TYPESAFE_MODEL` | `jev-latest` | Model name sent to the TypeSafe API |
+| `WEBHAND_HOME` | `~/.webhand` | User data root (`runbooks/`, `checks/`, `memory/`, `runs/`, `state/`) |
+| `WEBHAND_CHROME` | `auto` | Default for `--chrome` (`auto`, `linux`, `windows`) |
+| `WEBHAND_ENGINE` | `auto` | Default for `--engine` (`auto`, `chrome`, `headless-shell`, `lightpanda`, `obscura`, `browser-run`, `kitesurf`) |
+| `WEBHAND_FLOW` | `v2` | Default for `start --flow` (`v2` or `v1`) |
+| `WEBHAND_MEMORY` | `1` | Set `0` to disable flow v2 site-memory recording and offering (legacy: `WEBHAND_KNOWLEDGE`) |
+| `WEBHAND_MEMORY_USE` | `1` | Set `0` to keep recording but stop offering site memory to Jev (legacy: `WEBHAND_KNOWLEDGE_USE`) |
+| `WEBHAND_SCREENSHOTS` | *(off)* | Set `1` to save PNG screenshots alongside the run log (contains typed values; not sent to Jev) |
+| `WEBHAND_HEADLESS_SHELL` | *(auto-detect)* | Explicit path to the `chrome-headless-shell` binary |
+| `WEBHAND_OBSCURA` | *(PATH)* | Explicit path to the `obscura` binary |
+| `WEBHAND_OBSCURA_ALLOW_PRIVATE` | *(off)* | Set `1` to allow Obscura to open loopback/private addresses (local test pages only) |
+| `CLOUDFLARE_ACCOUNT_ID` | — | Required for `--engine browser-run` / `kitesurf` |
+| `CLOUDFLARE_API_TOKEN` | — | Required for `--engine browser-run` / `kitesurf` ("Browser Rendering - Edit") |
 
 ### Flow v1 and v2
 
@@ -202,9 +240,13 @@ From a human demonstration, the service's source code, or the log of an earlier 
 
 | File | Contents | How it is used |
 | --- | --- | --- |
-| `runbooks/<service>/service.toml` | Service description, whether login is required, pages and their regions, facts for Jev | The agent reads it through `catalog`; passed to Jev with `--service` |
-| `checks/<service>/<name>.toml` | Saved acceptance checks (`status` draft/approved, `env` test/read-only, params, per check: steps, `expect`, `manual`, `depends_on`). Never rewritten by a run; see [design-regression.md](design-regression.md) |
-| `runbooks/<service>/<name>.toml` | Runbook (goal, params, steps, hints, done_when, focus, skip) | The basis for the agent's plan; steps and hints are also passed to Jev |
+| `runbooks/<service>/service.toml` | Service description, `base_url`, optional `allowed_domains`, login metadata, pages and regions, facts for Jev | Read through `catalog`; passed with `--service`. When `allowed_domains` is set (hosts only, e.g. `["app.example.com"]`), `start` / `replan --url` / `answer --url` and Chrome document navigations/redirects/new tabs outside the list are refused |
+| `checks/<service>/<name>.toml` | Saved acceptance checks (`status` draft/approved, `env` test/read-only, params, per check: steps, `expect`, `manual`, `depends_on`). Never rewritten by a run; see [design-regression.md](design/design-regression.md) | Used by `webhand check --saved` and `/webhand-regress` |
+| `runbooks/<service>/<name>.toml` | Runbook (`goal`, `start_url`, `status`, `params`, `steps`, `hints`, `done_when`, `focus`, `skip`) | Basis for the agent's plan and batch runs (`webhand batch init`); steps and hints are also passed to Jev |
+
+### Batch runs (`webhand batch`)
+
+`webhand batch init --runbook SERVICE/NAME --input FILE.csv|FILE.json [--allow-draft] [NAME]` validates every row upfront (rejecting missing/unknown params, unapproved `draft` runbooks, and credential-like column names such as `password`, `otp`, `cvv`, or `card_number`). Batch state is written to `~/.webhand/state/batches/<id>.json` (mode `0600`) with only the input file path, its SHA-256 digest, parameter key names, and per-row outcomes/log paths — **raw row values are never duplicated into state**. Each row runs through `webhand start --batch ID [--row N]` → `run` → verify → `finish`, which verifies the input digest has not drifted, records the outcome automatically, and refuses to re-run `done` or `uncertain` rows.
 
 Both go in the project's `.webhand/` or the user's `~/.webhand/` (see [Where things are stored](#where-things-are-stored)). `record` prints the destination as `WRITE THE RUNBOOK TO ...`. A relative local-file path in `start_url` is resolved from the directory that contains that `.webhand/`.
 

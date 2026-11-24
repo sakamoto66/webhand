@@ -28,7 +28,7 @@ export function hostName(id: string, chromeHost: string): string {
 
 /**
  * What auto means. A run that needs no window and no saved profile uses the headless shell when one is installed:
- * half the memory, the same results (see docs/research-plan.md). A window or a profile keeps Chrome, and so does
+ * half the memory, the same results (see docs/research/research-plan.md). A window or a profile keeps Chrome, and so does
  * asking for the Windows Chrome (--chrome windows; --chrome auto only says "use it if you can", and a headless run
  * gains nothing from it). A missing shell falls back to Chrome quietly: that is what the run used before. A named
  * engine is taken as asked. `chrome` is what --chrome asked for, not where it resolved to.

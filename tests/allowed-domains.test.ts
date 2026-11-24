@@ -57,7 +57,7 @@ test("service.toml parses and validates allowed_domains and shows them in catalo
   const info = runbook.loadService("portal");
   expect(info?.allowed_domains).toEqual(["portal.example.test", "sso.example.test:8443"]);
 
-  const cat = await cli("catalog");
+  const cat = await cli("catalog", "--chrome", "linux");
   expect(cat.code).toBe(OK);
   expect(cat.out).toContain("allowed_domains: portal.example.test, sso.example.test:8443");
 
