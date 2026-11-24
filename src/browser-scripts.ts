@@ -172,12 +172,20 @@ export const RESOLVE_TARGET = `(action => {
   const c=window.__browserLab, e=c?.nodes.get(action.node);
   if (!e?.isConnected) return {reason:'gone'};
   if (e.matches(':disabled') || c.closest(e,'[aria-disabled="true"],[inert]')) return {reason:'disabled'};
-  if (!e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return {reason:'hidden'};
+  const toggle=e.tagName==='INPUT' && ['checkbox','radio'].includes(e.type);
+  const editor=e.tagName==='TEXTAREA' ? c.closest(e, '.monaco-editor,.ace_editor,.CodeMirror') : null;
+  const ownVisible=e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
+  const hiddenByAria=Boolean(c.closest(e,'[aria-hidden="true"],[inert]'));
+  const labels=[...(e.labels || [])].filter(l=>l.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}));
+  const editorVisible=Boolean(editor && !hiddenByAria && editor.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}));
+  if (!ownVisible && !(toggle && !hiddenByAria && labels.length) && !editorVisible) return {reason:'hidden'};
   if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return {reason:'read_only'};
   // The center of the whole box first. An inline element that wraps can leave that center between its lines,
   // so the center of each line box is tried next. If a labeled control (such as a stacked star-rating radio
-  // input) is covered at its own box, try points on its own visible <label> elements while still requiring
-  // c.hit(e, x, y) so only clicks landing on e or its own label are accepted.
+  // input or an opacity:0 custom Bootstrap/Tailwind toggle) is hidden or covered at its own box, try points
+  // on its own visible <label> elements while still requiring c.hit(e, x, y). For virtualized code editors
+  // (Monaco, Ace, CodeMirror 5) whose <textarea> sits behind the editor's own view-lines div, accept a click
+  // landing inside the same editor widget (never an external overlay or modal).
   const tryPoint=(x,y)=>{
     if (x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
     if (c.hit(e,x,y)) return {x,y};
@@ -185,13 +193,14 @@ export const RESOLVE_TARGET = `(action => {
     return null;
   };
   let covered=null;
-  for (const r of [e.getBoundingClientRect(), ...e.getClientRects()]) {
-    if (!r.width || !r.height) continue;
-    const hit=tryPoint(r.x+r.width/2, r.y+r.height/2);
-    if (hit) return hit;
+  if (ownVisible) {
+    for (const r of [e.getBoundingClientRect(), ...e.getClientRects()]) {
+      if (!r.width || !r.height) continue;
+      const hit=tryPoint(r.x+r.width/2, r.y+r.height/2);
+      if (hit) return hit;
+    }
   }
-  for (const label of e.labels || []) {
-    if (!label.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) continue;
+  for (const label of labels) {
     const r=label.getBoundingClientRect();
     if (!r.width || !r.height) continue;
     const y=r.y+r.height/2, edge=Math.min(8, r.width/4);
@@ -200,14 +209,46 @@ export const RESOLVE_TARGET = `(action => {
       if (hit) return hit;
     }
   }
+  if (editorVisible && editor) {
+    const surface=editor.querySelector('.view-lines,.ace_content,.CodeMirror-lines') || editor;
+    const r=surface.getBoundingClientRect();
+    if (r.width && r.height) {
+      for (const [x, y] of [
+        [r.x+r.width/2, r.y+r.height/2],
+        [r.x+Math.min(24, r.width/4), r.y+Math.min(24, r.height/4)],
+      ]) {
+        if (x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
+        const top=c.top(x, y);
+        if (top && editor.contains(top) && !top.closest('dialog,[role="dialog"],[aria-modal="true"],button,a[href]')) {
+          return {x, y, widget:true};
+        }
+        covered ??= c.cover(x, y);
+      }
+    }
+  }
   return covered ? {reason:'covered', cover:covered} : {reason:'outside'};
 })`;
-// Scrolls an observed element into the middle of the viewport. It never clicks or types.
+// Scrolls an observed element (or its visible label / code-editor surface when the input itself is hidden) into view.
 export const REVEAL = `(node => {
+  const c=window.__browserLab, e=c?.nodes.get(node);
+  if (!e?.isConnected) return false;
+  let target=e;
+  if (!e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) {
+    if (e.tagName==='INPUT' && ['checkbox','radio'].includes(e.type)) {
+      target=[...(e.labels || [])].find(l=>l.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) || e;
+    } else if (e.tagName==='TEXTAREA') {
+      target=c.closest(e, '.monaco-editor,.ace_editor,.CodeMirror') || e;
+    }
+  }
+  target.scrollIntoView({block: "center", inline: "nearest", behavior: "instant"});
+  return true;
+})`;
+// Checks whether an observed node currently holds keyboard focus (in the document or its shadow root).
+export const IS_FOCUSED = `(node => {
   const e=window.__browserLab?.nodes.get(node);
   if (!e?.isConnected) return false;
-  e.scrollIntoView({block: "center", inline: "nearest", behavior: "instant"});
-  return true;
+  const root=e.getRootNode();
+  return root.activeElement===e || document.activeElement===e;
 })`;
 
 // The text of the row, card, or list item each observed element is in, for comparing items. Page text only;

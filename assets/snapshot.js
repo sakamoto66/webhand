@@ -120,6 +120,9 @@
   const isObservableInput = element => !UNOBSERVED_INPUT_TYPES.includes(element.type);
 
   const isFileInput = element => element.tagName === 'INPUT' && element.type === 'file';
+  const isToggleInput = element => element.tagName === 'INPUT' && ['checkbox', 'radio'].includes(element.type);
+  const CODE_EDITOR_SELECTOR = '.monaco-editor,.ace_editor,.CodeMirror';
+  const CODE_EDITOR_SURFACE_SELECTOR = '.view-lines,.ace_content,.CodeMirror-lines';
 
   // A file input the page hides (display:none behind a styled label or button) is still given its file directly.
   // It is offered only through a trigger the person can see: a visible label, or the one visible button, link or
@@ -128,6 +131,25 @@
     const rect = element.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0 ? rect : null;
   };
+  const labelBoxOf = element => {
+    for (const label of element.labels || []) {
+      if (isVisible(label)) {
+        const rect = boxOf(label);
+        if (rect) return rect;
+      }
+    }
+    return null;
+  };
+  const isToggleWithVisibleLabel = element =>
+    isToggleInput(element) && !closestDeep(element, HIDDEN_SELECTOR) && Boolean(labelBoxOf(element));
+  const codeEditorBox = element => {
+    if (element.tagName !== 'TEXTAREA' || closestDeep(element, HIDDEN_SELECTOR)) return null;
+    const editor = closestDeep(element, CODE_EDITOR_SELECTOR);
+    if (!editor || !isVisible(editor)) return null;
+    const surface = editor.querySelector(CODE_EDITOR_SURFACE_SELECTOR);
+    return (surface && isVisible(surface) && boxOf(surface)) || boxOf(editor);
+  };
+  const isCodeEditorInput = element => Boolean(codeEditorBox(element));
   const fileTrigger = input => {
     for (const label of input.labels || []) {
       if (isVisible(label) && boxOf(label)) {
@@ -234,6 +256,7 @@
   // ---- API used by browser.py and recorder.js ----
 
   state.closest = closestDeep;
+  state.top = deepElementFromPoint;
 
   // Whether a click at (x, y) would land on element, one of its flat-tree descendants, or its own label.
   state.hit = (element, x, y) => {
@@ -282,7 +305,10 @@
 
   // What must still hold for an action on element to mean what it meant when observed.
   state.guard = element => {
-    if (!element?.isConnected || !(isVisible(element) || isFileInput(element))) return null;
+    if (!element?.isConnected ||
+        !(isVisible(element) || isFileInput(element) || isToggleWithVisibleLabel(element) || isCodeEditorInput(element))) {
+      return null;
+    }
     const scope = closestDeep(element, GUARD_SCOPE_SELECTOR) || element.parentElement || element.getRootNode().host;
     return [
       nodeId(element), targetRole(element), accessibleName(element),
@@ -354,7 +380,30 @@
       }));
   };
 
-  // A fill for editable fields (plus a click to open them), otherwise a click.
+  const SUBMENU_SELECTOR = 'ul,ol,menu,[role="menu"],[role="listbox"],[role="tooltip"]';
+  const SUBMENU_ITEM_SELECTOR = 'a[href],button,[role="menuitem"],[role="option"]';
+  const SUBMENU_LANDMARKS = new Set(['HTML', 'BODY', 'HEADER', 'NAV', 'ASIDE', 'MAIN', 'FOOTER', 'FORM', 'SECTION']);
+  const hasHiddenSubmenu = element => {
+    const container = element.closest('li,[role="menuitem"],[role="treeitem"]') ||
+      (closestDeep(element, 'nav,aside,header,[role="navigation"],[role="menubar"],[role="menu"]')
+        ? element.parentElement : null);
+    if (!container || SUBMENU_LANDMARKS.has(container.tagName)) return false;
+    const primary = container.querySelector(INTERACTIVE_SELECTOR);
+    if (primary && primary !== element) return false;
+    return [...container.querySelectorAll(SUBMENU_SELECTOR)].some(
+      menu => !isVisible(menu) && menu.querySelector(SUBMENU_ITEM_SELECTOR),
+    );
+  };
+  const isHoverTrigger = (element, role) =>
+    ['link', 'button', 'menuitem', 'tab', 'clickable'].includes(role) && (
+      element.hasAttribute('onmouseenter') ||
+      element.hasAttribute('onmouseover') ||
+      element.getAttribute('aria-haspopup') === 'menu' ||
+      element.getAttribute('aria-haspopup') === 'true' ||
+      hasHiddenSubmenu(element)
+    );
+
+  // A fill for editable fields (plus a click to open them), otherwise a click (plus hover on submenu triggers).
   const otherActions = (element, role, base) => {
     // A file input is given a file by the run; what it holds is never read.
     if (isFileInput(element)) return [{...base, kind: 'upload'}];
@@ -364,6 +413,7 @@
     else if (element.isContentEditable || role === 'combobox') value = element.innerText.trim();
     const actions = [{...base, kind: editable ? 'fill' : 'click', value}];
     if (editable) actions.push({...base, kind: 'click', value, label: 'Open ' + base.label});
+    else if (isHoverTrigger(element, role)) actions.push({...base, kind: 'hover', value: ''});
     return actions;
   };
 
@@ -385,8 +435,10 @@
       let hidden = null;
       if (isVisible(element)) rect = element.getBoundingClientRect();
       else if (file && (hidden = fileTrigger(element))) rect = hidden.rect;
+      else if (isToggleInput(element) && !closestDeep(element, HIDDEN_SELECTOR)) rect = labelBoxOf(element);
+      else if (element.tagName === 'TEXTAREA') rect = codeEditorBox(element);
       else continue;
-      if (!isTarget(element, role, rect)) continue;
+      if (!rect || !isTarget(element, role, rect)) continue;
       const region = regionOf(element);
       if (!centerInViewport(rect)) {
         region.offscreen_actions++;
@@ -747,7 +799,70 @@
 
   // ---- Snapshot ----
 
+  const CONTEXT_STOP_TAGS = new Set(['HTML', 'BODY', 'MAIN', 'ASIDE', 'NAV', 'HEADER', 'FOOTER', 'DIALOG', 'TABLE', 'TBODY', 'THEAD']);
+  const CONTEXT_SKIP_SELECTOR = 'script,style,noscript,template,input,textarea,select,option';
+  const CONTEXT_MAX_CHARS = 60;
+
+  // Visible text inside `root` excluding `skipEl` and form controls (never reads field or password values).
+  const contextText = (root, skipEl) => {
+    const parts = [];
+    for (const node of walkDeep(root, NodeFilter.SHOW_TEXT)) {
+      const text = node.textContent.replace(/\s+/g, ' ').trim();
+      if (!text) continue;
+      const parent = node.parentElement;
+      if (!parent || skipEl.contains(parent) || parent.closest(CONTEXT_SKIP_SELECTOR) || !isVisible(parent)) continue;
+      parts.push(text);
+    }
+    return parts.join(' ').replace(/\s+/g, ' ').trim().slice(0, CONTEXT_MAX_CHARS);
+  };
+
+  // When two or more distinct elements share the same (role, label), attach a short disambiguating context
+  // from each element's unique container (the highest nearby ancestor that contains no sibling duplicate).
+  const attachDuplicateContexts = allActions => {
+    const groups = new Map();
+    for (const action of allActions) {
+      if (!action.node || action.kind === 'select') continue;
+      const key = action.role + '|' + (action.kind === 'click' && String(action.label).startsWith('Open ')
+        ? action.label.slice(5) : action.label);
+      let map = groups.get(key);
+      if (!map) {
+        map = new Map();
+        groups.set(key, map);
+      }
+      const list = map.get(action.node) ?? [];
+      list.push(action);
+      map.set(action.node, list);
+    }
+    for (const nodeMap of groups.values()) {
+      if (nodeMap.size < 2) continue;
+      const elements = [...nodeMap.keys()].map(id => state.nodes.get(id)).filter(Boolean);
+      if (elements.length < 2) continue;
+      const contexts = new Map();
+      for (const id of nodeMap.keys()) {
+        const el = state.nodes.get(id);
+        if (!el) continue;
+        const others = elements.filter(other => other !== el);
+        let container = null;
+        for (let cur = flatParent(el), depth = 0; cur instanceof Element && depth < 5; cur = flatParent(cur), depth++) {
+          if (CONTEXT_STOP_TAGS.has(cur.tagName)) break;
+          if (others.some(other => cur.contains(other))) break;
+          container = cur;
+        }
+        if (!container) continue;
+        const heading = container.querySelector('label,legend,h1,h2,h3,h4,h5,h6,[role="heading"]');
+        let ctx = heading && !el.contains(heading) && isVisible(heading) ? contextText(heading, el) : '';
+        if (!ctx) ctx = contextText(container, el);
+        if (ctx) contexts.set(id, ctx);
+      }
+      if (new Set(contexts.values()).size < 2) continue;
+      for (const [id, ctx] of contexts) {
+        for (const action of nodeMap.get(id) ?? []) action.context = ctx;
+      }
+    }
+  };
+
   const actions = collectActions();
+  attachDuplicateContexts([...actions, ...beyond.map(entry => entry.action)]);
   const lines = textLines();
   // The freshness marker always uses the viewport text in DOM order, whatever the view.
   const base = fitText(lines.filter(line => line.inView));

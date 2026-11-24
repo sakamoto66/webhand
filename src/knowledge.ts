@@ -14,7 +14,7 @@ import { home } from "./workspace.ts";
 const MAX_PAGES = 200;
 const MAX_TRANSITIONS = 30;
 const MAX_LABEL = 60;
-const RECORDED_KINDS = new Set(["click", "select"]);
+const RECORDED_KINDS = new Set(["click", "select", "hover"]);
 
 interface Transition {
   kind: string;

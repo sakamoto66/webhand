@@ -116,6 +116,7 @@ Pick the one that belongs in the file field you would upload into. Choose NONE i
 
 export const OPERATIONS: Record<string, string> = {
   click: "CLICK",
+  hover: "HOVER",
   fill: "TYPE_TEXT",
   upload: "UPLOAD_FILE",
   select: "SELECT",
@@ -123,6 +124,7 @@ export const OPERATIONS: Record<string, string> = {
 };
 export const OPERATION_HELP: Record<string, string> = {
   CLICK: "Click an element, button, menu option, autocomplete suggestion, or calendar day.",
+  HOVER: "Move the pointer over an element to open a hover menu or tooltip. Nothing is clicked.",
   TYPE_TEXT: "Enter or replace text in an editable field. Claude supplies the value.",
   UPLOAD_FILE:
     "Give a file field one of Claude's files. Claude supplies the file. Use it instead of clicking a button that opens a file chooser.",
@@ -159,7 +161,7 @@ export function actionSpace(actions: Action[]): [Element[], Targets, Controls] {
       const index = String(elements.length + 1);
       indices.set(node, index);
       const element: Element = {};
-      for (const key of ["role", "value", "checked", "selected", "expanded", "at"]) {
+      for (const key of ["role", "value", "checked", "selected", "expanded", "at", "context"]) {
         if (key in action) element[key] = action[key];
       }
       element.index = index;

@@ -17,6 +17,7 @@ import type { StorageState } from "./auth.ts";
 import {
   COMPAT,
   CONTEXTS,
+  IS_FOCUSED,
   LIST_END,
   MIN_FRAME_SIDE,
   PAGE_CHECK,
@@ -623,7 +624,7 @@ export class Browser {
 
   private async differingParts(page: Page, action: Action | null): Promise<string[]> {
     // v2 checks typing against its field too, instead of against the whole viewport's text.
-    const targeted = ["click", "select", "reveal", "upload", ...(this.view?.whole ? ["fill"] : [])];
+    const targeted = ["click", "hover", "select", "reveal", "upload", ...(this.view?.whole ? ["fill"] : [])];
     if (action !== null && targeted.includes(action.kind)) {
       const node = action.node;
       if (!Number.isInteger(node)) return ["target_unknown"];
@@ -674,11 +675,11 @@ export class Browser {
    * middle once and tried again: a sticky header or a fixed bar often covers an element near an edge. Otherwise
    * StalePage, saying what covers it, so Jev can deal with that first. Nothing is clicked or typed here.
    */
-  private async target(action: Action): Promise<{ x: number; y: number }> {
+  private async target(action: Action): Promise<{ x: number; y: number; widget?: boolean }> {
     const no = frameOf(action.node);
     const resolve = async () => {
       const found = (await this.evaluateFor(action.node, `${RESOLVE_TARGET}(${JSON.stringify(action)})`)) as
-        | { x: number; y: number }
+        | { x: number; y: number; widget?: boolean }
         | { reason: string; cover?: string }
         | null;
       if (found === null) return { reason: "gone" };
@@ -690,7 +691,9 @@ export class Browser {
       const [w, h] = await this.evaluate("[innerWidth, innerHeight]");
       const x = found.x + offset.x;
       const y = found.y + offset.y;
-      return x < 0 || y < 0 || x >= w || y >= h ? { reason: "outside" } : { x, y };
+      return x < 0 || y < 0 || x >= w || y >= h
+        ? { reason: "outside" }
+        : { x, y, ...(found.widget ? { widget: true } : {}) };
     };
     let found = await resolve();
     if ("reason" in found && (found.reason === "covered" || found.reason === "outside")) {
@@ -721,7 +724,7 @@ export class Browser {
       return;
     }
     if (kind === "upload") return await this.upload(action, text);
-    let target: { x: number; y: number } | null = null;
+    let target: { x: number; y: number; widget?: boolean } | null = null;
     if (kind !== "scroll") target = await this.target(action);
     try {
       if (kind === "scroll") {
@@ -734,10 +737,20 @@ export class Browser {
         });
       } else if (kind === "select") {
         await this.select(action);
-      } else {
+      } else if (kind === "hover") {
         const { x, y } = target as { x: number; y: number };
+        await this.hover(x, y);
+      } else {
+        const { x, y, widget } = target as { x: number; y: number; widget?: boolean };
         await this.click(x, y);
-        if (kind === "fill") await this.replaceText(text);
+        if (kind === "fill") {
+          if (widget) {
+            await sleep(50);
+            const focused = await this.evaluateFor(action.node, `${IS_FOCUSED}(${JSON.stringify(action.node)})`);
+            if (focused !== true) throw new MutationUncertain("Editor did not receive focus after click");
+          }
+          await this.replaceText(text);
+        }
       }
     } catch (error) {
       if (error instanceof MutationUncertain) throw error;
@@ -779,6 +792,11 @@ export class Browser {
     for (const type of ["mousePressed", "mouseReleased"]) {
       await this.call("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
     }
+  }
+
+  private async hover(x: number, y: number): Promise<void> {
+    await this.call("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+    await sleep(150);
   }
 
   private async select(action: Action): Promise<void> {

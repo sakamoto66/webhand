@@ -15,7 +15,7 @@ uvx webarena-verified env start --site shopping_admin
 ```
 
 - **メモリ・逐次実行の注意**: `gitlab` コンテナ単体で約 3 GiB RAM を消費するため、8 GiB 程度の環境で複数サイトを同時起動すると headless Chrome の起動に失敗しやすくなります。使わないサイトは `uvx webarena-verified env stop --site <SITE>` で停止し、特に `gitlab` は 1 セッションずつ逐次実行してください。
-- **`MUTATE` タスクの独立性**: 同一コンテナで `MUTATE` タスクを連続実行すると前の変更が環境に残ります。厳密な再現・比較を行うラウンド前後には `uvx webarena-verified env reset --site <SITE>` で環境を初期化してください。
+- **`MUTATE` タスクの独立性**: 同一コンテナで `MUTATE` タスクを連続実行すると前の変更が環境に残ります。厳密な再現・比較を行うラウンド前後には `uvx webarena-verified env stop --site <SITE> && uvx webarena-verified env start --site <SITE>` でコンテナを再作成して環境を初期化してください。
 - **`map` サイトの注意**: `map` は通常の Docker 起動だけでは完結せず、OSM / Nominatim / OSRM 用の大容量バックエンドデータ（数百 GB 規模）が別途必要になります。
 
 ## 2. データセットの取得
