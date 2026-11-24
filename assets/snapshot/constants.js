@@ -1,0 +1,100 @@
+() => {
+  const INTERACTIVE_ROLES = [
+    "button",
+    "link",
+    "checkbox",
+    "radio",
+    "switch",
+    "tab",
+    "menuitem",
+    "menuitemradio",
+    "option",
+    "gridcell",
+    "combobox",
+    "textbox",
+    "searchbox",
+    "spinbutton",
+  ];
+  const REGION_ROLES = {
+    dialog: "dialog",
+    alertdialog: "dialog",
+    banner: "header",
+    navigation: "nav",
+    main: "main",
+    complementary: "aside",
+    contentinfo: "footer",
+    search: "search",
+    form: "form",
+    grid: "table",
+    listbox: "listbox",
+    menu: "menu",
+    region: "section",
+  };
+  const REGION_TAGS = {
+    DIALOG: "dialog",
+    HEADER: "header",
+    NAV: "nav",
+    MAIN: "main",
+    ASIDE: "aside",
+    FOOTER: "footer",
+    FORM: "form",
+    FIELDSET: "fieldset",
+    TABLE: "table",
+    SECTION: "section",
+  };
+
+  return {
+    TEXT_LIMIT: 6000,
+    MAX_ACTIONS: 250,
+    MAX_REVEALS: 60,
+    // v2: elements beyond the viewport offered as they are, the nearest first.
+    MAX_BEYOND: 200,
+    SCROLL_STEP: 560,
+    MAX_REGIONS: 40,
+    REGION_NAME_LIMIT: 40,
+    READ_LIMIT: 12000,
+    INTERACTIVE_ROLES,
+    INTERACTIVE_SELECTOR:
+      'a[href],button,input,textarea,select,summary,[contenteditable="true"],' +
+      INTERACTIVE_ROLES.map((role) => `[role="${role}"]`).join(","),
+    INPUT_ROLES: {
+      checkbox: "checkbox",
+      radio: "radio",
+      button: "button",
+      submit: "button",
+      reset: "button",
+      image: "button",
+      search: "searchbox",
+      number: "spinbutton",
+      text: "textbox",
+      email: "textbox",
+      url: "textbox",
+      tel: "textbox",
+      file: "button",
+    },
+    TEXT_ROLES: ["textbox", "searchbox", "spinbutton"],
+    BUTTON_INPUT_TYPES: ["button", "submit", "reset"],
+    // Values of these inputs are never read. A file input is still offered, to be given a file, but never read.
+    UNOBSERVED_INPUT_TYPES: ["password", "file", "hidden"],
+    HIDDEN_SELECTOR: '[aria-hidden="true"],[inert]',
+    FORM_FIELD_SELECTOR: "input,textarea,select",
+    // The surrounding region whose text is part of an element's freshness guard.
+    GUARD_SCOPE_SELECTOR: 'form,dialog,[role="dialog"],article,li,tr,[role="row"]',
+    NON_CONTENT_SELECTOR: "script,style,noscript,template",
+    REGION_ROLES,
+    REGION_TAGS,
+    REGION_SELECTOR: [
+      ...Object.keys(REGION_TAGS).map((tag) => tag.toLowerCase()),
+      ...Object.keys(REGION_ROLES).map((role) => `[role="${role}"]`),
+    ].join(","),
+    HEADING_SELECTOR: 'h1,h2,h3,h4,h5,h6,[role="heading"]',
+    CODE_EDITOR_SELECTOR: ".monaco-editor,.ace_editor,.CodeMirror",
+    CODE_EDITOR_SURFACE_SELECTOR: ".view-lines,.ace_content,.CodeMirror-lines",
+    // Frames are not observed inside, so they are not acted on either.
+    NOT_CLICKABLE_TAGS: ["HTML", "BODY", "LABEL", "OPTION", "OPTGROUP", "IFRAME", "FRAME", "EMBED", "OBJECT"],
+    SUBMIT_SELECTOR: 'button:not([type]),button[type="submit"],input[type="submit"],input[type="image"]',
+    SUBMENU_SELECTOR: 'ul,ol,menu,[role="menu"],[role="listbox"],[role="tooltip"]',
+    SUBMENU_ITEM_SELECTOR: 'a[href],button,[role="menuitem"],[role="option"]',
+    SUBMENU_LANDMARKS: new Set(["HTML", "BODY", "HEADER", "NAV", "ASIDE", "MAIN", "FOOTER", "FORM", "SECTION"]),
+  };
+};

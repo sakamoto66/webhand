@@ -7,7 +7,11 @@
  * query, a clipped message and the step it followed are kept, never a typed value.
  */
 
-import type { Page } from "./types.ts";
+import { ExploreError } from "./core/errors.ts";
+import { readJsonLines } from "./core/fs.ts";
+import type { Page } from "./core/types.ts";
+
+export { ExploreError };
 
 /** What exploring watches for. */
 const SIGNALS = ["console_error", "pageerror", "http_5xx", "request_failed", "dead_end", "out_of_scope"] as const;
@@ -36,10 +40,6 @@ export function parseAllow(values: string[]): string[] {
     }
   }
   return [...new Set(hosts)];
-}
-
-export class ExploreError extends Error {
-  override name = "ExploreError";
 }
 
 /**
@@ -110,21 +110,15 @@ export interface Logged extends Finding {
 /** The finding events of a run log (JSON lines), in order. Lines that are not findings are skipped. */
 export function loggedFindings(text: string): Logged[] {
   const found: Logged[] = [];
-  for (const line of text.split("\n")) {
-    if (!line.trim()) continue;
-    try {
-      const event = JSON.parse(line);
-      if (event.type === "finding" && SIGNALS.includes(event.signal)) {
-        found.push({
-          signal: event.signal,
-          url: String(event.url ?? ""),
-          detail: String(event.detail ?? ""),
-          ...(typeof event.status === "number" ? { status: event.status } : {}),
-          step: Number(event.step ?? 0),
-        });
-      }
-    } catch {
-      // A damaged line is not a finding.
+  for (const event of readJsonLines(text)) {
+    if (event.type === "finding" && SIGNALS.includes(event.signal as Signal)) {
+      found.push({
+        signal: event.signal as Signal,
+        url: String(event.url ?? ""),
+        detail: String(event.detail ?? ""),
+        ...(typeof event.status === "number" ? { status: event.status } : {}),
+        step: Number(event.step ?? 0),
+      });
     }
   }
   return found;

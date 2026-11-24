@@ -3,8 +3,8 @@
  * argparse-style messages, and the help text. The commands themselves are in cli.ts.
  */
 
-import { readFileSync } from "node:fs";
-import { quote } from "./format.ts";
+import { quote } from "./core/format.ts";
+import { packageVersion } from "./core/fs.ts";
 
 /** A command line that does not parse. Exit code 2. */
 export class UsageError extends Error {
@@ -77,7 +77,7 @@ function help(name: string, spec: CommandSpec): string {
 
 /** The package version, so a skill can tell which CLI it is talking to. */
 function version(): string {
-  return JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+  return packageVersion();
 }
 
 function mainHelp(specs: Record<string, CommandSpec>): string {

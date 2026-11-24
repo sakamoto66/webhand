@@ -1,7 +1,14 @@
 /** Fixed steps from the task file. No API. It tests the harness, not an agent. */
 
-import { quote } from "../format.ts";
-import { type Decision, type HistoryEntry, type ModelCall, type Page, type Policy, PolicyError } from "../types.ts";
+import { quote } from "../core/format.ts";
+import {
+  type Decision,
+  type HistoryEntry,
+  type ModelCall,
+  type Page,
+  type Policy,
+  PolicyError,
+} from "../core/types.ts";
 import { actionSpace, OPERATIONS, resolve } from "./base.ts";
 
 export interface ScriptStep {

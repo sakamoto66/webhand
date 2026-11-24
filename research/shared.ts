@@ -1,53 +1,27 @@
 /**
  * Phase 0 of docs/design-shared-browser.md: N sessions on N headless shells ("separate", today) against one shell with
- * N contexts ("shared", the design). Memory is PSS summed over the process group(s); time is how long all N sessions
- * take to become ready, and how long a round takes when all N load a fixture and read it with snapshot.js at once.
- * It also uses the design's mechanism for finding a session's page: the page's own browserContextId.
- * Research only; not shipped.
+ * N contexts ("shared", the design). Research only; not shipped.
  *
  *   node research/shared.ts [--sizes 2,4,8,16] [--rounds 5] [--reps 2]
  */
 
-import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
-import { homedir, tmpdir } from "node:os";
+import { type ChildProcess, spawn } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright-core";
+import { SNAPSHOT } from "../src/browser/snapshot.ts";
+import { sleep } from "../src/core/format.ts";
+import { shellProbe } from "../src/engines/headless-shell.ts";
+import { cliOption, pssMb, startFixtureServer } from "./lib/bench.ts";
 
-const ROOT = process.cwd();
-const FIXTURES = ["hotel.html?scenario=travel", "plans_many.html", "settings_long.html", "cookie_wall.html", "plans.html"];
-const SNAPSHOT = readFileSync(join(ROOT, "assets", "snapshot.js"), "utf8").trim();
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function shellBinary(): string {
-  const root = join(homedir(), ".cache", "ms-playwright");
-  const dir = readdirSync(root)
-    .filter((name) => name.startsWith("chromium_headless_shell-"))
-    .sort()
-    .pop() as string;
-  const sub = readdirSync(join(root, dir)).find((name) => name.startsWith("chrome-headless-shell")) as string;
-  return join(root, dir, sub, "chrome-headless-shell");
-}
-
-function pssMb(group: number): number {
-  let pids: string[] = [];
-  try {
-    pids = execFileSync("pgrep", ["-g", String(group)]).toString().split(/\s+/).filter(Boolean);
-  } catch {
-    // none left
-  }
-  let kb = 0;
-  for (const pid of pids) {
-    try {
-      kb += Number(/Pss:\s+(\d+)/.exec(readFileSync(`/proc/${pid}/smaps_rollup`, "utf8"))?.[1] ?? 0);
-    } catch {
-      // exited between listing and reading
-    }
-  }
-  return kb / 1024;
-}
+const FIXTURES = [
+  "hotel.html?scenario=travel",
+  "plans_many.html",
+  "settings_long.html",
+  "cookie_wall.html",
+  "plans.html",
+];
 
 interface Shell {
   child: ChildProcess;
@@ -56,9 +30,11 @@ interface Shell {
 }
 
 async function launch(): Promise<Shell> {
+  const binary = shellProbe.binary();
+  if (!binary) throw new Error("chrome-headless-shell not found");
   const dir = mkdtempSync(join(tmpdir(), "shared-"));
   const child = spawn(
-    shellBinary(),
+    binary,
     ["--remote-debugging-port=0", `--user-data-dir=${dir}`, "--no-first-run", "--window-size=1120,780", "about:blank"],
     { detached: true, stdio: "ignore" },
   );
@@ -99,7 +75,6 @@ async function rawClient(shell: Shell) {
   };
 }
 
-/** One session: where it browses. */
 interface Session {
   page: Page;
   context: BrowserContext;
@@ -130,7 +105,6 @@ interface Result {
 
 type Opened = { sessions: Session[]; stopAll: () => void; groups: () => number[]; extra: string[] };
 
-/** N shells, one session each. */
 async function openSeparate(n: number): Promise<Opened> {
   const shells = await Promise.all(Array.from({ length: n }, () => launch()));
   const browsers: Browser[] = [];
@@ -153,7 +127,6 @@ async function openSeparate(n: number): Promise<Opened> {
   };
 }
 
-/** One shell, N contexts that outlive the connection; each session's page is found by its browserContextId. */
 async function openShared(n: number): Promise<Opened> {
   const shell = await launch();
   const raw = await rawClient(shell);
@@ -165,7 +138,6 @@ async function openShared(n: number): Promise<Opened> {
     await raw.send("Target.createTarget", { url: "about:blank", browserContextId: contextId });
   }
   raw.close();
-  // A later command connects anew: Playwright shows every context's pages under contexts()[0].
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${shell.port}`);
   const context = browser.contexts()[0];
   const byContext = new Map<string, Page>();
@@ -210,7 +182,7 @@ async function measure(mode: "separate" | "shared", n: number, rounds: number, b
       if (failed) notes.push(`round ${round}: ${failed}/${n} failed`);
       if (round === 0) {
         await sleep(1500);
-        memoryMb = opened.groups().reduce((sum, group) => sum + pssMb(group), 0);
+        memoryMb = opened.groups().reduce((sum, group) => sum + pssMb(group).mb, 0);
       }
     }
     return {
@@ -230,27 +202,11 @@ async function measure(mode: "separate" | "shared", n: number, rounds: number, b
 
 async function main() {
   const args = process.argv.slice(2);
-  const option = (name: string, fallback: string) => {
-    const at = args.indexOf(name);
-    return at >= 0 ? args[at + 1] : fallback;
-  };
-  const sizes = option("--sizes", "2,4,8,16").split(",").map(Number);
-  const rounds = Number(option("--rounds", "5"));
-  const reps = Number(option("--reps", "2"));
+  const sizes = cliOption(args, "--sizes", "2,4,8,16").split(",").map(Number);
+  const rounds = Number(cliOption(args, "--rounds", "5"));
+  const reps = Number(cliOption(args, "--reps", "2"));
 
-  const server = createServer((request, response) => {
-    let body: Buffer;
-    try {
-      body = readFileSync(join(ROOT, "tasks", "fixtures", new URL(request.url ?? "/", "http://x").pathname));
-    } catch {
-      response.writeHead(404).end();
-      return;
-    }
-    response.writeHead(200, { "content-type": "text/html" }).end(body);
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-
+  const { server, base } = await startFixtureServer();
   const results: Result[] = [];
   for (const n of sizes) {
     for (let rep = 0; rep < reps; rep++) {

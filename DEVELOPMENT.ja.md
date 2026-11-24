@@ -156,7 +156,7 @@ npm run smoke -- --task hotel_filter   # タスクの SCRIPT をモデルなし�
 
 ## 追加するとき
 
-**CLI のコマンドやオプション**: `src/cli.ts` の `commands()` に追加し（パーサーは argparse 風のメッセージを出す）、`tests/cli.test.ts` でテストする。`docs/reference.md` と `docs/reference.ja.md` のコマンド表と、それを使う `skills/` のスキルも更新する。
+**CLI のコマンドやオプション**: `src/commands/` 配下に `CommandDef` を定義して `src/commands/index.ts` に登録し（パーサーは argparse 風のメッセージを出す）、`tests/cli.test.ts` でテストする。`docs/reference.md` と `docs/reference.ja.md` のコマンド表と、それを使う `skills/` のスキルも更新する。
 
 **研究用タスク**: `tasks/<name>.ts` を追加し、`GOAL`、`startUrl(root)`、`{ success, evidence }` を返す非同期の `verify(browser)`、`SCRIPT`（`npm run smoke` 用の固定手順）を export する。フィクスチャは `tasks/fixtures/` にローカルで置く。Node の型除去でそのまま読み込むため、型注釈を消すだけで動く構文で書く（Node 22.18 以上）。
 
@@ -164,7 +164,7 @@ npm run smoke -- --task hotel_filter   # タスクの SCRIPT をモデルなし�
 
 **プロジェクトの手順書**: `.webhand/runbooks/<service>/` に置く。`status = "draft"` から始め、承認はユーザーだけが行う。
 
-**方式（policy）**: `src/types.ts` の `Policy` を実装し、`policies/base.ts` の `actionSpace`、`modelState`、`resolve` を使う。全方式が同じ行動空間と状態を見るようにするため。
+**方式（policy）**: `src/core/types.ts` の `Policy` を実装し、`policies/base.ts` の `actionSpace`、`modelState`、`resolve` を使う。全方式が同じ行動空間と状態を見るようにするため。
 
 ## コミットとプルリクエスト
 
@@ -180,4 +180,4 @@ npm run smoke -- --task hotel_filter   # タスクの SCRIPT をモデルなし�
 
 ## サードパーティのコード
 
-`assets/snapshot.js`、`src/policies/base.ts`、`src/policies/jev.ts`、`tasks/fixtures/hotel.html` は [jev-ultrafast](https://github.com/browser-use/jev-ultrafast)（MIT）を改変したものです。帰属のコメントと `THIRD_PARTY_LICENSE_jev-ultrafast.txt` を残してください。
+`assets/snapshot/`、`src/policies/base.ts`、`src/policies/jev.ts`、`tasks/fixtures/hotel.html` は [jev-ultrafast](https://github.com/browser-use/jev-ultrafast)（MIT）を改変したものです。帰属のコメントと `THIRD_PARTY_LICENSE_jev-ultrafast.txt` を残してください。

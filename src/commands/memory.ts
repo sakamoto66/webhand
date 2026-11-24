@@ -1,12 +1,12 @@
 /** The `memory` command (also callable via the hidden `knowledge` alias). */
 
 import type { Args } from "../args.ts";
-import { SiteMemory } from "../memory.ts";
-
+import { SiteMemory } from "../storage/memory.ts";
 import { CliExit, FAILED, OK, print } from "./context.ts";
+import type { CommandDef } from "./types.ts";
 
 /** What webhand remembers about sites from its own runs: list, show HOST, clear [HOST]. */
-export async function commandMemory(args: Args): Promise<number> {
+async function commandMemory(args: Args): Promise<number> {
   const memory = new SiteMemory();
   if (args.action === "list") {
     const hosts = memory.hosts();
@@ -24,3 +24,17 @@ export async function commandMemory(args: Args): Promise<number> {
   print(`FORGOT ${removed} ${removed === 1 ? "site" : "sites"}${args.name ? ` (${args.name})` : ""}`);
   return OK;
 }
+
+export const memoryCommand: CommandDef = {
+  name: "memory",
+  aliases: ["knowledge"],
+  spec: () => ({
+    help: "What webhand remembers about sites from its own runs: list, show HOST, clear [HOST]",
+    options: [],
+    positionals: [
+      { name: "action", choices: ["list", "show", "clear"] },
+      { name: "name", optional: true },
+    ],
+  }),
+  run: commandMemory,
+};

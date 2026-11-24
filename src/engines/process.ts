@@ -1,18 +1,12 @@
 /** What every engine that runs a local process needs: finding binaries, watching children, waiting on ports and sockets. */
 
 import { type ChildProcess, execFileSync } from "node:child_process";
-import { statSync } from "node:fs";
 import { type AddressInfo, connect, createServer } from "node:net";
 import { delimiter, join } from "node:path";
-import { sleep } from "../format.ts";
+import { sleep } from "../core/format.ts";
+import { isFile } from "../core/fs.ts";
 
-export function isFile(file: string): boolean {
-  try {
-    return statSync(file).isFile();
-  } catch {
-    return false;
-  }
-}
+export { isFile };
 
 export function run(command: string, args: string[], options: { cwd?: string; timeout?: number } = {}): string {
   return execFileSync(command, args, { ...options, stdio: ["ignore", "pipe", "ignore"] })

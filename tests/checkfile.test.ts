@@ -3,9 +3,9 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { expect, test } from "vitest";
-import * as checkfile from "../src/checkfile.ts";
 import { lastRuns } from "../src/commands/checklast.ts";
-import * as workspace from "../src/workspace.ts";
+import * as workspace from "../src/core/workspace.ts";
+import * as checkfile from "../src/storage/checkfile.ts";
 import { cli, cliExit } from "./helpers.ts";
 
 const FILE = `

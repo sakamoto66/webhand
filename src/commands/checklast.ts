@@ -1,11 +1,12 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Args } from "../args.ts";
-import * as checkfile from "../checkfile.ts";
-import { quote } from "../format.ts";
-import * as workspace from "../workspace.ts";
-
-import { CliExit, OK, print } from "./context.ts";
+import { quote } from "../core/format.ts";
+import { readJsonLines } from "../core/fs.ts";
+import * as workspace from "../core/workspace.ts";
+import * as checkfile from "../storage/checkfile.ts";
+import { OK, print } from "./context.ts";
+import type { CommandDef } from "./types.ts";
 
 interface Last {
   id: string;
@@ -27,14 +28,9 @@ export function lastRuns(name: string, runs = join(workspace.home(), "runs")): M
       continue;
     }
     for (const file of files) {
-      for (const line of readFileSync(join(runs, folder, file), "utf8").split("\n")) {
-        if (!line.includes('"check_run"')) continue;
-        let event: Record<string, unknown>;
-        try {
-          event = JSON.parse(line);
-        } catch {
-          continue;
-        }
+      const content = readFileSync(join(runs, folder, file), "utf8");
+      if (!content.includes('"check_run"')) continue;
+      for (const event of readJsonLines(content)) {
         if (event.type !== "check_run" || event.check !== name) continue;
         const id = String(event.id);
         const at = String(event.at);
@@ -54,14 +50,8 @@ export function lastRuns(name: string, runs = join(workspace.home(), "runs")): M
 }
 
 /** Prints the previous result of each check, to compare a regression run with. */
-export async function commandCheckLast(args: Args): Promise<number> {
-  let file: checkfile.CheckFile;
-  try {
-    file = checkfile.load(args.name);
-  } catch (error) {
-    if (error instanceof checkfile.CheckFileError) throw new CliExit(error.message);
-    throw error;
-  }
+async function commandCheckLast(args: Args): Promise<number> {
+  const file = checkfile.load(args.name);
   const last = lastRuns(file.name);
   print(`PREVIOUS RUNS of ${file.name} (current digest ${file.digest})`);
   for (const check of file.checks) {
@@ -78,3 +68,13 @@ export async function commandCheckLast(args: Args): Promise<number> {
   print(`(automatic verdicts only; ${quote("MANUAL")} items are judged by Claude and not recorded here)`);
   return OK;
 }
+
+export const checkLastCommand: CommandDef = {
+  name: "check-last",
+  spec: () => ({
+    help: "Claude: the previous result of each check of a saved check file, from the run logs (read-only)",
+    options: [],
+    positionals: [{ name: "name" }],
+  }),
+  run: commandCheckLast,
+};

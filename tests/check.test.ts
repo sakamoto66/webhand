@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ExpectationError, evaluate, parseExpectation, seenWhole } from "../src/check.ts";
-import type { Page } from "../src/types.ts";
+import { ExpectationError, evaluate, parseExpectation, seenWhole } from "../src/check/index.ts";
+import type { Page } from "../src/core/types.ts";
 
 const field = (node: number, role: string, label: string, extra: Record<string, unknown>) => ({
   node,

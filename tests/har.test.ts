@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import {
   buildPostData,
+  type CdpSender,
+  createHarEventHandler,
   extractResponseCookies,
   formatProtocol,
   HarCollector,
@@ -11,14 +13,14 @@ import {
   MAX_BODY_BYTES,
   mergeHeaders,
   normalizeHeaders,
+  parseBrowser,
   parseQueryString,
   parseRequestCookies,
   parseSetCookie,
   resolveRedirectUrl,
   shouldCaptureBody,
   writeHarAtomic,
-} from "../src/har.ts";
-import { type CdpSender, createHarEventHandler, parseBrowser } from "../src/har-daemon.ts";
+} from "../src/har/index.ts";
 
 const temps: string[] = [];
 

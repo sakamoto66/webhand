@@ -1,12 +1,13 @@
 import type { Args } from "../args.ts";
-import { type Expectation, ExpectationError, evaluate, type Outcome, parseExpectation } from "../check.ts";
-import * as checkfile from "../checkfile.ts";
-import { quote } from "../format.ts";
-import { logOnce } from "../metrics.ts";
-import { parseValues } from "../runbook.ts";
-
+import { type Expectation, evaluate, type Outcome, parseExpectation } from "../check/index.ts";
+import { quote } from "../core/format.ts";
+import { logOnce } from "../core/metrics.ts";
+import * as checkfile from "../storage/checkfile.ts";
+import { parseValues } from "../storage/runbook/index.ts";
 import { CHECK_FAIL, CHECK_INCONCLUSIVE, CliExit, OK, print } from "./context.ts";
+import { idOption } from "./options.ts";
 import { openPage, requireSession } from "./shared.ts";
+import type { CommandDef } from "./types.ts";
 
 /** What to compare: --expect as given, or the expectations of a saved check (--saved NAME:ID), which Claude cannot edit. */
 function chosen(args: Args): {
@@ -43,21 +44,8 @@ function chosen(args: Args): {
  * Compares Claude's expectations with the page as it is now, from one observation. Read-only: it never acts,
  * and what it prints is evidence for Claude's judgment, not the judgment.
  */
-export async function commandCheck(args: Args): Promise<number> {
-  let picked: ReturnType<typeof chosen>;
-  try {
-    picked = chosen(args);
-  } catch (error) {
-    if (
-      error instanceof ExpectationError ||
-      error instanceof checkfile.CheckFileError ||
-      (error instanceof Error && error.name === "RunbookError")
-    ) {
-      throw new CliExit(error.message);
-    }
-    throw error;
-  }
-  const { items, saved } = picked;
+async function commandCheck(args: Args): Promise<number> {
+  const { items, saved } = chosen(args);
   const state = requireSession();
   await openPage(state, null, false, args.read ? ["text"] : []);
   const page = state.page;
@@ -93,3 +81,36 @@ export async function commandCheck(args: Args): Promise<number> {
   if (verdict === "FAIL") return CHECK_FAIL;
   return verdict === "INCONCLUSIVE" ? CHECK_INCONCLUSIVE : OK;
 }
+
+export const checkCommand: CommandDef = {
+  name: "check",
+  session: "required",
+  spec: () => ({
+    help: "Claude: compare expectations with the page as it is now (read-only; evidence, not the verdict)",
+    options: [
+      idOption(),
+      {
+        name: "expect",
+        type: "string",
+        multiple: true,
+        metavar: "KIND:ARGS",
+        help: "text:S, no-text:S, field:LABEL=V, checked:LABEL=true|false, count:ROLE=N, url:/path, title:S",
+      },
+      {
+        name: "saved",
+        type: "string",
+        metavar: "service/name:ID",
+        help: "Use the expectations of a saved check (.webhand/checks) instead of --expect; they cannot be edited here",
+      },
+      { name: "param", type: "string", multiple: true, metavar: "KEY=VALUE", help: "A saved check's parameter" },
+      { name: "allow-draft", type: "boolean", help: "Trial a saved check no person has approved yet" },
+      { name: "production", type: "boolean", help: "The page is production: a saved check must be env=read-only" },
+      {
+        name: "read",
+        type: "boolean",
+        help: "Read the text of the whole page beyond the viewport for this check only (no replan, no attempt used)",
+      },
+    ],
+  }),
+  run: commandCheck,
+};

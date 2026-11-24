@@ -1,9 +1,9 @@
 import { mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, vi } from "vitest";
-import * as runbook from "../src/runbook.ts";
-import * as session from "../src/session.ts";
-import * as workspace from "../src/workspace.ts";
+import * as workspace from "../src/core/workspace.ts";
+import * as runbook from "../src/storage/runbook/index.ts";
+import * as session from "../src/storage/session.ts";
 import { inDirectory, tmpPath } from "./helpers.ts";
 
 test("everything of the user lives under the workspace", () => {

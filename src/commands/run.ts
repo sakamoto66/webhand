@@ -1,20 +1,20 @@
 /** The `run` command. */
 
-import * as agent from "../agent.ts";
-import { Budget, runAgent } from "../agent.ts";
+import * as agent from "../agent/index.ts";
+import { Budget, runAgent } from "../agent/index.ts";
+import { inForce, refusal } from "../agent/readonly.ts";
 import type { Args } from "../args.ts";
-import { type Collector, collectScan } from "../collect.ts";
-import { type Comparer, compareScan, type Reader } from "../compare.ts";
-import { memoryEnabled, memoryUseEnabled, SiteMemory } from "../memory.ts";
-import { logOnce, Recorder } from "../metrics.ts";
-import { loadMore, type MoreChooser } from "../more.ts";
+import { logOnce, Recorder } from "../core/metrics.ts";
+import { MutationUncertain, type Policy, PolicyError, StalePage } from "../core/types.ts";
+import type { Driver } from "../ipc/remote.ts";
 import { collectedLine, comparedLine } from "../output.ts";
-import { inForce, refusal } from "../readonly.ts";
-import type { Driver } from "../remote.ts";
-import * as session from "../session.ts";
-import { MutationUncertain, type Policy, PolicyError, StalePage } from "../types.ts";
-
+import { type Collector, collectScan } from "../scans/collect.ts";
+import { type Comparer, compareScan, type Reader } from "../scans/compare.ts";
+import { loadMore, type MoreChooser } from "../scans/more.ts";
+import { memoryEnabled, memoryUseEnabled, SiteMemory } from "../storage/memory.ts";
+import * as session from "../storage/session.ts";
 import { BUDGET, CliExit, deps, FAILED, OK, print, UNCERTAIN } from "./context.ts";
+import { fileOption, idOption, valueOption } from "./options.ts";
 import { report } from "./report.ts";
 import {
   attach,
@@ -28,8 +28,8 @@ import {
   recordFindings,
   requireSession,
 } from "./shared.ts";
+import type { CommandDef } from "./types.ts";
 
-/** Jev works toward the goal until it needs Claude or a person. */
 /** Why `run` cannot go on from the state's last outcome, as the exit code after saying so. null when it can. */
 function rejectRun(args: Args, state: session.State): number | null {
   const outcome = state.outcome;
@@ -101,33 +101,48 @@ interface RunScan {
   uncertain: (error: MutationUncertain, scan: string) => number;
 }
 
+/** Runs either compare or collect with shared error handling (MutationUncertain vs PolicyError/StalePage). */
+async function runScanStep<T>(
+  ctx: RunScan,
+  kind: "compare" | "collect",
+  executeScan: () => Promise<T>,
+  onDone: (result: T) => number | null,
+): Promise<number | null> {
+  try {
+    return onDone(await executeScan());
+  } catch (error) {
+    if (error instanceof MutationUncertain) return ctx.uncertain(error, kind);
+    if (!(error instanceof PolicyError || error instanceof StalePage)) throw error;
+    ctx.recorder.event(`${kind}_failed`, {
+      attempt: ctx.state.plan.attempt,
+      error: error.message,
+      ...jevDiagnostic(error),
+    });
+    print(`${kind.toUpperCase()} FAILED: ${error.message} Nothing was clicked or typed. Run again, or replan`);
+    return FAILED;
+  }
+}
+
 /** With a criterion, compares the whole list once per attempt before anything is acted on. null when the run goes on. */
 async function compareStep(ctx: RunScan): Promise<number | null> {
   const { state, browser, policy, recorder } = ctx;
   if (!state.plan.compare || state.plan.compared) return null;
   if (!("compare" in policy)) throw new CliExit("This chooser cannot compare items");
-  let scan: Awaited<ReturnType<typeof compareScan>>;
-  try {
-    scan = await compareScan(browser, policy as unknown as Comparer, state.plan, state.plan.compare, recorder, {
-      loadMore: ctx.more(),
-    });
-  } catch (error) {
-    if (error instanceof MutationUncertain) return ctx.uncertain(error, "compare");
-    if (!(error instanceof PolicyError || error instanceof StalePage)) throw error;
-    // Only scrolls happened. The attempt goes on; run again, or replan.
-    recorder.event("compare_failed", {
-      attempt: state.plan.attempt,
-      error: error.message,
-      ...jevDiagnostic(error),
-    });
-    print(`COMPARE FAILED: ${error.message} Nothing was clicked or typed. Run again, or replan`);
-    return FAILED;
-  }
-  state.plan.compared = scan.compared;
-  state.page = scan.page;
-  session.save(state);
-  print(comparedLine(scan.compared));
-  return null;
+  return runScanStep(
+    ctx,
+    "compare",
+    () =>
+      compareScan(browser, policy as unknown as Comparer, state.plan, state.plan.compare, recorder, {
+        loadMore: ctx.more(),
+      }),
+    (scan) => {
+      state.plan.compared = scan.compared;
+      state.page = scan.page;
+      session.save(state);
+      print(comparedLine(scan.compared));
+      return null;
+    },
+  );
 }
 
 /** With a condition, collects the matching items once per attempt and gives them to Claude; nothing is acted on. */
@@ -135,32 +150,26 @@ async function collectStep(ctx: RunScan): Promise<number | null> {
   const { state, browser, policy, recorder } = ctx;
   if (!state.plan.collect || state.plan.collected) return null;
   if (!("collect" in policy)) throw new CliExit("This chooser cannot collect items");
-  let scan: Awaited<ReturnType<typeof collectScan>>;
-  try {
-    scan = await collectScan(browser, policy as unknown as Collector, state.plan, state.plan.collect, recorder, {
-      loadMore: ctx.more(),
-    });
-  } catch (error) {
-    if (error instanceof MutationUncertain) return ctx.uncertain(error, "collect");
-    if (!(error instanceof PolicyError || error instanceof StalePage)) throw error;
-    recorder.event("collect_failed", {
-      attempt: state.plan.attempt,
-      error: error.message,
-      ...jevDiagnostic(error),
-    });
-    print(`COLLECT FAILED: ${error.message} Nothing was clicked or typed. Run again, or replan`);
-    return FAILED;
-  }
-  state.plan.collected = scan.collected;
-  state.page = scan.page;
-  session.save(state);
-  print(collectedLine(scan.collected));
-  print(
-    "Nothing was clicked or typed, and the page is back where it was. Check these items against the goal and " +
-      "write the answer from them. To put the answer into the page, give it as a value: run --value " +
-      "'LABEL=VALUE' (Jev types only values). Otherwise: finish",
+  return runScanStep(
+    ctx,
+    "collect",
+    () =>
+      collectScan(browser, policy as unknown as Collector, state.plan, state.plan.collect, recorder, {
+        loadMore: ctx.more(),
+      }),
+    (scan) => {
+      state.plan.collected = scan.collected;
+      state.page = scan.page;
+      session.save(state);
+      print(collectedLine(scan.collected));
+      print(
+        "Nothing was clicked or typed, and the page is back where it was. Check these items against the goal and " +
+          "write the answer from them. To put the answer into the page, give it as a value: run --value " +
+          "'LABEL=VALUE' (Jev types only values). Otherwise: finish",
+      );
+      return OK;
+    },
   );
-  return OK;
 }
 
 /** The attempt's action limit; an exploring session also stops at its total, however many attempts it took. */
@@ -271,3 +280,18 @@ export async function commandRun(args: Args): Promise<number> {
   }
   return report(state, result);
 }
+
+export const runCommand: CommandDef = {
+  name: "run",
+  session: "required",
+  spec: () => ({
+    help: "Jev: work toward the goal until Claude or a person is needed",
+    options: [
+      idOption(),
+      valueOption("Add or replace a value"),
+      fileOption(),
+      { name: "human-done", type: "boolean", help: "The person finished what NEEDS_HUMAN asked" },
+    ],
+  }),
+  run: commandRun,
+};

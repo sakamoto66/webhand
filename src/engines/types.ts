@@ -1,7 +1,9 @@
-/** What an engine is: how it starts and stops, and what it says to the person. One file per engine implements this. */
+/** What an engine is: how it starts, stops, attaches, and what capabilities it supports. One file per engine implements this. */
 
-import { SessionError } from "../errors.ts";
-import type { State } from "../session.ts";
+import type { ViewChoice } from "../browser/index.ts";
+import { SessionError } from "../core/errors.ts";
+import type { Driver } from "../ipc/remote.ts";
+import type { State } from "../storage/session.ts";
 
 export interface StartOptions {
   headed: boolean;
@@ -12,16 +14,28 @@ export interface StartOptions {
   startupMs: number;
 }
 
+interface EngineCapabilities {
+  /** Supports --file uploads and --download-dir on the local machine. */
+  localFiles: boolean;
+  /** Supports --har CDP network recording. */
+  har: boolean;
+  /** Supports --explore (local Linux Chrome network routing and console/error collection). */
+  explore: boolean;
+}
+
 export interface Engine {
   /** The --engine value. */
   id: string;
   /** How output names it ("Lightpanda"). null reads as "linux Chrome" / "windows Chrome". */
   label: string | null;
+  capabilities: EngineCapabilities;
   start(options: StartOptions): Promise<State>;
   stop(state: State): Promise<void>;
+  /** Connects to an already started session browser of this engine. */
+  attach(state: State, url: string | null, view?: ViewChoice | null): Promise<Driver>;
   /** Printed by `start`. */
   notes?: { start?: string; auth?: string };
-  /** An engine held by a daemon (see daemon.ts): its own command line, and whether the page needs snapshot compat. */
+  /** An engine held by a daemon (see ipc/daemon.ts): its own command line, and whether the page needs snapshot compat. */
   serve?: { arguments(port: number): string[]; compat: boolean };
 }
 

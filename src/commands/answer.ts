@@ -1,18 +1,17 @@
 /** The `answer` command. */
 
 import type { Args } from "../args.ts";
-import { browserUrl } from "../engines/chrome.ts";
-import { logOnce, safeUrl } from "../metrics.ts";
-import * as runbook from "../runbook.ts";
-import * as session from "../session.ts";
-
+import { logOnce, safeUrl } from "../core/metrics.ts";
+import * as session from "../storage/session.ts";
 import { FAILED, print } from "./context.ts";
+import { fileOption, idOption, valueOption } from "./options.ts";
 import { ANSWERABLE } from "./report.ts";
 import { commandRun } from "./run.ts";
-import { mergeValues, openableUrl, openPage, parseFiles, parseValues, requireSession } from "./shared.ts";
+import { mergeValues, openPage, parseFiles, parseValues, requireSession, resolveCliUrl } from "./shared.ts";
+import type { CommandDef } from "./types.ts";
 
 /** v2: Claude answers Jev's question. The same attempt continues: history and budget are kept. */
-export async function commandAnswer(args: Args): Promise<number> {
+async function commandAnswer(args: Args): Promise<number> {
   const state = requireSession();
   const plan = state.plan;
   if (plan.flow !== "v2") {
@@ -26,19 +25,12 @@ export async function commandAnswer(args: Args): Promise<number> {
     return FAILED;
   }
   if (args.url) {
-    let url: string;
-    try {
-      url = runbook.resolveUrl(args.url);
-    } catch (error) {
-      if (!(error instanceof runbook.RunbookError)) throw error;
-      print(`REJECTED: ${error.message.replace("start_url", "--url")}`);
+    const resolved = resolveCliUrl(args.url, state.chrome ?? "linux");
+    if (!resolved.ok) {
+      print(`REJECTED: ${resolved.reason}`);
       return FAILED;
     }
-    if (!openableUrl(url)) {
-      print("REJECTED: --url needs an http, https, or file URL, or a local file path");
-      return FAILED;
-    }
-    await openPage(state, browserUrl(url, state.chrome ?? "linux"), true);
+    await openPage(state, resolved.url, true);
   }
   const values = parseValues(args.value);
   if (values.length) plan.values = mergeValues(plan.values, values);
@@ -66,3 +58,19 @@ export async function commandAnswer(args: Args): Promise<number> {
   session.save(state);
   return commandRun({ ...args, value: [], human_done: false });
 }
+
+export const answerCommand: CommandDef = {
+  name: "answer",
+  session: "required",
+  spec: () => ({
+    help: "Claude (v2): answer Jev's question and continue the same attempt",
+    options: [
+      idOption(),
+      { name: "note", type: "string", required: true, help: "A short instruction for Jev; it sees it" },
+      valueOption("Add or replace a value"),
+      fileOption(),
+      { name: "url", type: "string", help: "Open this page first (the same attempt continues)" },
+    ],
+  }),
+  run: commandAnswer,
+};

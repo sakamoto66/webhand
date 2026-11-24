@@ -156,7 +156,7 @@ npm run smoke -- --task hotel_filter   # model-free run of a task's SCRIPT
 
 ## Adding things
 
-**A CLI command or option**: add it to `commands()` in `src/cli.ts` (the parser writes argparse-style messages), cover it in `tests/cli.test.ts`, then update the command table in `docs/reference.md` and `docs/reference.ja.md` and the skill in `skills/` that uses it.
+**A CLI command or option**: define its `CommandDef` under `src/commands/` and register it in `src/commands/index.ts` (the parser writes argparse-style messages), cover it in `tests/cli.test.ts`, then update the command table in `docs/reference.md` and `docs/reference.ja.md` and the skill in `skills/` that uses it.
 
 **A research task**: add `tasks/<name>.ts` exporting `GOAL`, `startUrl(root)`, async `verify(browser)` returning `{ success, evidence }`, and `SCRIPT` (fixed steps for `npm run smoke`). Keep fixtures local under `tasks/fixtures/`. Tasks are loaded through Node's type stripping, so use only syntax that works once type annotations are removed (Node 22.18 or later).
 
@@ -164,7 +164,7 @@ Tasks are research-only: neither `tasks/` nor `research/` is shipped, and the sh
 
 **A project runbook**: put it in `.webhand/runbooks/<service>/`. Start as `status = "draft"`; only the user approves it.
 
-**A policy (arm)**: implement `Policy` from `src/types.ts` and reuse `actionSpace`, `modelState`, and `resolve` from `policies/base.ts`, so every arm sees the same action space and state.
+**A policy (arm)**: implement `Policy` from `src/core/types.ts` and reuse `actionSpace`, `modelState`, and `resolve` from `policies/base.ts`, so every arm sees the same action space and state.
 
 ## Commits and pull requests
 
@@ -180,4 +180,4 @@ Tasks are research-only: neither `tasks/` nor `research/` is shipped, and the sh
 
 ## Third-party code
 
-`assets/snapshot.js`, `src/policies/base.ts`, `src/policies/jev.ts`, and `tasks/fixtures/hotel.html` are adapted from [jev-ultrafast](https://github.com/browser-use/jev-ultrafast) (MIT). Keep the attribution comments and `THIRD_PARTY_LICENSE_jev-ultrafast.txt`.
+`assets/snapshot/`, `src/policies/base.ts`, `src/policies/jev.ts`, and `tasks/fixtures/hotel.html` are adapted from [jev-ultrafast](https://github.com/browser-use/jev-ultrafast) (MIT). Keep the attribution comments and `THIRD_PARTY_LICENSE_jev-ultrafast.txt`.

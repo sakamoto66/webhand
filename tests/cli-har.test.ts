@@ -4,9 +4,9 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { alive } from "../src/engines/process.ts";
-import type { HarDocument } from "../src/har.ts";
-import { stopHarRecorder } from "../src/har-session.ts";
-import * as session from "../src/session.ts";
+import type { HarDocument } from "../src/har/index.ts";
+import { stopHarRecorder } from "../src/har/session.ts";
+import * as session from "../src/storage/session.ts";
 import { cli, cliExit, readEvents, tmpPath } from "./helpers.ts";
 import { isolate, ScriptedJev } from "./jev.ts";
 

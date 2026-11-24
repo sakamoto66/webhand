@@ -1,15 +1,16 @@
-import * as agent from "../agent.ts";
-import { execute } from "../agent.ts";
+import * as agent from "../agent/index.ts";
+import { execute } from "../agent/index.ts";
+import { inForce, refusal } from "../agent/readonly.ts";
 import type { Args } from "../args.ts";
-import { Recorder } from "../metrics.ts";
+import { Recorder } from "../core/metrics.ts";
+import { Decision, MutationUncertain, PolicyError, StalePage } from "../core/types.ts";
 import { render } from "../output.ts";
 import { actionSpace, resolve } from "../policies/base.ts";
-import { inForce, refusal } from "../readonly.ts";
-import * as session from "../session.ts";
-import { Decision, MutationUncertain, PolicyError, StalePage } from "../types.ts";
-
+import * as session from "../storage/session.ts";
 import { BUDGET, FAILED, OK, print, STALE, UNCERTAIN } from "./context.ts";
+import { idOption } from "./options.ts";
 import { attach, browserView, exploreActionsLeft, loggable, recordFindings, requireSession } from "./shared.ts";
+import type { CommandDef } from "./types.ts";
 
 /** Why `act` cannot run from the state's last outcome, as the exit code after saying so. null when it can. */
 function rejectAct(state: session.State): number | null {
@@ -128,7 +129,7 @@ async function performAct(state: session.State, decision: ReturnType<typeof reso
 }
 
 /** Claude overrides Jev for one operation. */
-export async function commandAct(args: Args): Promise<number> {
+async function commandAct(args: Args): Promise<number> {
   const state = requireSession();
   const rejected = rejectAct(state);
   if (rejected !== null) return rejected;
@@ -138,3 +139,18 @@ export async function commandAct(args: Args): Promise<number> {
   session.save(state);
   return performAct(state, decision);
 }
+
+export const actCommand: CommandDef = {
+  name: "act",
+  session: "required",
+  spec: () => ({
+    help: "Claude: override Jev with one operation",
+    options: [
+      idOption(),
+      { name: "text", type: "string" },
+      { name: "file", type: "string", help: "UPLOAD_FILE: the label of one of the plan's files" },
+    ],
+    positionals: [{ name: "operation" }, { name: "target", optional: true }],
+  }),
+  run: commandAct,
+};

@@ -1,36 +1,34 @@
-import * as agent from "../agent.ts";
+import * as agent from "../agent/index.ts";
 import type { Args } from "../args.ts";
-import { browserUrl } from "../engines/chrome.ts";
-import { logOnce, safeUrl } from "../metrics.ts";
+import { logOnce, safeUrl } from "../core/metrics.ts";
+import type { Value } from "../core/types.ts";
 import { describePlan, headline } from "../output.ts";
 import { planText } from "../policies/base.ts";
-import * as runbook from "../runbook.ts";
-import * as session from "../session.ts";
-import type { Value } from "../types.ts";
-
+import * as runbook from "../storage/runbook/index.ts";
+import * as session from "../storage/session.ts";
 import { BUDGET, FAILED, OK, print, UNCERTAIN } from "./context.ts";
-import { mergeValues, openableUrl, openPage, parseFiles, parseSteps, parseValues, requireSession } from "./shared.ts";
+import {
+  allowControlOption,
+  collectOption,
+  compareOption,
+  fileOption,
+  idOption,
+  moreOption,
+  valueOption,
+  viewOptions,
+} from "./options.ts";
+import { mergeValues, openPage, parseFiles, parseSteps, parseValues, requireSession, resolveCliUrl } from "./shared.ts";
+import type { CommandDef } from "./types.ts";
 
-/** Claude revises the plan after an attempt fell short, and starts the next attempt. */
 /** A `replan` that cannot be taken: the message after "REJECTED: ". Nothing has been saved yet. */
 class ReplanRejected extends Error {}
 
 /** The page --url names, as the browser opens it. null without --url. */
 function replanUrl(args: Args, state: session.State): string | null {
   if (!args.url) return null;
-  // A path without a scheme is a local file, as the catalog shows a saved page (tasks/fixtures/...).
-  let url: string;
-  try {
-    url = runbook.resolveUrl(args.url);
-  } catch (error) {
-    if (!(error instanceof runbook.RunbookError)) throw error;
-    throw new ReplanRejected(error.message.replace("start_url", "--url"));
-  }
-  if (!openableUrl(url)) {
-    throw new ReplanRejected("--url needs an http, https, or file URL, or a local file path");
-  }
-  // As start does: the Windows Chrome on WSL opens a local file by its Windows path (round 19).
-  return browserUrl(url, state.chrome ?? "linux");
+  const resolved = resolveCliUrl(args.url, state.chrome ?? "linux");
+  if (!resolved.ok) throw new ReplanRejected(resolved.reason);
+  return resolved.url;
 }
 
 /** A value of --compare, --collect or --more: "none" turns it off. */
@@ -77,7 +75,7 @@ function applyReplanView(args: Args, state: session.State): boolean {
     skip: regions ? args.skip : earlier.skip,
     read: args.read.length ? args.read : earlier.read,
   };
-  state.view = runbook.view(state.view_saved ?? state.view_learned, state.view_claude);
+  state.view = runbook.view(state.view_saved, state.view_claude);
   return true;
 }
 
@@ -106,7 +104,7 @@ function startNextAttempt(args: Args, state: session.State, url: string | null):
   });
 }
 
-export async function commandReplan(args: Args): Promise<number> {
+async function commandReplan(args: Args): Promise<number> {
   const state = requireSession();
   const plan = state.plan;
   if (state.outcome === agent.UNCERTAIN) {
@@ -140,3 +138,26 @@ export async function commandReplan(args: Args): Promise<number> {
   print("NEXT: webhand run");
   return OK;
 }
+
+export const replanCommand: CommandDef = {
+  name: "replan",
+  session: "required",
+  spec: () => ({
+    help: "Claude: revise the plan and start the next attempt",
+    options: [
+      idOption(),
+      { name: "reason", type: "string", required: true, help: "Why the last attempt fell short; Jev sees it" },
+      { name: "step", type: "string", multiple: true, help: "Replace the steps" },
+      valueOption(),
+      fileOption(),
+      { name: "restart", type: "boolean", help: "Open the start URL again before the next attempt" },
+      { name: "url", type: "string", help: "Open this URL before the next attempt instead (another way in)" },
+      ...viewOptions(),
+      compareOption(),
+      collectOption(),
+      moreOption(),
+      allowControlOption(),
+    ],
+  }),
+  run: commandReplan,
+};

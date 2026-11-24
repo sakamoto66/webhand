@@ -3,8 +3,8 @@
 import { readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { SessionError } from "../errors.ts";
-import { launchChrome, stopLocal } from "./chrome.ts";
+import { SessionError } from "../core/errors.ts";
+import { attachLocal, launchChrome, stopLocal } from "./chrome.ts";
 import { isFile, which } from "./process.ts";
 import { type Engine, rejectWindowAndProfile } from "./types.ts";
 
@@ -37,6 +37,7 @@ export const shellProbe = {
 export const headlessShell: Engine = {
   id: "headless-shell",
   label: "Chrome headless shell",
+  capabilities: { localFiles: true, har: true, explore: true },
   async start(options) {
     // No window to sign in in, and a profile made by Chrome may be newer than this build.
     rejectWindowAndProfile("The headless shell", options);
@@ -46,4 +47,5 @@ export const headlessShell: Engine = {
     return launchChrome(executable, { ...options, shell: true });
   },
   stop: stopLocal,
+  attach: attachLocal,
 };
