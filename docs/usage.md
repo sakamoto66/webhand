@@ -15,11 +15,11 @@ Task-oriented workflows for delegating browser work through your coding agent (*
 After installing the plugin/skills and exporting `TYPESAFE_API_KEY` (see [Quick start](../README.md#quick-start)), run one check:
 
 ```bash
-npx -y webhand@0.5 doctor    # checks Node.js >= 22, Chrome/WSL, TYPESAFE_API_KEY, and workspace
-npx -y webhand@0.5 catalog   # lists saved services, runbooks, profiles, and active sessions
+npx -y webhand@0.6 doctor    # checks Node.js >= 22, Chrome/WSL, TYPESAFE_API_KEY, and workspace
+npx -y webhand@0.6 catalog   # lists saved services, runbooks, profiles, and active sessions
 ```
 
-If `doctor` prints `[FAIL]`, follow its `fix:` line before starting a run. (Install globally with `npm i -g webhand` to drop the `npx -y webhand@0.5` prefix.)
+If `doctor` prints `[FAIL]`, follow its `fix:` line before starting a run. (Install globally with `npm i -g webhand` to drop the `npx -y webhand@0.6` prefix.)
 
 ---
 
@@ -169,7 +169,7 @@ For all 18 CLI commands, options, exit codes, and environment variables, see [Re
 | Setup issue or unsure what is missing | Run `webhand doctor` and follow its `fix:` lines |
 | `TYPESAFE_API_KEY` is not set | Export it in your shell profile (`~/.bashrc`, `~/.zshrc`) and restart your coding agent; never put it in `.env` |
 | On WSL, Windows Chrome is not used | Enable `networkingMode=mirrored` in `%USERPROFILE%\.wslconfig` and run `wsl --shutdown` ([WSL setup](reference.md#using-windows-chrome-from-wsl)) |
-| Inside this repo, `npx -y webhand@0.5` says `not found` | Run `npm run build && npm link`, or use `npx -y webhand@latest` |
+| Inside this repo, `npx -y webhand@0.6` says `not found` | Run `npm run build && npm link`, or use `npx -y webhand@latest` |
 | Runbook is refused as `draft` | Trial once with `--allow-draft`; set `status = "approved"` only after reviewing |
 | Navigation refused by `allowed_domains` | Verify the host (and any SSO host) is listed in `service.toml`'s `allowed_domains` |
 | Needed form/controls cut off (`0/N` or `(skip)`) | Check `REGIONS` in output and pass `--focus REGION` or `--skip REGION` |

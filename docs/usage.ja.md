@@ -15,11 +15,11 @@
 プラグイン／スキルの導入と `TYPESAFE_API_KEY` の設定（[クイックスタート](../README.ja.md#クイックスタート)）が終わったら、まず次の 2 コマンドで状態を確認します：
 
 ```bash
-npx -y webhand@0.5 doctor    # Node.js >= 22・Chrome/WSL・TYPESAFE_API_KEY・環境を一括診断
-npx -y webhand@0.5 catalog   # 登録済みサービス・手順書・保存プロファイル・実行中セッションを表示
+npx -y webhand@0.6 doctor    # Node.js >= 22・Chrome/WSL・TYPESAFE_API_KEY・環境を一括診断
+npx -y webhand@0.6 catalog   # 登録済みサービス・手順書・保存プロファイル・実行中セッションを表示
 ```
 
-`doctor` で `[FAIL]` が出た場合は、表示された `fix:` の手順どおりに直してから再実行してください（`npm i -g webhand` でグローバル導入すると `npx -y webhand@0.5` を省略できます）。
+`doctor` で `[FAIL]` が出た場合は、表示された `fix:` の手順どおりに直してから再実行してください（`npm i -g webhand` でグローバル導入すると `npx -y webhand@0.6` を省略できます）。
 
 ---
 
@@ -170,7 +170,7 @@ webhand record --name svc/proc --url https://example.com    # 人の操作を手
 | 環境の何が足りないか分からない | まず `webhand doctor` を実行し、`fix:` の案内どおりに直す |
 | `TYPESAFE_API_KEY` が未設定と言われる | シェルの設定ファイル（`~/.bashrc`・`~/.zshrc` 等）で export し、コーディングエージェントを再起動する（`.env` には置かない） |
 | WSL で Windows 側の Chrome が使われない | `%USERPROFILE%\.wslconfig` に `networkingMode=mirrored` を設定して `wsl --shutdown` する（[WSL 設定](reference.ja.md#wsl-で-windows-側の-chrome-を使う)） |
-| このリポジトリ内で `npx -y webhand@0.5` が `not found` になる | `npm run build && npm link` するか、`npx -y webhand@latest` を使う |
+| このリポジトリ内で `npx -y webhand@0.6` が `not found` になる | `npm run build && npm link` するか、`npx -y webhand@latest` を使う |
 | `draft` の手順書が使えない | 試行のときだけ `--allow-draft` を付ける。内容確認後に `status = "approved"` へ変更する |
 | `allowed_domains` で移動が拒否された | 遷移先（SSO 先を含む）のホスト名が `service.toml` の `allowed_domains` に入っているか確認する |
 | 必要なフォームが観測から切れている（`0/N` や `(skip)`） | 出力の `REGIONS` を確認し、`--focus REGION` / `--skip REGION` を指定する |
