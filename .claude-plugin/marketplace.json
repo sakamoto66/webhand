@@ -3,12 +3,12 @@
   "owner": {
     "name": "sakamoto66"
   },
-  "description": "webhand: a browser agent skill where your coding agent plans and Jev operates.",
+  "description": "webhand: delegate everyday browser work, data extraction, and acceptance checks to your coding agent safely.",
   "plugins": [
     {
       "name": "webhand",
       "source": "./",
-      "description": "Your coding agent plans, asks, checks, and replans; Jev operates the browser toward the goal."
+      "description": "Delegate everyday browser work to your coding agent — safely, verifiably, and with saved runbooks."
     }
   ]
 }

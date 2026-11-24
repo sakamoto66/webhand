@@ -1,7 +1,7 @@
 {
   "name": "webhand",
   "version": "0.5.0",
-  "description": "Your coding agent plans, asks, checks, and replans; Jev operates the browser toward the goal.",
+  "description": "Delegate everyday browser work to your coding agent — safely, verifiably, and with saved runbooks.",
   "license": "MIT",
   "author": "sakamoto66",
   "homepage": "https://github.com/sakamoto66/webhand",
