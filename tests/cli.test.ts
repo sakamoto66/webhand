@@ -688,3 +688,43 @@ test("v2: BLOCKED on a page with nothing hidden gets no canvas hint", async () =
   expect(out).toContain("OUTCOME BLOCKED");
   expect(out).not.toContain("plugin parts");
 });
+
+test("--run hands straight to Jev from start, replan, and act in one command", async () => {
+  ScriptedJev.moves = [["BLOCKED", null, null]];
+  const started = await research(
+    "start",
+    "--task",
+    "hotel_filter",
+    "--chrome",
+    "linux",
+    "--step",
+    "Search for Lisbon",
+    "--value",
+    "Destination=Lisbon",
+    "--run",
+  );
+  expect(started.code).toBe(OK);
+  expect(started.out).toContain("OUTCOME BLOCKED (attempt 1/3)");
+  expect(started.out).not.toContain("NEXT: webhand run");
+
+  // act --run performs the override, skips intermediate page render, and hands straight back to Jev.
+  const [, targets] = actionSpace(session.load()?.page.actions);
+  const checkbox = [...(targets.get("CLICK") ?? [])].find(([, a]) => a.label.includes("Free cancellation"))?.[0];
+  ScriptedJev.moves = [["BLOCKED", null, null]];
+  const acted = await cli("act", "CLICK", checkbox as string, "--run");
+  expect(acted.code).toBe(OK);
+  expect(acted.out).toContain("OUTCOME BLOCKED (attempt 1/3)");
+  expect(acted.out).toContain('CLICK "Free cancellation"');
+
+  // replan --run starts the next attempt and hands straight to Jev without an extra round trip.
+  ScriptedJev.moves = [...FULL];
+  const replanned = await cli("replan", "--reason", "Run the full plan", "--restart", "--run");
+  expect(replanned.code).toBe(OK);
+  expect(replanned.out).toContain("OUTCOME GOAL_REPORTED (attempt 2/3)");
+  expect(replanned.out).not.toContain("NEXT: webhand run");
+
+  await research("finish", "--status", "done");
+  const end = events().at(-1);
+  expect(end.verified).toBe(true);
+  expect(end.attempts).toBe(2);
+});

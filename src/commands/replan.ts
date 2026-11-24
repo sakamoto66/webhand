@@ -18,6 +18,7 @@ import {
   valueOption,
   viewOptions,
 } from "./options.ts";
+import { commandRun } from "./run.ts";
 import { mergeValues, openPage, parseFiles, parseSteps, parseValues, requireSession, resolveCliUrl } from "./shared.ts";
 import type { CommandDef } from "./types.ts";
 
@@ -136,6 +137,7 @@ async function commandReplan(args: Args): Promise<number> {
   if (url) await openPage(state, url, true);
   else if (args.restart) await openPage(state, state.start_url, true);
   else if (viewChanged) await openPage(state); // Observe again with the new regions.
+  if (args.run) return commandRun({ ...args, value: [], file: [], human_done: false });
   print(
     `${describePlan(plan, state.view ?? null)}\nATTEMPT ${plan.attempt}/${state.max_attempts}\n${headline(state.page)}`,
   );
@@ -161,6 +163,7 @@ export const replanCommand: CommandDef = {
       collectOption(),
       moreOption(),
       allowControlOption(),
+      { name: "run", type: "boolean", help: "Hand to Jev right away for the next attempt in the same command" },
     ],
   }),
   run: commandReplan,

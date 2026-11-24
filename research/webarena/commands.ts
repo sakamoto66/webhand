@@ -330,7 +330,7 @@ async function commandStart(args: string[], io: IO): Promise<number> {
     io,
     hooks,
   );
-  if (code === OK) {
+  if (code === OK || session.load()) {
     io.out(`WEBARENA_TASK: id=${taskId} sites=${task.sites.join(",") || "none"} dir=${taskDir}\n`);
     if (task.start_urls.length > 1) io.out(`START_URLS: ${task.start_urls.join(" | ")}\n`);
     if (autoLoginTargets.length) {

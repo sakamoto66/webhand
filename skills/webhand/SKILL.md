@@ -53,11 +53,10 @@ On WSL, `--chrome auto` uses the Windows Chrome when it is reachable. If `start`
 ## 3. Start and run
 
 ```
-webhand start --goal "..." --url "..." --step "..." --step "[person] Sign in" --value "氏名=..." --service SERVICE --session new
-webhand run
+webhand start --goal "..." --url "..." --step "..." --step "[person] Sign in" --value "氏名=..." --service SERVICE --session new --run
 ```
 
-Add `--headed` when there are `[person]` steps, when the goal may stop at something only the user can do (signing in, paying, a CAPTCHA, as an order or an account page often does), or when the user wants to watch. Without it the user cannot see the window to do their part. With `--runbook`, `--goal`, `--url`, and the steps come from the runbook unless you give them.
+Add `--run` to `start` (or `replan` / `act`) to hand straight to Jev in the same command without an extra round trip; leave `--run` out and follow with `webhand run` when you want to inspect the start page first. Add `--headed` when there are `[person]` steps, when the goal may stop at something only the user can do (signing in, paying, a CAPTCHA, as an order or an account page often does), or when the user wants to watch. Without it the user cannot see the window to do their part. With `--runbook`, `--goal`, `--url`, and the steps come from the runbook unless you give them.
 
 `run` returns only on one of these:
 
@@ -76,8 +75,7 @@ Add `--headed` when there are `[person]` steps, when the goal may stop at someth
 When an attempt falls short, read the actions and page printed, decide why, and start the next attempt:
 
 ```
-webhand replan --reason "Search was never submitted; Find stays must be pressed" [--step ...] [--value ...] [--focus ...] [--skip ...] [--restart]
-webhand run
+webhand replan --reason "Search was never submitted; Find stays must be pressed" [--step ...] [--value ...] [--focus ...] [--skip ...] [--restart] --run
 ```
 
 `--reason` reaches Jev, so state the fact it missed. A reason alone often does not change what Jev does next: also rewrite the steps with `--step`, putting what not to do first into the first step and the visible condition into the step that went wrong too early. When `REGIONS` shows that the region a step needs was cut (`actions 0/141`) or skipped, add `--focus` for it or `--skip` for what crowded it out; this replaces your earlier `--focus` / `--skip`. When Jev scrolled up and down on a long page looking for something, add `--read` for what it was looking for, or change it with `--read KIND` (`--read none` turns it off). When Jev chose an item before the whole list was seen, add `--compare "CRITERION"`; each attempt compares again, and `--compare none` turns it off. When the answer needs every matching item of a long list and only part of it was seen, add `--collect "CONDITION"`; `--collect none` turns it off. When the compare or collect output shows fewer items than the list has because the rest is behind a button or a next page, add `--more "CONTROL"`; `--more none` turns it off. Use `--restart` to open the start URL again when the page is in a bad state; leave it out to continue from the current page. Do not restart after something was submitted on a real service. `replan` refuses after the attempt limit (3 by default); then finish `blocked`.
@@ -103,16 +101,16 @@ The page is out of reach when Jev reports `BLOCKED` or `NEEDS_HUMAN` because of 
 
 ## 6. Override
 
-Use `act` only when one operation clearly unblocks Jev, with indices from the latest output:
+Use `act` only when one operation clearly unblocks Jev, with indices from the latest output (run `webhand observe` if the previous handoff omitted `ELEMENTS:` or offscreen/dropdown items):
 
-- `webhand act CLICK 3`
+- `webhand act CLICK 3 --run` (omit `--run` to inspect the page before handing back to Jev)
 - `webhand act TYPE_TEXT 2 --text "Lisbon"`
 - `webhand act TYPE_TEXT 2 --text ""`: empty a field. Jev never picks an empty value, so `--value "LABEL="` does not clear it (the run stops with `NEEDS_VALUE`); `observe` then shows the field without a value
 - `webhand act SELECT 4:2`
 - `webhand act SCROLL_DOWN`, `SCROLL_UP`, or `WAIT`
 - `webhand act TAB_2`: switch to tab 2, when the output shows `TABS` and `TAB_n` in `CONTROLS`. A click can open a new tab; the page shown stays on the old one until a switch
 
-Then `run` again. `STALE` means nothing ran; decide again from the new page printed.
+Without `--run`, follow with `run` again. `STALE` means nothing ran; decide again from the new page printed.
 
 ## 7. Finish
 

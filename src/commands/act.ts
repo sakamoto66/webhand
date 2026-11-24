@@ -9,6 +9,7 @@ import { actionSpace, resolve } from "../policies/base.ts";
 import * as session from "../storage/session.ts";
 import { BUDGET, FAILED, OK, print, STALE, UNCERTAIN } from "./context.ts";
 import { idOption } from "./options.ts";
+import { commandRun } from "./run.ts";
 import { attach, browserView, exploreActionsLeft, loggable, recordFindings, requireSession } from "./shared.ts";
 import type { CommandDef } from "./types.ts";
 
@@ -83,9 +84,14 @@ function decideAct(args: Args, state: session.State): ReturnType<typeof resolve>
 }
 
 /** Runs the decision once. A stale page runs nothing; an uncertain result stops the run. */
-async function performAct(state: session.State, decision: ReturnType<typeof resolve>): Promise<number> {
+async function performAct(
+  state: session.State,
+  decision: ReturnType<typeof resolve>,
+  runAfter = false,
+): Promise<number> {
   const browser = await attach(state, null, browserView(state));
   const recorder = new Recorder(state.log);
+  let succeeded = false;
   try {
     await execute(browser, state.page, decision, state.history, recorder, {
       decidedBy: "claude",
@@ -106,8 +112,8 @@ async function performAct(state: session.State, decision: ReturnType<typeof reso
       print(`DOWNLOADED: ${downloads.map((d) => `${d.name} (${d.bytes} bytes)`).join(", ")} in ${state.download_dir}`);
     }
     recordFindings(state, browser, recorder);
-    print(render(state.page));
-    return OK;
+    if (!runAfter) print(render(state.page));
+    succeeded = true;
   } catch (error) {
     if (error instanceof StalePage) {
       state.page = await browser.observe();
@@ -126,6 +132,8 @@ async function performAct(state: session.State, decision: ReturnType<typeof reso
     await browser.close();
     recorder.close();
   }
+  if (succeeded && runAfter) return commandRun({ value: [], file: [], human_done: false });
+  return OK;
 }
 
 /** Claude overrides Jev for one operation. */
@@ -137,7 +145,7 @@ async function commandAct(args: Args): Promise<number> {
   if (typeof decision === "number") return decision;
   state.decisions += 1;
   session.save(state);
-  return performAct(state, decision);
+  return performAct(state, decision, Boolean(args.run));
 }
 
 export const actCommand: CommandDef = {
@@ -149,6 +157,7 @@ export const actCommand: CommandDef = {
       idOption(),
       { name: "text", type: "string" },
       { name: "file", type: "string", help: "UPLOAD_FILE: the label of one of the plan's files" },
+      { name: "run", type: "boolean", help: "Hand back to Jev right away after this operation succeeds" },
     ],
     positionals: [{ name: "operation" }, { name: "target", optional: true }],
   }),
