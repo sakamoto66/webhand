@@ -23,9 +23,14 @@
 
 Ask right from your coding agent session — no test script required:
 
+![webhand demo: ask in plain language, approve the plan, Jev operates Chrome using observed elements, and the agent verifies the confirmation screen](docs/media/demo.gif)
+
+<details>
+<summary>View 4-step static breakdown</summary>
+
 ![How webhand handles a request in 4 steps: ask in plain language, review plan and values, operate observed elements safely, and verify on the actual page](docs/media/flow-en.png)
 
-<!-- Demo GIF placeholder: replace or supplement with docs/media/demo.gif once recorded -->
+</details>
 
 ---
 
