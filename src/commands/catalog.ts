@@ -9,7 +9,7 @@ import * as workspace from "../workspace.ts";
 import { CliExit, OK, print } from "./context.ts";
 import { chooseChrome } from "./start.ts";
 
-/** Everything learned, for Claude to plan from. */
+/** All known services and runbooks, for the agent to plan from. */
 export async function commandCatalog(args: Args): Promise<number> {
   const project = workspace.projectRoot();
   const projectRunbooks = runbook.root("project");
@@ -22,7 +22,7 @@ export async function commandCatalog(args: Args): Promise<number> {
     if (error instanceof runbook.RunbookError) throw new CliExit(error.message);
     throw error;
   }
-  if (!services.length) print("NOTHING LEARNED. Plan from the request, or teach a service with /webhand-learn");
+  if (!services.length) print("NO SAVED SERVICES YET. Plan from the request, or teach a service with /webhand-teach");
   for (const entry of services) {
     const info = entry.info;
     print(`SERVICE ${entry.service}${info ? ` (${info.scope})` : ""}`);

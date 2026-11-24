@@ -4,7 +4,7 @@
 
 webhand 自体を変更する人向けのガイドです。インストールと使い方は [README.ja.md](README.ja.md)、実験設計は [docs/research-plan.md](docs/research-plan.md) を参照してください。
 
-webhand は npm で CLI を配布するマルチエージェント向けプラグイン／スキル（Claude Code・Antigravity・Codex・Agent Skills 対応エージェント）であると同時に、研究基盤でもあります。研究では「AI も人と同じように、サービスを学ぶほど操作の成功率が上がる」という仮説を確かめます。成功は独立した検証だけで判定し、失敗した実行も残します。以下の規則の多くは、コードの整理のためだけでなく、実験の妥当性を守るためにあります。
+webhand は npm で CLI を配布するマルチエージェント向けプラグイン／スキル（Claude Code・Antigravity・Codex・Agent Skills 対応エージェント）であると同時に、研究基盤でもあります。研究では「AI も人と同じように、サービスの使い方や操作の経験を覚えるほど操作の成功率が上がる」という仮説を確かめます。成功は独立した検証だけで判定し、失敗した実行も残します。以下の規則の多くは、コードの整理のためだけでなく、実験の妥当性を守るためにあります。
 
 ## セットアップ
 
@@ -51,7 +51,8 @@ src/                 CLI（ビルド後 dist/ として配布）
   browser.ts         Playwright と CDP セッション1本。観測、入力、鮮度確認
   session.ts         CLI 呼び出しをまたいで生き続ける Chrome、保存プロファイル、実行状態
   runbook.ts         サービス情報と手順書（TOML）、ビュー（focus / skip）
-  learn.ts           人の操作の記録
+  record.ts          人の操作の記録
+  memory.ts          過去の実行から覚えるサイトの記憶（~/.webhand/memory/）
   workspace.ts       プロジェクト（.webhand/）とユーザー（~/.webhand/）のフォルダー
   metrics.ts         追記専用の JSONL ログ、トークン集計、git の状態
   format.ts          エージェントと Jev が読む値の引用と compact JSON、実行フォルダー名
@@ -65,7 +66,7 @@ research/            研究専用の入口。配布しない
   tasks.ts           研究用タスクの読み込み
   smoke.ts           モデルを使わないスモークテスト（npm run smoke）
 assets/              Chrome に注入するページスクリプト（snapshot.js、recorder.js）
-skills/              公開スキル（webhand、webhand-learn、webhand-extract、webhand-explore、webhand-verify、webhand-regress）
+skills/              公開スキル（webhand、webhand-teach、webhand-extract、webhand-explore、webhand-verify、webhand-regress）
 hooks.json           Antigravity ネイティブプラグイン用 PreToolUse フック（--allow-control 承認確認）
 hooks/               Claude Code 用 hooks.json と共有スクリプト ask-allow-control.mjs
 .claude-plugin/      Claude Code 用プラグインとマーケットプレイスのマニフェスト

@@ -1,7 +1,7 @@
 /**
- * What webhand has learned: service information and reviewed procedures (runbooks).
+ * Known services and reviewed procedures (runbooks).
  *
- * Both guide Claude's plan and Jev's choices. Procedures are never replayed. They live in the project's
+ * Both guide the agent's plan and Jev's choices. Procedures are never replayed. They live in the project's
  * .webhand/runbooks and the user's ~/.webhand/runbooks; a project file wins over a user file of the same name.
  */
 
@@ -154,7 +154,7 @@ function regions(file: string, page: Doc): Region[] {
 }
 
 /**
- * Combines region choices. A later layer wins: learned defaults, then the runbook, then Claude.
+ * Combines region choices. A later layer wins: service defaults, then the runbook, then the agent.
  * Focus patterns keep the later layer's order first, since the first focus is shown first.
  */
 export function view(...layers: (Partial<View> | null | undefined)[]): View {
@@ -192,7 +192,7 @@ export function serviceView(info: ServiceInfo | null): View {
   };
 }
 
-/** Service information for Claude's plan and Jev's state. null when nothing was learned. */
+/** Service information for the agent's plan and Jev's state. null when none is saved. */
 export function loadService(service: string): ServiceInfo | null {
   const found = findService(service);
   if (!found) return null;
@@ -241,7 +241,7 @@ function subfolders(dir: string): string[] {
     .map((entry) => entry.name);
 }
 
-/** Everything learned in both scopes, without filling parameters. Claude reads this to plan. */
+/** All saved services and runbooks in both scopes, without filling parameters. The agent reads this to plan. */
 export function catalog(): CatalogEntry[] {
   const services = [...new Set(folders().flatMap(({ dir }) => subfolders(dir)))].sort();
   return services.map((service) => {

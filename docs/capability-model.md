@@ -15,7 +15,7 @@
 | G 実行 | 選ばれた操作 | click / type / scroll の結果 | 直前に鮮度確認。結果が不確かなら `MutationUncertain` で停止（リトライしない） | `Browser.act` |
 | H 確認 | 操作後の状態 | 目的への到達の判断 | Jev の `DONE` は `GOAL_REPORTED`（報告）にすぎず、Claude がページを確認して終わらせる。実験では `verify()` が独立に判定 | Claude / `verify()` |
 | I 見直し | 失敗の理由、ログ | 新しい計画、または断念 | 試行回数に上限（`--max-attempts`、既定 3） | Claude |
-| J 学習 | 実演、ソース、実行ログ | 手順書（`draft`）、サービス情報 | `approved` はユーザーの承認後のみ | Claude + ユーザー |
+| J 記録・手順書化 | 実演、ソース、実行ログ | 手順書（`draft`）、サービス情報 | `approved` はユーザーの承認後のみ | Claude + ユーザー |
 
 横断:
 

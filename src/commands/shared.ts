@@ -175,7 +175,7 @@ export function jevDiagnostic(error: Error): { jev?: Record<string, unknown> } {
   return error instanceof PolicyError && error.diagnostic ? { jev: error.diagnostic } : {};
 }
 
-/** The snapshot's view: learned and Claude's regions, and with flow v2, the whole page. */
+/** The snapshot's view: saved and Claude's regions, and with flow v2, the whole page. */
 export function browserView(state: session.State): ViewChoice | null {
   const view = (state.view ?? null) as ViewChoice | null;
   return state.plan?.flow === "v2" ? { ...(view ?? {}), whole: true } : view;

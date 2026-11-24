@@ -4,7 +4,7 @@ English | [日本語](DEVELOPMENT.ja.md)
 
 This guide is for people changing webhand itself. For installing and using it, see [README.md](README.md). For the experiment design, see [docs/research-plan.md](docs/research-plan.md) (Japanese).
 
-webhand is two things at once: a multi-agent plugin/skill suite (for Claude Code, Antigravity, Codex, and other Agent Skills-compatible agents) whose CLI is distributed through npm, and a research platform. The research tests the hypothesis that an AI, like a person, operates a service more successfully the more it has learned about that service; success is judged only by independent verification, and failed runs are kept. Many rules below exist to keep experiments valid, not only to keep the code clean.
+webhand is two things at once: a multi-agent plugin/skill suite (for Claude Code, Antigravity, Codex, and other Agent Skills-compatible agents) whose CLI is distributed through npm, and a research platform. The research tests the hypothesis that an AI, like a person, operates a service more successfully the more it remembers about how that service works; success is judged only by independent verification, and failed runs are kept. Many rules below exist to keep experiments valid, not only to keep the code clean.
 
 ## Setup
 
@@ -51,7 +51,8 @@ src/                 the CLI (shipped as dist/ after the build)
   browser.ts         Playwright + one CDP session: observation, input, freshness checks
   session.ts         the Chrome that outlives each CLI call, saved profiles, run state
   runbook.ts         service information and runbooks (TOML), views (focus / skip)
-  learn.ts           recording a person's demonstration
+  record.ts          recording a person's demonstration
+  memory.ts          site memory from earlier runs (~/.webhand/memory/)
   workspace.ts       project (.webhand/) and user (~/.webhand/) folders
   metrics.ts         append-only JSONL logs, token totals, git state
   format.ts          quoting and compact JSON for what the agent and Jev read, run stamps
@@ -65,7 +66,7 @@ research/            research-only entry points; not shipped
   tasks.ts           loads research tasks
   smoke.ts           model-free smoke test (npm run smoke)
 assets/              page scripts injected into Chrome (snapshot.js, recorder.js)
-skills/              published skills (webhand, webhand-learn, webhand-extract, webhand-explore, webhand-verify, webhand-regress)
+skills/              published skills (webhand, webhand-teach, webhand-extract, webhand-explore, webhand-verify, webhand-regress)
 hooks.json           Antigravity native plugin PreToolUse hook (--allow-control confirmation)
 hooks/               Claude Code hooks.json and shared ask-allow-control.mjs script
 .claude-plugin/      Claude Code plugin and marketplace manifests

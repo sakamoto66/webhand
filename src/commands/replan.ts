@@ -18,7 +18,7 @@ class ReplanRejected extends Error {}
 /** The page --url names, as the browser opens it. null without --url. */
 function replanUrl(args: Args, state: session.State): string | null {
   if (!args.url) return null;
-  // A path without a scheme is a local file, as the catalog shows a learned page (tasks/fixtures/...).
+  // A path without a scheme is a local file, as the catalog shows a saved page (tasks/fixtures/...).
   let url: string;
   try {
     url = runbook.resolveUrl(args.url);
@@ -67,7 +67,7 @@ function applyReplanPlan(args: Args, state: session.State): void {
   }
 }
 
-/** Replaces Claude's region choice, on top of what was learned (--read alone keeps the regions). Whether it changed. */
+/** Replaces Claude's region choice, on top of the saved service/runbook view (--read alone keeps the regions). Whether it changed. */
 function applyReplanView(args: Args, state: session.State): boolean {
   if (!(args.focus.length || args.skip.length || args.read.length)) return false;
   const regions = args.focus.length || args.skip.length;
@@ -77,7 +77,7 @@ function applyReplanView(args: Args, state: session.State): boolean {
     skip: regions ? args.skip : earlier.skip,
     read: args.read.length ? args.read : earlier.read,
   };
-  state.view = runbook.view(state.view_learned, state.view_claude);
+  state.view = runbook.view(state.view_saved ?? state.view_learned, state.view_claude);
   return true;
 }
 

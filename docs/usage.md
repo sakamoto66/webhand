@@ -56,12 +56,12 @@ Requirements: Node.js 22 or later and Google Chrome (on Linux, or the Windows si
 
 ## Using the skills
 
-There are six skills. In Claude Code they are invoked with `/webhand`, `/webhand-learn`, etc.; in Antigravity and Codex, activate them by skill name or ask in plain words.
+There are six skills. In Claude Code they are invoked with `/webhand`, `/webhand-teach`, etc.; in Antigravity and Codex, activate them by skill name or ask in plain words.
 
 | Skill | Purpose |
 | --- | --- |
 | `/webhand` | Get something done on a web page |
-| `/webhand-learn` | Learn how to use a service and write its service information and runbooks |
+| `/webhand-teach` | Teach webhand how a service works and write its service information and runbooks |
 | `/webhand-regress` | Re-run saved checks and report what newly broke since the last run |
 | `/webhand-explore` | Look for faults in a test environment: console errors, uncaught errors, 5xx, failed requests and dead ends, as candidates with the steps that led to them |
 | `/webhand-extract` | Read data from a page without changing anything (a table, a list, links), with the count and what could not be read |
@@ -71,7 +71,7 @@ There are six skills. In Claude Code they are invoked with `/webhand`, `/webhand
 
 ```mermaid
 flowchart LR
-  L["/webhand-learn<br>learn from a recording, source, or run"] --> D["Draft (draft)"]
+  L["/webhand-teach<br>capture from a recording, source, or run"] --> D["Draft (draft)"]
   D --> T["Try with /webhand<br>--allow-draft"]
   T --> A["You approve<br>status = approved"]
   A --> R["Normal runs with /webhand"]
@@ -86,7 +86,7 @@ flowchart LR
 
 The agent proceeds in this order.
 
-1. **Plan**: Reads the learned services and runbooks with `webhand catalog`, and decides the GOAL, start URL, steps, and input values.
+1. **Plan**: Reads known services and runbooks with `webhand catalog`, and decides the GOAL, start URL, steps, and input values.
    - It asks you for missing values. It never makes up personal data.
    - It never asks for passwords, verification codes, or card numbers; those become `[person]` steps (done by a person).
    - For anything that changes real data (booking, sending, purchasing, deleting), it shows the plan and asks for your agreement before starting.
@@ -97,18 +97,18 @@ The agent proceeds in this order.
    - You are asked for a value (`NEEDS_VALUE`).
    - You are asked to sign in or solve a CAPTCHA in the Chrome window (`NEEDS_HUMAN`). Tell the agent when you are done.
 4. **Replan**: If the GOAL is not reached, the agent writes down why, revises the plan, and tries again (up to 3 attempts by default).
-5. **Finish**: At the end you get `status`, `attempts`, and the log path in one line. `status=done` is the agent's claim, not proof of success; check the result on the reported page. If the run was replanned, ended `blocked`, or ended `done` without a runbook, the agent also tells you that you can learn from it (see below).
+5. **Finish**: At the end you get `status`, `attempts`, and the log path in one line. `status=done` is the agent's claim, not proof of success; check the result on the reported page. If the run was replanned, ended `blocked`, or ended `done` without a runbook, the agent also tells you that you can capture what happened into service information or a runbook (see below).
 
-#### A procedure not learned yet
+#### A procedure with no runbook yet
 
-For a service webhand has learned, you can ask for a procedure that has no runbook yet. The agent writes the steps from the service information, and Jev still receives the service's `facts` and skips its `default = "skip"` regions. What only a runbook holds (`hints`, `done_when`, `focus`) is not available, so the run may need more replans. To reuse the procedure, learn it from the run.
+For a known service, you can ask for a procedure that has no runbook yet. The agent writes the steps from the service information, and Jev still receives the service's `facts` and skips its `default = "skip"` regions. What only a runbook holds (`hints`, `done_when`, `focus`) is not available, so the run may need more replans. To reuse the procedure, capture it from the run with `/webhand-teach`.
 
-### `/webhand-learn` — teach a service
+### `/webhand-teach` — teach a service
 
 ```text
-/webhand-learn --name myservice/search --url https://example.com
-/webhand-learn ./path/to/service-source                      # from source code
-/webhand-learn ~/.webhand/runs/<timestamp>/adhoc.jsonl       # from an earlier run
+/webhand-teach --name myservice/search --url https://example.com
+/webhand-teach ./path/to/service-source                      # from source code
+/webhand-teach ~/.webhand/runs/<timestamp>/adhoc.jsonl       # from an earlier run
 ```
 
 1. **Gather**
@@ -190,14 +190,15 @@ If it is not installed, read `webhand` as `npx -y webhand@0.5`. See `webhand COM
 
 | Command | Owner | What it does |
 | --- | --- | --- |
-| `catalog` | Agent | List learned services, runbooks, and saved profiles |
+| `catalog` | Agent | List known services, runbooks, and saved profiles |
 | `start` | Agent | Record the plan and open the start URL in Chrome |
 | `run` | Jev | Operate toward the GOAL |
 | `replan` | Agent | Revise the plan and start the next attempt |
 | `act` | Agent | Run one operation in place of Jev |
 | `observe` | Agent | Print the current page |
 | `finish` | Agent | Write the log and close Chrome |
-| `learn` | Person | Record a person's demonstration |
+| `record` | Person | Record a person's demonstration (legacy alias: `learn`) |
+| `memory` | Person | Show or forget site memory from earlier runs (legacy alias: `knowledge`) |
 | `profile` | Person | Manage saved profiles |
 
 ### Run flow
@@ -294,10 +295,10 @@ webhand finish --status done|blocked|budget|error|abandoned [--reason R]
 
 Writes the log and closes Chrome. Give the visible evidence (for `done`) or why it ended in `--reason`. `done` is a claim, not proof of success. `run_end.verified` is `null` because there is no independent verifier (independent verification of research tasks happens only through `/webhand-research` in the research repository; see `DEVELOPMENT.md`).
 
-### `learn`
+### `record`
 
 ```bash
-webhand learn --name myservice/search --url https://example.com [--scope project|user] [--session profile:NAME] [--max-minutes 30]
+webhand record --name myservice/search --url https://example.com [--scope project|user] [--session profile:NAME] [--max-minutes 30]
 ```
 
 Opens Chrome and records what a person does. Closing the window ends it; it prints the record's path and where to write the service information and runbook (`WRITE THE RUNBOOK TO ...`).
@@ -329,7 +330,8 @@ Saved profiles are dedicated to webhand. webhand never connects to your everyday
 | --- | --- |
 | `.webhand/runbooks/` (project) | The project's service information and runbooks. Wins over the user's of the same name |
 | `~/.webhand/runbooks/` (user) | Service information and runbooks used in every project |
-| `~/.webhand/runs/` | Run and learning logs (JSONL). Learning logs contain page text; run logs keep value labels, not typed values. With `WEBHAND_SCREENSHOTS=1`, screenshots go beside the run log and show typed values |
+| `~/.webhand/memory/` | Site memory remembered by flow v2 from earlier runs (per host, no typed values; migrates any legacy `~/.webhand/knowledge/` automatically) |
+| `~/.webhand/runs/` | Run and demonstration logs (JSONL). Demonstration records contain page text; run logs keep value labels, not typed values. With `WEBHAND_SCREENSHOTS=1`, screenshots go beside the run log and show typed values |
 | `~/.webhand/state/` | Active sessions and saved profiles |
 
 | Variable | Meaning |
@@ -339,7 +341,7 @@ Saved profiles are dedicated to webhand. webhand never connects to your everyday
 | `WEBHAND_HOME` | The per-user location (default `~/.webhand`) |
 | `WEBHAND_CHROME` | `auto` / `linux` / `windows` |
 | `WEBHAND_FLOW` | Default flow of `start`: `v2` (default) or `v1` |
-| `WEBHAND_KNOWLEDGE` | `0` turns off what flow v2 records about sites and offers to Jev; `WEBHAND_KNOWLEDGE_USE=0` stops only the offering |
+| `WEBHAND_MEMORY` | `0` turns off what flow v2 remembers about sites and offers to Jev; `WEBHAND_MEMORY_USE=0` stops only the offering (legacy `WEBHAND_KNOWLEDGE` / `WEBHAND_KNOWLEDGE_USE` also work) |
 | `WEBHAND_SCREENSHOTS` | `1` saves a PNG of the page at start, after each action, and after a restart beside the run log (`<log>-screenshots/`), for scoring a run outside webhand. Typed values show in the images. Never sent to Jev |
 
 ## Using Windows Chrome from WSL
@@ -363,4 +365,4 @@ Then run `wsl --shutdown` in PowerShell to restart WSL.
 | A draft runbook cannot be used | Add `--allow-draft` only for trials. Normal runs need approval |
 | A needed part of the page is cut from the observation | Check `REGIONS` in the output for `0/N` or `(skip)`, and pass `--focus` / `--skip` |
 | Jev scrolls up and down on a long page, looking for something | Pass `--read` with the kinds the goal needs, such as `--read table` |
-| The same kind of failure keeps happening | Learn from the run with `/webhand-learn <log>` so the lesson reaches the next plan |
+| The same kind of failure keeps happening | Capture what happened into service info or a runbook with `/webhand-teach <log>` so the next plan benefits |

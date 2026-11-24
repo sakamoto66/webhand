@@ -2,7 +2,7 @@
 
 [English](reference.md) | 日本語
 
-[README](../README.ja.md) の詳細です。保存場所、役割分担、セッション、コマンド、学習モード、ページの領域、ログを説明します。
+[README](../README.ja.md) の詳細です。保存場所、役割分担、セッション、コマンド、使い方を教える（記録と手順書）、ページの領域、ログを説明します。
 
 ## 保存場所
 
@@ -10,16 +10,16 @@
 
 | 場所 | パス | 内容 |
 | --- | --- | --- |
-| ユーザー | `~/.webhand/`（`WEBHAND_HOME` で変更可） | `runbooks/`（どのプロジェクトでも使うサービス情報と手順書）、`runs/`（実行と学習の記録。ページ本文を含む。`WEBHAND_SCREENSHOTS=1` のときはスクリーンショットも）、`state/`（実行中のセッションと保存プロファイル） |
+| ユーザー | `~/.webhand/`（`WEBHAND_HOME` で変更可） | `runbooks/`（どのプロジェクトでも使うサービス情報と手順書）、`memory/`（flow v2 が過去の実行から覚えたサイトの操作経験。旧 `knowledge/` がある場合は自動移行）、`runs/`（実行と実演の記録。ページ本文を含む。`WEBHAND_SCREENSHOTS=1` のときはスクリーンショットも）、`state/`（実行中のセッションと保存プロファイル） |
 | プロジェクト | 現在のディレクトリから上にたどって最初に見つかる `.webhand/`（ホームディレクトリで止まる） | `runbooks/`（そのプロジェクトのサービス情報と手順書。git で共有できる） |
 
 - 手順書とサービス情報は、プロジェクト、ユーザーの順に探します。同じ名前ならプロジェクトのものを使います。`catalog` は両方を一覧し、それぞれの出所を `(project)` / `(user)` で示します。
-- `learn` は既定でプロジェクトに書きます（`.webhand/` がなければ git のルート、なければ現在のディレクトリに作ります）。`--scope user` でユーザーに書きます。
+- `record` は既定でプロジェクトに書きます（`.webhand/` がなければ git のルート、なければ現在のディレクトリに作ります）。`--scope user` でユーザーに書きます。
 - ログイン状態と実行記録はユーザー単位にだけ置き、プロジェクトには置きません。API キーはファイルに置かず、環境変数（`TYPESAFE_API_KEY`）からだけ読みます。
 
 ```mermaid
 flowchart LR
-  AG["コーディングエージェント"] -->|"/webhand-learn"| RB["手順書<br>.webhand/runbooks/#lt;service#gt;/<br>または ~/.webhand/runbooks/#lt;service#gt;/"]
+  AG["コーディングエージェント"] -->|"/webhand-teach"| RB["手順書<br>.webhand/runbooks/#lt;service#gt;/<br>または ~/.webhand/runbooks/#lt;service#gt;/"]
   AG -->|"/webhand<br>計画・入力値・確認・見直し"| CLI["CLI webhand"]
   RB -.->|"catalog"| CLI
   CLI -->|"CDP"| CH["Chrome<br>新規 / 保存プロファイル<br>WSL では Windows 側も可"]
@@ -119,7 +119,7 @@ networkingMode=mirrored
 
 - 入れ方: Playwright の `chromium_headless_shell` を、そのブラウザキャッシュ（`~/.cache/ms-playwright`、または `PLAYWRIGHT_BROWSERS_PATH`）から探します。`WEBHAND_HEADLESS_SHELL` にバイナリを指定するか、`chrome-headless-shell` を `PATH` に置いてもかまいません。
 - ページは Chrome と同じ 1120x780 です。Chrome の窓には、ブラウザの UI が 87px 含まれます（`--window-size=1120,867`）。シェルには UI がないので `1120,780` で起動します。窓の大きさを同じにすると、別の要素を読んでしまいます。
-- 窓も保存プロファイルもありません。`--headed`、`[person]` ステップ、`learn`、`profile` は使えず、`--chrome windows` も効きません。Chrome で作ったプロファイルは、シェルのビルドより新しいことがあるためです。
+- 窓も保存プロファイルもありません。`--headed`、`[person]` ステップ、`record`、`profile` は使えず、`--chrome windows` も効きません。Chrome で作ったプロファイルは、シェルのビルドより新しいことがあるためです。
 - 窓も保存プロファイルも要らない実行では、これが既定です（`--engine auto`。既定。`WEBHAND_ENGINE` でも指定できます）。窓（`--headed`）、保存プロファイル、`--chrome windows` のときは Chrome のままで、シェルが入っていないときも、黙って Chrome を使います。`--engine chrome` なら必ず Chrome です。どちらで動いたかは `SESSION:` の行に出ます。
 
 ## Lightpanda
@@ -128,7 +128,7 @@ networkingMode=mirrored
 
 制約:
 
-- 保存プロファイルはありません（`--session new` のみ）。画面もないため、`--headed`、`[person]` ステップ、`learn`、`profile` は使えません。
+- 保存プロファイルはありません（`--session new` のみ）。画面もないため、`--headed`、`[person]` ステップ、`record`、`profile` は使えません。
 - `file:` の URL は開けません（ページは http で配信します）。2つ目のタブも開けません。`target="_blank"` のリンクや `window.open` は何も起きず、エラーにもならず、ページはそのままです。そのステップの後に、実行ログへ `window_ignored` イベント（ステップと URL）を残すので、「何も起きなかったクリック」を、拒否されたものと区別できます。Jev に新しい選択肢は出しません。
 - レイアウトがないため、要素の位置は模擬で、スクリーンショットはプレースホルダーです。Jev に見せる内容が Chrome と違うので、Chrome との比較は別の実験として扱います。
 - `lightpanda` が `PATH` にある必要があります。
@@ -139,7 +139,7 @@ networkingMode=mirrored
 
 - 入れ方: リリースのアーカイブを展開し（`obscura` と `obscura-worker` を同じ場所に置く）、`WEBHAND_OBSCURA` に `obscura` のパスを設定するか、`PATH` に置きます。
 - Obscura は既定で、ループバックとプライベートアドレスを拒否します（SSRF 対策）。ローカルのページを使うときだけ `WEBHAND_OBSCURA_ALLOW_PRIVATE=1` を設定します。実在のサイトでは設定しません。
-- 制約は Lightpanda と同じです。保存プロファイルも窓もないので、`--headed`、`[person]` ステップ、`learn`、`profile` は使えません。
+- 制約は Lightpanda と同じです。保存プロファイルも窓もないので、`--headed`、`[person]` ステップ、`record`、`profile` は使えません。
 - 新しいウィンドウ: `window.open` は何も開かず、Lightpanda と同じく `window_ignored` として記録します。`target="_blank"` のリンクは、新しいウィンドウではなく、同じタブでリンク先を読み込みます（ページが変わるので、`window_ignored` は出ません）。
 - タブ: Obscura は複数のページを持ち、webhand はそれらを切り替えられます（`TAB_n`）。ただし、ページの操作で2つ目のタブが開くことはない（上記）ので、実際には1つです。`Page.bringToFront` は未実装で、webhand は、それがなくても切り替えます。
 - `<body>` の直下にある inline の要素（段落、ブロック、flex の中でないもの）は、大きさが 0 になり、Jev には出ません。ブロックの中にあれば出ます。
@@ -151,7 +151,7 @@ networkingMode=mirrored
 
 - 環境変数 `CLOUDFLARE_ACCOUNT_ID` と `CLOUDFLARE_API_TOKEN`（権限 "Browser Rendering - Edit"）を設定します。環境変数からだけ読み、セッション状態には保存しません。
 - **実行で開いたページは Cloudflare に送られます。** `--auth` を付けると、保存したログインも Browser Run のセッションに注入されます。`start` がそう表示します。実行前にユーザーへ伝えてください。
-- 保存プロファイルは使えず（`--session new` のみ）、窓もありません（`--headed`、`[person]` ステップ、`learn`、`profile` は拒否）。`--auth` は使えます。
+- 保存プロファイルは使えず（`--session new` のみ）、窓もありません（`--headed`、`[person]` ステップ、`record`、`profile` は拒否）。`--auth` は使えます。
 - コマンドが 60 秒来ないとセッションは閉じます。`keep_alive` で延ばせ、webhand は最長の 20 分を求めます。セッションが消えていれば次のコマンドは失敗します（ブラウザへの変更操作はリトライしません）。`start` からやり直してください。
 - 上限は Cloudflare のプランによります（Workers Free: 同時 3 ブラウザ、1 日 10 分。Paid: 同時 200）。Chrome との結果の比較はまだしていません。別の実験として扱ってください。
 - `--engine kitesurf` は、同じ API で Cloudflare のもう一つのブラウザ Kitesurf を使います。エージェント向けのステートレスなブラウザです（ベータ。アカウントごとの上限の範囲で無料。Chromium ではないので、ページの読み取りが違うことがあります）。上記はすべて当てはまりますが、一つだけ違います。Cloudflare は `keep_alive` との併用を認めないので、コマンドが 60 秒来ないとセッションが閉じます。コマンドの間を空けすぎないか、`browser-run` を使ってください。確認したのは、例のページ、フォーム送信、`--auth`、スクリーンショットです。新しいウィンドウを開くリンク（`target=_blank`）を押すと、約 3 秒後にセッションが終わってコマンドが失敗することがあります（3 回中 2 回。残りの 1 回は新しいタブに切り替わった）。2つ目のタブに頼らないでください。また、作った直後のセッションがすでに閉じている（`410 Gone`）ことが 2 回ありました。Kitesurf はまだベータなので、`start` をやり直す必要があるかもしれません。原因は調べていません。動画、WebGL、ボット対策のチャレンジ、長い、ログイン済みのセッションには向きません（Cloudflare の説明）。
@@ -162,7 +162,7 @@ networkingMode=mirrored
 
 | コマンド | 担当 | 内容 |
 | --- | --- | --- |
-| `webhand catalog` | エージェント | 学習済みのサービス、手順書、保存プロファイルを一覧する |
+| `webhand catalog` | エージェント | 覚えたサービス情報、手順書、保存プロファイルを一覧する |
 | `webhand start --goal G --url U --step S ... --value L=V ... [--file L=PATH ...] [--download-dir DIR] [--har PATH] --session ...` | エージェント | 計画を記録し、Chrome で開始 URL を開く |
 | `webhand run` | Jev | GOAL まで操作する |
 | `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | エージェント | 計画を見直して、次の試行を始める。開始 URL から（`--restart`）、または別のページから（`--url`） |
@@ -173,10 +173,10 @@ networkingMode=mirrored
 | `webhand check --saved service/name:ID [--param K=V] [--read] [--production] [--allow-draft]` | エージェント | 保存した確認（`.webhand/checks/<service>/<name>.toml`）の期待で今のページを照合する。期待はここでは変えられない。`draft` は（`--allow-draft` がなければ）拒否し、`--production` では `env` が `read-only` でない確認を拒否する。実行ログに `check_run`（確認、id、digest、判定）を残す。`MANUAL` はエージェントが読んで判定する |
 | `webhand check-last service/name` | エージェント | 保存した確認ごとの直前の判定と digest を、実行ログから出す（読み取り専用）。確認の内容が変わっていれば、そう言う |
 | `webhand finish --status STATUS` | エージェント | 独立検証、ログ記録、Chrome の終了 |
-| `webhand learn --name NAME --url URL [--scope project\|user]` | 人 | 操作を記録する |
+| `webhand record --name NAME --url URL [--scope project\|user]` | 人 | 操作を記録する（旧名 `learn` も互換エイリアスとして利用可） |
 | `webhand profile login/list/delete` | 人 | 保存プロファイルを管理する |
 | `webhand auth save/list/delete NAME` | エージェント | セッションのログインを保存し、`--auth NAME` で新しいセッションを始められるようにする |
-| `webhand knowledge list/show HOST/clear [HOST]` | 人 | webhand が自分の実行から学んだサイトの知識を表示・削除する（flow v2） |
+| `webhand memory list/show HOST/clear [HOST]` | 人 | webhand が過去の実行から覚えたサイトの操作経験を表示・削除する（flow v2。旧名 `knowledge` も互換エイリアスとして利用可） |
 
 手順の先頭に `[person]` を付けると、人が行う手順になります（`--headed` が必須です）。`start` と `replan` の `--focus REGION` / `--skip REGION` で、観測する領域を選べます（下の「ページの領域」）。`--read KIND` で、画面の外の内容を足せます（下の「画面の外を読む」）。`--runbook NAME --param k=v` を指定すると、手順書の GOAL、開始 URL、手順が既定値になり、params は入力値として Jev に渡されます。
 
@@ -194,9 +194,9 @@ networkingMode=mirrored
 | ページの状態 | `PAGE:` の行（`blocked`、`login`、`error` など）。対象が webhand に見えない部分（canvas、プラグイン）にあるときは止める | 出さない |
 | 過去の実行 | 各ページ形でのクリックと選択の結果を記録し、同じ種類のページで、`done` で終わった実行の操作を（最大5件）Jev に示す | 使わない |
 
-v2 が記録するのは、`~/.webhand/knowledge/<host>.json` に置く、ページの種類（ID とクエリ値を除いたアドレス）と、そこで試した操作の種類とラベルだけです。入力した文、値、個人情報に見えるもの、リスト項目の中のコントロール（ラベルがページの内容）は残しません。`WEBHAND_KNOWLEDGE=0` で記録と提示を止め、`WEBHAND_KNOWLEDGE_USE=0` で Jev への提示だけを止め、`webhand knowledge clear` で消せます。
+v2 が記憶するのは、`~/.webhand/memory/<host>.json` に置く、ページの種類（ID とクエリ値を除いたアドレス）と、そこで試した操作の種類とラベルだけです（旧 `~/.webhand/knowledge/` がある場合は初回アクセス時に自動で移行します）。入力した文、値、個人情報に見えるもの、リスト項目の中のコントロール（ラベルがページの内容）は残しません。`WEBHAND_MEMORY=0` で記録と提示を止め、`WEBHAND_MEMORY_USE=0` で Jev への提示だけを止め、`webhand memory clear` で消せます（旧名 `WEBHAND_KNOWLEDGE` / `WEBHAND_KNOWLEDGE_USE` も互換で有効）。
 
-## 学習モード
+## 使い方を教える（記録と手順書）
 
 人の操作、サービスのソースコード、または過去の実行ログから、次の2種類のファイルを作ります。
 
@@ -206,24 +206,24 @@ v2 が記録するのは、`~/.webhand/knowledge/<host>.json` に置く、ペー
 | `checks/<service>/<name>.toml` | 保存した受け入れ確認（`status` は draft/approved、`env` は test/read-only、params、確認ごとの steps・`expect`・`manual`・`depends_on`）。実行では書き換えない。[design-regression.md](design-regression.md) |
 | `runbooks/<service>/<name>.toml` | 手順書（goal、params、steps、hints、done_when、focus、skip） | エージェントの計画の下敷き。手順と hints は Jev にも渡す |
 
-どちらも、プロジェクトの `.webhand/` かユーザーの `~/.webhand/` に置きます（「保存場所」）。`learn` は書き込み先を `WRITE THE RUNBOOK TO ...` として表示します。`start_url` にローカルファイルの相対パスを書くと、その `.webhand/` を含むディレクトリからのパスになります。
+どちらも、プロジェクトの `.webhand/` かユーザーの `~/.webhand/` に置きます（「保存場所」）。`record` は書き込み先を `WRITE THE RUNBOOK TO ...` として表示します。`start_url` にローカルファイルの相対パスを書くと、その `.webhand/` を含むディレクトリからのパスになります。
 
 ```text
-/webhand-learn --name myservice/search --url https://example.com
+/webhand-teach --name myservice/search --url https://example.com
 ```
 
-1. `webhand learn` が Chrome を開き、ユーザーの操作を記録します。ウィンドウを閉じると終了します。ログインした状態で操作を見せる場合は、`--session profile:NAME` を付けます。バックグラウンドのジョブを止めても（SIGTERM、または npx の終了）、記録を保存して Chrome を閉じます。
+1. `webhand record` が Chrome を開き、ユーザーの操作を記録します。ウィンドウを閉じると終了します。ログインした状態で操作を見せる場合は、`--session profile:NAME` を付けます。バックグラウンドのジョブを止めても（SIGTERM、または npx の終了）、記録を保存して Chrome を閉じます。
 2. エージェントが記録またはソースコードから、サービス情報と手順書の下書きを書きます。
 3. `--runbook NAME --param k=v --allow-draft` で試行します。
 4. ユーザーが内容を確認し、`status = "approved"` にします。
 
 手順書は機械的に再生しません。
 
-`sources` は任意の欄で、webhand は読みません。書くのは、誰でもたどれる参照（`code:<パス>@<commit>` など）だけです。実演、実行、試行は書きません。それらのログはユーザー側の `runs/` にしかないためです。実行ログには手順書の `digest` が残る（`run_start` と `run_end`）ので、ある版の手順書を使った実行はログから探せます。ファイルを変えるのは、学習した内容が変わるときと承認するときだけで、試行を記録するためには変えません。何を学んだかはコミットメッセージに書きます。
+`sources` は任意の欄で、webhand は読みません。書くのは、誰でもたどれる参照（`code:<パス>@<commit>` など）だけです。実演、実行、試行は書きません。それらのログはユーザー側の `runs/` にしかないためです。実行ログには手順書の `digest` が残る（`run_start` と `run_end`）ので、ある版の手順書を使った実行はログから探せます。ファイルを変えるのは、記録したサービス情報や手順書の内容が変わるときと承認するときだけで、試行を記録するためには変えません。何を変えたかはコミットメッセージに書きます。
 
-### まだ学習していない手順
+### まだ手順書のない手順
 
-学習済みのサービスであれば、手順書のない手順も実行できます。エージェントが catalog から GOAL、開始 URL（サービスのページ一覧から選ぶ）、手順（`--step`）を書きます。`--runbook` がなくても、`--service SERVICE` でサービス情報が Jev に渡ります。
+すでに覚えているサービスであれば、手順書のない手順も実行できます。エージェントが catalog から GOAL、開始 URL（サービスのページ一覧から選ぶ）、手順（`--step`）を書きます。`--runbook` がなくても、`--service SERVICE` でサービス情報が Jev に渡ります。
 
 ```text
 webhand start --goal "..." --url "..." --step "..." --service myservice --session new
@@ -231,14 +231,14 @@ webhand start --goal "..." --url "..." --step "..." --service myservice --sessio
 
 - そのまま効くもの: サービスの `facts`、`default = "skip"` の領域。
 - 使えないもの: 手順書だけが持つ `hints`、`done_when`、`focus`。その分エージェントの計画に頼るため、計画の見直しが増えることがあります。
-- 次回も使うなら、その実行から学習させます（次の節）。`draft` の手順書になります。
+- 次回も使うなら、その実行の経験から手順書を作らせます（次の節）。`draft` の手順書になります。
 
-### 実行から学ぶ
+### 実行の経験から覚える
 
-`/webhand` の実行だけでは、学習済みの内容は変わりません。計画を見直した、`blocked` で終わった、手順書なしで `done` になった実行では、エージェントがログの場所を伝えます。そのログから学習させられます。
+`/webhand` の実行だけでは、保存済みのサービス情報や手順書は変わりません。計画を見直した、`blocked` で終わった、手順書なしで `done` になった実行では、エージェントがログの場所を伝えます。そのログから手順書やサービス情報に反映できます。
 
 ```text
-/webhand-learn ~/.webhand/runs/<timestamp>/adhoc.jsonl
+/webhand-teach ~/.webhand/runs/<timestamp>/adhoc.jsonl
 ```
 
 - エージェントは、自分が書いた見直しの理由（`attempt_end`）、`run` が止まった理由（`escalation`）、成功した試行で操作した要素と領域（`step`、`page`）を読みます。
@@ -285,7 +285,7 @@ focus = ["form:宿泊予約"]
 skip = ["header", "footer"]
 ```
 
-学習の記録では、`page` イベントに領域の要約（キーと件数だけ）、`action` イベントに対象の領域キーが入ります。秘密に見える名前の段は `form:<redacted>` になります。
+実演の記録では、`page` イベントに領域の要約（キーと件数だけ）、`action` イベントに対象の領域キーが入ります。秘密に見える名前の段は `form:<redacted>` になります。
 
 `verify()` のないサービスでは `verified` は `null` です。手順書の `done_when` はエージェントの確認材料で、成功の証拠にはなりません。
 

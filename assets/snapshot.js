@@ -1,5 +1,5 @@
-// view = {focus: [...], skip: [...], read: [...], whole: true}: region patterns Claude chose from what was
-// learned, the kinds of content to read beyond the viewport, and (v2) whether elements beyond the viewport are
+// view = {focus: [...], skip: [...], read: [...], whole: true}: region patterns chosen from saved service/runbook
+// defaults and the plan, the kinds of content to read beyond the viewport, and (v2) whether elements beyond the viewport are
 // offered with their own operations. Empty: DOM order, viewport only.
 (view => {
   if (!document.body) return null;

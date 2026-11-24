@@ -89,7 +89,7 @@ export function logOnce(path: string, type: string, fields: Record<string, unkno
   }
 }
 
-/** A URL for the run log: query values and a hash that holds values are hidden, as in a learn record. */
+/** A URL for the run log: query values and a hash that holds values are hidden, as in a recorded demonstration. */
 export function safeUrl(url: unknown): string | null {
   if (typeof url !== "string") return null;
   try {

@@ -75,7 +75,7 @@ test("Jev runs to the goal in one call and verification passes", async () => {
   expect(end.attempts).toBe(1);
   expect(end.providers.typesafe.calls).toBe(6);
   expect(end.handoffs).toBeGreaterThan(0);
-  // The run log keeps what learning needs, without the typed text.
+  // The run log keeps what updating runbooks from a run needs, without the typed text.
   const steps = events().filter((e) => e.type === "step");
   expect(steps[0]).toMatchObject({ value: "Destination", text_chars: 6 });
   expect("text" in steps[0]).toBe(false);
@@ -395,7 +395,7 @@ test("the research wrapper passes other commands through", async () => {
   expect(events().at(-1).verified).toBeNull();
 });
 
-test("catalog lists learned services and procedures", async () => {
+test("catalog lists known services and procedures", async () => {
   const { code, out } = await cli("catalog", "--chrome", "linux");
   expect(code).toBe(OK);
   expect(out).toContain("SERVICE hotel-site");

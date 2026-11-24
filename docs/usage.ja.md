@@ -61,7 +61,7 @@ webhand は、コーディングエージェント（Claude Code・Antigravity�
 | スキル | 用途 |
 | --- | --- |
 | `/webhand` | Web ページで用事を済ませる |
-| `/webhand-learn` | サービスの使い方を学習し、サービス情報と手順書を作る |
+| `/webhand-teach` | サービスの使い方を教え、サービス情報と手順書を作る |
 | `/webhand-regress` | 保存した受け入れ確認を再実行し、前回から新たに壊れた項目を報告する |
 | `/webhand-explore` | テスト環境で不具合を探す。コンソールエラー、未処理エラー、5xx、失敗したリクエスト、行き止まりを、そこへ至った手順つきの候補として返す |
 | `/webhand-extract` | ページを変更せずにデータ（表、一覧、リンク）を読み取り、件数と読めなかった部分を添えて返す |
@@ -71,7 +71,7 @@ webhand は、コーディングエージェント（Claude Code・Antigravity�
 
 ```mermaid
 flowchart LR
-  L["/webhand-learn<br>記録、ソース、実行ログから学習"] --> D["下書き（draft）"]
+  L["/webhand-teach<br>記録、ソース、実行ログから手順書を作る"] --> D["下書き（draft）"]
   D --> T["/webhand で試行<br>--allow-draft"]
   T --> A["ユーザーが承認<br>status = approved"]
   A --> R["/webhand で通常実行"]
@@ -86,7 +86,7 @@ flowchart LR
 
 エージェントは次の順に進めます。
 
-1. **計画**: `webhand catalog` で学習済みのサービスと手順書を読み、GOAL、開始 URL、手順、入力値を決めます。
+1. **計画**: `webhand catalog` で覚えたサービス情報と手順書を読み、GOAL、開始 URL、手順、入力値を決めます。
    - 足りない値はユーザーに質問します。個人情報は作りません。
    - パスワード、認証コード、カード番号は聞かず、`[person]`（人が行う手順）にします。
    - 予約、送信、購入、削除など実データを変える用事は、開始前に計画を見せて同意を取ります。
@@ -97,18 +97,18 @@ flowchart LR
    - 値を聞かれる（`NEEDS_VALUE`）
    - Chrome のウィンドウでログインや CAPTCHA を頼まれる（`NEEDS_HUMAN`）。終わったらエージェントに伝えます。
 4. **見直し**: GOAL に届かなければ、エージェントが原因を書いて計画を見直し、再挑戦します（既定で最大3回）。
-5. **終了**: 最後に `status`、`attempts`、ログのパスが1行で報告されます。`status=done` はエージェントの申告で、成功の証拠ではありません。結果は報告されたページで確かめてください。計画を見直した、`blocked` で終わった、手順書なしで `done` になった実行では、その実行から学習できることも伝えられます（次の節）。
+5. **終了**: 最後に `status`、`attempts`、ログのパスが1行で報告されます。`status=done` はエージェントの申告で、成功の証拠ではありません。結果は報告されたページで確かめてください。計画を見直した、`blocked` で終わった、手順書なしで `done` になった実行では、その実行の経験から手順書やサービス情報に反映できることも伝えられます（次の節）。
 
-#### まだ学習していない手順
+#### まだ手順書のない手順
 
-学習済みのサービスであれば、手順書のない手順も頼めます。エージェントがサービス情報から手順を書き、Jev にはサービスの `facts` が渡り、`default = "skip"` の領域も外されます。手順書だけが持つ `hints`、`done_when`、`focus` は使えないため、計画の見直しが増えることがあります。次回も使うなら、その実行から学習させます。
+すでに覚えているサービスであれば、手順書のない手順も頼めます。エージェントがサービス情報から手順を書き、Jev にはサービスの `facts` が渡り、`default = "skip"` の領域も外されます。手順書だけが持つ `hints`、`done_when`、`focus` は使えないため、計画の見直しが増えることがあります。次回も使うなら、その実行の経験から手順書を作らせます。
 
-### `/webhand-learn` — サービスを学習する
+### `/webhand-teach` — サービスの使い方を教える
 
 ```text
-/webhand-learn --name myservice/search --url https://example.com
-/webhand-learn ./path/to/service-source                  # ソースコードから学習
-/webhand-learn ~/.webhand/runs/<timestamp>/adhoc.jsonl   # 過去の実行から学習
+/webhand-teach --name myservice/search --url https://example.com
+/webhand-teach ./path/to/service-source                  # ソースコードからまとめる
+/webhand-teach ~/.webhand/runs/<timestamp>/adhoc.jsonl   # 過去の実行から覚える
 ```
 
 1. **集める**
@@ -190,14 +190,15 @@ Jev はデータのあるページまで進めるだけ（検索、絞り込み�
 
 | コマンド | 担当 | 内容 |
 | --- | --- | --- |
-| `catalog` | エージェント | 学習済みのサービス、手順書、保存プロファイルを一覧する |
+| `catalog` | エージェント | 覚えたサービス情報、手順書、保存プロファイルを一覧する |
 | `start` | エージェント | 計画を記録し、Chrome で開始 URL を開く |
 | `run` | Jev | GOAL まで操作する |
 | `replan` | エージェント | 計画を見直して、次の試行を始める |
 | `act` | エージェント | Jev の代わりに操作を1つ実行する |
 | `observe` | エージェント | 現在のページを表示する |
 | `finish` | エージェント | ログ記録、Chrome の終了 |
-| `learn` | 人 | 人の操作を記録する |
+| `record` | 人 | 人の操作を記録する（旧名 `learn` も互換エイリアスとして利用可） |
+| `memory` | 人 | 過去の実行で覚えたサイトの記憶を表示・消去する（旧名 `knowledge` も互換エイリアスとして利用可） |
 | `profile` | 人 | 保存プロファイルを管理する |
 
 ### 実行の流れ
@@ -294,10 +295,10 @@ webhand finish --status done|blocked|budget|error|abandoned [--reason R]
 
 ログを書いて Chrome を閉じます。`--reason` には、`done` なら目で確認した証拠を、それ以外なら終えた理由を書きます。`done` は自己申告で、成功の証拠ではありません。`run_end.verified` は独立検証がないため `null` になります（研究用タスクの独立検証は研究用リポジトリの `/webhand-research` でだけ行います。`DEVELOPMENT.ja.md` を参照）。
 
-### `learn`
+### `record`
 
 ```bash
-webhand learn --name myservice/search --url https://example.com [--scope project|user] [--session profile:NAME] [--max-minutes 30]
+webhand record --name myservice/search --url https://example.com [--scope project|user] [--session profile:NAME] [--max-minutes 30]
 ```
 
 Chrome を開いて人の操作を記録します。ウィンドウを閉じると終わり、記録のパスと、サービス情報と手順書の書き込み先（`WRITE THE RUNBOOK TO ...`）を表示します。
@@ -329,7 +330,8 @@ webhand profile delete work
 | --- | --- |
 | `.webhand/runbooks/`（プロジェクト） | プロジェクトのサービス情報と手順書。同じ名前ならユーザー側より優先 |
 | `~/.webhand/runbooks/`（ユーザー） | どのプロジェクトでも使うサービス情報と手順書 |
-| `~/.webhand/runs/` | 実行と学習の記録（JSONL）。学習の記録はページ本文を含む。実行ログには入力値ではなく値のラベルを残す。`WEBHAND_SCREENSHOTS=1` のときは実行ログの隣にスクリーンショットを保存し、入力値も写る |
+| `~/.webhand/memory/` | flow v2 が過去の実行から覚えたサイトの操作経験（ホストごと。入力値は残さない。旧 `~/.webhand/knowledge/` がある場合は自動移行） |
+| `~/.webhand/runs/` | 実行と実演の記録（JSONL）。実演の記録はページ本文を含む。実行ログには入力値ではなく値のラベルを残す。`WEBHAND_SCREENSHOTS=1` のときは実行ログの隣にスクリーンショットを保存し、入力値も写る |
 | `~/.webhand/state/` | 実行中のセッションと保存プロファイル |
 
 | 環境変数 | 内容 |
@@ -339,7 +341,7 @@ webhand profile delete work
 | `WEBHAND_HOME` | ユーザー単位の保存場所（既定は `~/.webhand`） |
 | `WEBHAND_CHROME` | `auto` / `linux` / `windows` |
 | `WEBHAND_FLOW` | `start` の既定の流れ。`v2`（既定）か `v1` |
-| `WEBHAND_KNOWLEDGE` | `0` で、flow v2 がサイトについて記録して Jev に示すことを止める。`WEBHAND_KNOWLEDGE_USE=0` は提示だけを止める |
+| `WEBHAND_MEMORY` | `0` で、flow v2 がサイトの操作経験を覚えて Jev に示すことを止める。`WEBHAND_MEMORY_USE=0` は提示だけを止める（旧名 `WEBHAND_KNOWLEDGE` / `WEBHAND_KNOWLEDGE_USE` も互換で有効） |
 | `WEBHAND_SCREENSHOTS` | `1` にすると、開始時、各操作のあと、開き直したあとのページの PNG を実行ログの隣（`<ログ名>-screenshots/`）に保存する。webhand の外で実行を採点するためのもの。入力した値も画像に写る。Jev には送らない |
 
 ## WSL で Windows 側の Chrome を使う
@@ -363,4 +365,4 @@ networkingMode=mirrored
 | draft の手順書が使えない | 試行のときだけ `--allow-draft` を付ける。通常実行は承認後 |
 | 必要な部分がページの観測から切れている | 出力の `REGIONS` で `0/N` や `(skip)` を確認し、`--focus` / `--skip` を指定する |
 | 長いページで、Jev が何かを探して上下にスクロールし続ける | 目的に要る種類を `--read` で指定する（例: `--read table`） |
-| 同じ種類の失敗が続く | `/webhand-learn <log>` でその実行から学習させ、次の計画に反映する |
+| 同じ種類の失敗が続く | `/webhand-teach <log>` でその実行の経験を手順書やサービス情報に反映する |

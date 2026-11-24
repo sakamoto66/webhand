@@ -1,13 +1,14 @@
 /**
- * What webhand learns about a site from its own runs (v2, stage 3), kept in the user's folder:
- * $WEBHAND_HOME/knowledge/<host>.json. For each kind of page (the address with ids and query values taken out),
+ * What webhand remembers about a site from its own runs (v2, stage 3), kept in the user's folder:
+ * $WEBHAND_HOME/memory/<host>.json. For each kind of page (the address with ids and query values taken out),
  * the operations tried on it (kind and label) and what each did: how often the page changed, and where it went.
  * Only labels of controls that read as plain names are kept, and none from inside a list item (a result, a row,
- * a card: its label is the page's content, such as a name or a title); typed text, values, query values, and anything that
- * looks like personal data never are. Operations from runs that ended done are offered to Jev on the same kind of page (hints()).
+ * a card: its label is the page's content, such as a name or a title); typed text, values, query values, and anything
+ * that looks like personal data never are. Operations from runs that ended done are offered to Jev on the same kind
+ * of page (hints()).
  */
 
-import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { home } from "./workspace.ts";
 
@@ -27,14 +28,38 @@ interface Transition {
   to: Record<string, number>;
 }
 
-interface PageKnowledge {
+interface PageMemory {
   seen: number;
   transitions: Record<string, Transition>;
 }
 
-export interface HostKnowledge {
+export interface HostMemory {
   host: string;
-  pages: Record<string, PageKnowledge>;
+  pages: Record<string, PageMemory>;
+}
+
+/** Whether flow v2 records and offers site memory. Honors legacy WEBHAND_KNOWLEDGE=0 as well. */
+export function memoryEnabled(): boolean {
+  return process.env.WEBHAND_MEMORY !== "0" && process.env.WEBHAND_KNOWLEDGE !== "0";
+}
+
+/** Whether recorded site memory is offered to Jev. Honors legacy WEBHAND_KNOWLEDGE_USE=0 as well. */
+export function memoryUseEnabled(): boolean {
+  return process.env.WEBHAND_MEMORY_USE !== "0" && process.env.WEBHAND_KNOWLEDGE_USE !== "0";
+}
+
+/** Default folder: $WEBHAND_HOME/memory, migrating legacy $WEBHAND_HOME/knowledge on first use. */
+function defaultMemoryDir(): string {
+  const current = join(home(), "memory");
+  const legacy = join(home(), "knowledge");
+  if (!existsSync(current) && existsSync(legacy)) {
+    try {
+      renameSync(legacy, current);
+    } catch {
+      return legacy;
+    }
+  }
+  return current;
 }
 
 /** The kind of page an address is: numbers and ids in the path become :n and :id, query values are dropped. */
@@ -74,13 +99,13 @@ const MAX_HINTS = 5;
 // Entries in a run's history that are not an operation. After a step, an answer or a NOT_VISIBLE choice means the run was stuck there.
 const DEAD_END = new Set(["answer", "missing"]);
 
-export class Knowledge {
+export class SiteMemory {
   private readonly dir: string;
   private readonly use: boolean;
 
-  /** use: whether hints() offers what is known; recording goes on either way. */
-  constructor(dir: string = join(home(), "knowledge"), use = true) {
-    this.dir = dir;
+  /** use: whether hints() offers what is remembered; recording goes on either way. */
+  constructor(dir?: string, use = true) {
+    this.dir = dir ?? defaultMemoryDir();
     this.use = use;
   }
 
@@ -88,9 +113,9 @@ export class Knowledge {
     return join(this.dir, `${host.replace(/[^a-z0-9.-]/g, "_")}.json`);
   }
 
-  load(host: string): HostKnowledge {
+  load(host: string): HostMemory {
     try {
-      return JSON.parse(readFileSync(this.file(host), "utf8")) as HostKnowledge;
+      return JSON.parse(readFileSync(this.file(host), "utf8")) as HostMemory;
     } catch {
       return { host, pages: {} };
     }
@@ -111,11 +136,11 @@ export class Knowledge {
     const from = pageShape(step.from);
     if (!label || !from) return false;
     const to = pageShape(step.to);
-    const knowledge = this.load(from.host);
-    const keys = Object.keys(knowledge.pages);
-    if (!knowledge.pages[from.shape] && keys.length >= MAX_PAGES) return false;
-    knowledge.pages[from.shape] ??= { seen: 0, transitions: {} };
-    const page = knowledge.pages[from.shape];
+    const memory = this.load(from.host);
+    const keys = Object.keys(memory.pages);
+    if (!memory.pages[from.shape] && keys.length >= MAX_PAGES) return false;
+    memory.pages[from.shape] ??= { seen: 0, transitions: {} };
+    const page = memory.pages[from.shape];
     page.seen += 1;
     const key = `${step.kind}|${label}`;
     if (!page.transitions[key] && Object.keys(page.transitions).length >= MAX_TRANSITIONS) return false;
@@ -129,7 +154,7 @@ export class Knowledge {
     }
     mkdirSync(this.dir, { recursive: true });
     const target = this.file(from.host);
-    writeFileSync(`${target}.tmp`, JSON.stringify(knowledge, null, 1));
+    writeFileSync(`${target}.tmp`, JSON.stringify(memory, null, 1));
     renameSync(`${target}.tmp`, target);
     return true;
   }
@@ -147,19 +172,19 @@ export class Knowledge {
       const from = pageShape(step.url);
       if (!label || !from || !RECORDED_KINDS.has(String(step.kind)) || step.page_changed === false) return;
       if (DEAD_END.has(String(history[i + 1]?.kind))) return;
-      const knowledge = this.load(from.host);
-      const transition = knowledge.pages[from.shape]?.transitions[`${step.kind}|${label}`];
+      const memory = this.load(from.host);
+      const transition = memory.pages[from.shape]?.transitions[`${step.kind}|${label}`];
       const mark = `${from.host}|${from.shape}|${step.kind}|${label}`;
       if (!transition || seen.has(mark)) return;
       seen.add(mark);
       transition.ok = (transition.ok ?? 0) + 1;
       const target = this.file(from.host);
-      writeFileSync(`${target}.tmp`, JSON.stringify(knowledge, null, 1));
+      writeFileSync(`${target}.tmp`, JSON.stringify(memory, null, 1));
       renameSync(`${target}.tmp`, target);
     });
   }
 
-  /** The sites that have knowledge, with how much. */
+  /** The sites that have remembered experience, with how much. */
   hosts(): { host: string; pages: number; operations: number; worked: number }[] {
     let files: string[] = [];
     try {
@@ -168,21 +193,21 @@ export class Knowledge {
       return [];
     }
     return files.sort().map((name) => {
-      const knowledge = JSON.parse(readFileSync(join(this.dir, name), "utf8")) as HostKnowledge;
-      const transitions = Object.values(knowledge.pages).flatMap((page) => Object.values(page.transitions));
+      const memory = JSON.parse(readFileSync(join(this.dir, name), "utf8")) as HostMemory;
+      const transitions = Object.values(memory.pages).flatMap((page) => Object.values(page.transitions));
       return {
-        host: knowledge.host,
-        pages: Object.keys(knowledge.pages).length,
+        host: memory.host,
+        pages: Object.keys(memory.pages).length,
         operations: transitions.length,
         worked: transitions.filter((t) => (t.ok ?? 0) > 0).length,
       };
     });
   }
 
-  /** What is known about a site, as lines a person can read. */
+  /** What is remembered about a site, as lines a person can read. */
   describe(host: string): string[] {
-    const knowledge = this.load(host);
-    return Object.entries(knowledge.pages).flatMap(([shape, page]) => [
+    const memory = this.load(host);
+    return Object.entries(memory.pages).flatMap(([shape, page]) => [
       `${shape} (seen ${page.seen})`,
       ...Object.values(page.transitions).map((t) => {
         const goes = Object.entries(t.to).sort((a, b) => b[1] - a[1])[0]?.[0];
@@ -200,7 +225,7 @@ export class Knowledge {
         rmSync(this.file(name));
         removed += 1;
       } catch {
-        // Nothing was known about it.
+        // Nothing was remembered about it.
       }
     }
     return removed;
