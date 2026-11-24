@@ -79,7 +79,7 @@ Report in one table, then the overall result:
 - **Overall**: `ACCEPT` only when every check is `PASS`. Any `FAIL` makes it `REJECT`. With no `FAIL` but an `INCONCLUSIVE` left, it is `NOT CONFIRMED`, and you say which checks and why. Never round an unconfirmed check up to a pass.
 - Add the log path of each run and the criteria left out because they have no observable form.
 - For a `FAIL`, say whether another run would help: it is the operations list that tells whether the product or the operation is at fault.
-- Do not post to an Issue or PR, or write a file, unless the user asks: that sends content outward. Offer it in one line.
+- Do not post to an Issue or PR, or write a file, unless the user asks: that sends content outward. Offer it in one line. When asked for a PR/Issue-ready summary, format it as a self-contained Markdown block with an overall status line (`ACCEPT` / `REJECT` / `NOT CONFIRMED`), the evidence table above, and the run log paths (never including typed personal values).
 
 ## Safety
 

@@ -235,6 +235,7 @@ export async function attachLocal(state: State, url: string | null, view?: ViewC
     view,
     downloadDir: state.download_dir ?? null,
     explore: state.explore ?? null,
+    allowedDomains: state.allowed_domains ?? null,
   });
 }
 

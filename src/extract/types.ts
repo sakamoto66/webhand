@@ -3,7 +3,7 @@
 export const KINDS = ["table", "list", "link", "fields", "text"] as const;
 export type Kind = (typeof KINDS)[number];
 
-export const FORMATS = ["table", "json", "csv"] as const;
+export const FORMATS = ["table", "json", "csv", "markdown"] as const;
 export type Format = (typeof FORMATS)[number];
 
 export const ROWS = ["raw", "data"] as const;

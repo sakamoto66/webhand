@@ -1,0 +1,19 @@
+# Template for an authenticated internal admin or request portal.
+# Replace example.internal with your own hostname before copying to .webhand/runbooks/.
+service = "internal-form"
+description = "Internal request portal: sign in directly in Chrome, fill out a standard request form, and submit."
+base_url = "https://portal.example.internal/"
+allowed_domains = ["portal.example.internal", "sso.example.internal"]
+
+facts = [
+  "Unauthenticated visits redirect to sso.example.internal for sign-in.",
+  "Submitting a request shows a confirmation banner with a request ID.",
+]
+
+[login]
+required = true
+url = "https://portal.example.internal/login"
+
+[[pages]]
+url = "https://portal.example.internal/requests/new"
+purpose = "New request submission form"

@@ -1,0 +1,28 @@
+# Starter service definition for HOTEL PLANISPHERE (public automation practice site; reservations stay in the browser).
+service = "hotel-planisphere"
+description = "Public hotel reservation practice site: fill reservation details, review confirmation, and submit."
+base_url = "https://hotel-example-site.takeyaqa.dev/ja/"
+allowed_domains = ["hotel-example-site.takeyaqa.dev"]
+
+facts = [
+  "Start directly at reserve.html?plan-id=0 for the default plan (お得な特典付きプラン).",
+  "宿泊日 opens a calendar popup; picking a day fills the field and closes the popup.",
+  "メールアドレス appears only after selecting メールでのご連絡 under 確認のご連絡.",
+  "予約内容を確認する opens the confirmation screen; この内容で予約する completes the booking and shows 予約を完了しました.",
+]
+
+[login]
+required = false
+url = "https://hotel-example-site.takeyaqa.dev/ja/login.html"
+
+[[pages]]
+url = "https://hotel-example-site.takeyaqa.dev/ja/plans.html"
+purpose = "List of available hotel plans"
+
+[[pages]]
+url = "https://hotel-example-site.takeyaqa.dev/ja/reserve.html?plan-id=0"
+purpose = "Reservation form for the default plan"
+
+[[pages]]
+url = "https://hotel-example-site.takeyaqa.dev/ja/confirm.html"
+purpose = "Booking review and confirmation page"

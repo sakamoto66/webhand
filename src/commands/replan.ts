@@ -2,6 +2,7 @@ import * as agent from "../agent/index.ts";
 import type { Args } from "../args.ts";
 import { logOnce, safeUrl } from "../core/metrics.ts";
 import type { Value } from "../core/types.ts";
+import { hostAllowed } from "../explore.ts";
 import { describePlan, headline } from "../output.ts";
 import { planText } from "../policies/base.ts";
 import * as runbook from "../storage/runbook/index.ts";
@@ -28,6 +29,9 @@ function replanUrl(args: Args, state: session.State): string | null {
   if (!args.url) return null;
   const resolved = resolveCliUrl(args.url, state.chrome ?? "linux");
   if (!resolved.ok) throw new ReplanRejected(resolved.reason);
+  if (state.allowed_domains?.length && !hostAllowed(resolved.url, state.allowed_domains)) {
+    throw new ReplanRejected(`--url is outside allowed_domains (${state.allowed_domains.join(", ")})`);
+  }
   return resolved.url;
 }
 

@@ -1,9 +1,10 @@
 /** Service information (runbooks/<service>/service.toml). */
 
 import { join } from "node:path";
-import { RunbookError } from "../../core/errors.ts";
+import { ExploreError, RunbookError } from "../../core/errors.ts";
 import { quote, show } from "../../core/format.ts";
 import { type Scope, scopeRoot } from "../../core/workspace.ts";
+import { parseHostList } from "../../explore.ts";
 import { findScopedFile, getField, isBlank, readTomlFile, type TomlDoc, WORD } from "../toml.ts";
 import { patterns, type View } from "./view.ts";
 
@@ -22,6 +23,7 @@ export interface ServiceInfo {
   service: string;
   description: string;
   base_url: string;
+  allowed_domains?: string[];
   login: { required: boolean; url: string | null };
   pages: { url: string; purpose: string; regions: Region[] }[];
   facts: string[];
@@ -67,6 +69,23 @@ export function serviceView(info: ServiceInfo | null): View {
   };
 }
 
+function parseServiceDomains(file: string, raw: unknown): string[] {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) throw new RunbookError(`${file}: allowed_domains must be an array of hosts`);
+  try {
+    return parseHostList(
+      raw.map((item) => {
+        if (typeof item !== "string") throw new RunbookError(`${file}: allowed_domains entries must be strings`);
+        return item;
+      }),
+      `${file}: allowed_domains`,
+    );
+  } catch (error) {
+    if (error instanceof ExploreError) throw new RunbookError(error.message);
+    throw error;
+  }
+}
+
 /** Service information for the agent's plan and Jev's state. null when none is saved. */
 export function loadService(service: string): ServiceInfo | null {
   const found = findScopedFile(RUNBOOK_SUBDIR, join(checkService(service), `${SERVICE_FILE}.toml`));
@@ -76,10 +95,12 @@ export function loadService(service: string): ServiceInfo | null {
   const missing = ["service", "description", "base_url"].filter((key) => isBlank(data[key]));
   if (missing.length) throw new RunbookError(`${file}: missing ${missing.join(", ")}`);
   const login = getField(data, "login", {});
+  const allowedDomains = parseServiceDomains(file, getField(data, "allowed_domains"));
   return {
     service: data.service,
     description: String(data.description).trim(),
     base_url: data.base_url,
+    ...(allowedDomains.length ? { allowed_domains: allowedDomains } : {}),
     login: { required: !isBlank(getField(login, "required")), url: getField(login, "url", null) },
     pages: (getField(data, "pages", []) as TomlDoc[]).map((p) => ({
       url: getField(p, "url", ""),

@@ -1,5 +1,9 @@
+import { realpathSync } from "node:fs";
+import { basename, dirname, relative, resolve } from "node:path";
 import type { Args } from "../args.ts";
+import { writeFileAtomic } from "../core/fs.ts";
 import { logOnce } from "../core/metrics.ts";
+import * as workspace from "../core/workspace.ts";
 import {
   build,
   expression,
@@ -17,6 +21,35 @@ import { CHECK_FAIL, CHECK_INCONCLUSIVE, CliExit, EXTRACT_PARTIAL, OK, print } f
 import { idOption } from "./options.ts";
 import { attach, browserView, requireSession } from "./shared.ts";
 import type { CommandDef } from "./types.ts";
+
+function insideDir(parent: string, child: string): boolean {
+  const rel = relative(parent, child);
+  return rel === "" || (!rel.startsWith("..") && !rel.startsWith("/"));
+}
+
+function resolveOutPath(rawOut: string): string {
+  const target = resolve(rawOut);
+  const cwd = realpathSync(process.cwd());
+  if (!insideDir(cwd, target)) {
+    throw new CliExit("--out must be a path under the current directory");
+  }
+  const parent = dirname(target);
+  try {
+    if (!insideDir(cwd, realpathSync(parent))) {
+      throw new CliExit("--out must be a path under the current directory");
+    }
+  } catch (error) {
+    if (error instanceof CliExit) throw error;
+    // Parent folder does not exist yet; checked via lexical containment above.
+  }
+  if (insideDir(resolve(workspace.stateHome()), target)) {
+    throw new CliExit("--out cannot write inside webhand's saved state");
+  }
+  if (basename(target).startsWith(".env")) {
+    throw new CliExit("--out cannot overwrite an .env file");
+  }
+  return target;
+}
 
 /**
  * Reads the data of the page as it is now. Read-only: it never acts, scrolls or asks a model, so what it prints is
@@ -39,6 +72,7 @@ async function commandExtract(args: Args): Promise<number> {
     : null;
   if (args.columns && !columns?.length)
     throw new CliExit("--columns needs column names, such as --columns 'Plan,Price'");
+  const outPath = args.out ? resolveOutPath(String(args.out)) : null;
   const state = requireSession();
   const browser = await attach(state, null, browserView(state));
   let raw: Raw;
@@ -54,7 +88,13 @@ async function commandExtract(args: Args): Promise<number> {
     within,
     rows: (args.rows ?? "raw") as Rows,
   });
-  print(format(extraction, style));
+  const rendered = format(extraction, style);
+  if (outPath) {
+    writeFileAtomic(outPath, `${rendered}\n`);
+    print(`SAVED ${outPath} (format=${style}, count=${extraction.count}, result=${extraction.result})`);
+  } else {
+    print(rendered);
+  }
   // Counts and sources only: the values themselves, which may be personal, are not written to the log.
   logOnce(state.log, "extract", {
     kind,
@@ -103,7 +143,13 @@ export const extractCommand: CommandDef = {
         type: "string",
         default: "table",
         choices: [...FORMATS],
-        help: "table (default), json or csv",
+        help: "table (default), json, csv, or markdown",
+      },
+      {
+        name: "out",
+        type: "string",
+        metavar: "PATH",
+        help: "Write the formatted output to a file under the current directory instead of stdout",
       },
     ],
     positionals: [{ name: "kind", choices: [...KINDS] }],
