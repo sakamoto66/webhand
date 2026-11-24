@@ -21,7 +21,7 @@ agy plugin install .           # Antigravity: このチェックアウトをロ�
 
 Codex CLI では、このディレクトリをローカルマーケットプレイスとして追加（`codex plugin marketplace add .`）するか、チェックアウト内の `.agents/skills/` を直接使います。なお、このマルチエージェントリポジトリでは `agy plugin validate . --strict` が 2 件の想定内警告（ルートの `AGENTS.md` は開発者向け規則、`hooks/hooks.json` は Claude Code 用で Antigravity はルート `hooks.json` を読む）を出します。
 
-このリポジトリ内で `npx -y webhand@0.5` を実行すると `webhand: not found` になります（npm がこのリポジトリ自体を `webhand@0.5.0` として解決し、ローカル `node_modules/.bin` を探すため）。`npm link`（スキルが `webhand` を直接呼ぶ）か `npx -y webhand@latest` を使ってください。
+このリポジトリ内で `npx -y webhand@0.6` を実行すると `webhand: not found` になります（npm がこのリポジトリ自体を `webhand@0.6.0` として解決し、ローカル `node_modules/.bin` を探すため）。`npm link`（スキルが `webhand` を直接呼ぶ）か `npx -y webhand@latest` を使ってください。
 
 実行ログをリポジトリ内に残したいときは、シェルの環境変数 `WEBHAND_HOME` にこのリポジトリの絶対パスを設定するか、Claude Code の `.claude/settings.local.json`（コミットしない）に書きます：
 
@@ -177,7 +177,7 @@ npm run smoke -- --task hotel_filter     # モデルなしの SCRIPT スモー�
 ## リリース
 
 1. `package.json`・`.claude-plugin/plugin.json`・`.antigravity-plugin/plugin.json`・`.codex-plugin/plugin.json` のバージョンを揃えて上げます（`tests/manifests.test.ts` が一致を検証）。
-2. メジャーまたはマイナーバージョンが変わる場合は、`skills/*/SKILL.md`・`README*.md`・`docs/usage*.md`・`docs/reference*.md`・`examples/runbooks/README.md` の `webhand@0.5` 表記を更新します。
+2. メジャーまたはマイナーバージョンが変わる場合は、`skills/*/SKILL.md`・`README*.md`・`docs/usage*.md`・`docs/reference*.md`・`examples/runbooks/README.md` の `webhand@0.6` 表記を更新します。
 3. `main` へマージしたあと、`main` 上のタグ `vX.Y.Z` で GitHub Release を公開します。`.github/workflows/release.yml` がタグと全マニフェストの一致・`main` ブランチであることを確認し、テスト実行後に npm trusted publishing で公開します（ローカルから `npm publish` しないでください）。`prepublishOnly` が `npm run check && npm run build && npm run check:package` を実行し、配布物が `dist/`・`assets/`・ライセンス・README だけであることを保証します。
 
 ## サードパーティのコード
