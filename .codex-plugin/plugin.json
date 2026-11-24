@@ -1,7 +1,7 @@
 {
   "name": "webhand",
   "version": "0.5.0",
-  "description": "Your coding agent plans, asks, checks, and replans; Jev operates the browser toward the goal. Remembers how services work from demonstrations, source code, or past runs.",
+  "description": "Delegate everyday browser work to your coding agent — safely, verifiably, and with memory of how your services work. Your coding agent plans and verifies; Jev operates the browser.",
   "author": {
     "name": "sakamoto66"
   },
@@ -11,7 +11,7 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "webhand",
-    "shortDescription": "Remember how a web service works and operate it with Jev",
+    "shortDescription": "Delegate browser work, extraction, and QA checks safely from your coding agent",
     "category": "Browser Automation",
     "capabilities": ["Interactive", "Read", "Write"]
   }
