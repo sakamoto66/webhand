@@ -4,8 +4,6 @@
     "src/bin.ts",
     "src/daemon.ts",
     "src/har-daemon.ts",
-    "research/webhand.ts",
-    "research/webarena.ts",
     "research/engines.ts",
     "research/shared.ts",
     "tasks/*.ts",

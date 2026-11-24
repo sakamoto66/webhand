@@ -4,7 +4,7 @@
  * success in experiments.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Browser } from "../src/browser.ts";
@@ -23,6 +23,16 @@ export interface Task {
 /** The task cannot be loaded. */
 export class TaskError extends Error {
   override name = "TaskError";
+}
+
+/** Lists all task names under `tasks/*.ts`, sorted alphabetically. */
+export function listTasks(root = process.cwd()): string[] {
+  const dir = join(root, "tasks");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((file) => file.endsWith(".ts"))
+    .map((file) => file.slice(0, -3))
+    .sort();
 }
 
 export async function loadTask(name: string, root = process.cwd()): Promise<Task> {
