@@ -189,10 +189,11 @@ flowchart LR
 
 | 文書 | 内容 |
 | --- | --- |
-| [利用ガイド](docs/usage.ja.md) | 6 つのスキルと CLI の使い方、よくあるつまずき |
+| [利用ガイド](docs/usage.ja.md) | 6 つのスキル・バッチ実行・ログイン選択・つまずき対処の実践ガイド |
 | [スターター手順書](examples/runbooks/README.md) | コピーして使える `service.toml`（`allowed_domains` 付き）・手順書テンプレート・バッチ用サンプル CSV |
-| [リファレンス](docs/reference.ja.md) | 保存場所、役割分担と結果、セッション、コマンド、使い方を教える（記録と手順書）、ページの領域、ログ |
-| [DEVELOPMENT.ja.md](DEVELOPMENT.ja.md) | 開発に参加する人向け。コード構成、規則、テスト、研究、リリース手順 |
+| [リファレンス](docs/reference.ja.md) | 全 18 CLI コマンド・終了コード・環境変数・TOML 仕様・エンジン・ログの完全リファレンス |
+| [ドキュメント一覧](docs/README.md) | 設計記録（`docs/design/`）・研究記録（`docs/research/`）を含む全体の案内図 |
+| [DEVELOPMENT.ja.md](DEVELOPMENT.ja.md) | 開発に参加する人向け。モジュール構成、規則、テスト、研究、リリース手順 |
 
 ---
 

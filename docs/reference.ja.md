@@ -10,8 +10,8 @@
 
 | 場所 | パス | 内容 |
 | --- | --- | --- |
-| ユーザー | `~/.webhand/`（`WEBHAND_HOME` で変更可） | `runbooks/`（どのプロジェクトでも使うサービス情報と手順書）、`memory/`（flow v2 が過去の実行から覚えたサイトの操作経験。旧 `knowledge/` がある場合は自動移行）、`runs/`（実行と実演の記録。ページ本文を含む。`WEBHAND_SCREENSHOTS=1` のときはスクリーンショットも）、`state/`（実行中のセッションと保存プロファイル） |
-| プロジェクト | 現在のディレクトリから上にたどって最初に見つかる `.webhand/`（ホームディレクトリで止まる） | `runbooks/`（そのプロジェクトのサービス情報と手順書。git で共有できる） |
+| ユーザー | `~/.webhand/`（`WEBHAND_HOME` で変更可） | `runbooks/`（個人用のサービス情報・手順書）、`checks/`（個人用の保存確認）、`memory/`（flow v2 のサイト記憶。旧 `knowledge/` は自動移行）、`runs/`（実行と実演の JSONL ログ・任意スクリーンショット）、`state/`（実行中セッション、保存プロファイル、`auth/` 保存ログイン、`batches/` バッチ状態） |
+| プロジェクト | 現在のディレクトリから上にたどって最初に見つかる `.webhand/`（ホームディレクトリで止まる） | `runbooks/`（プロジェクトのサービス情報と手順書。git で共有できる）、`checks/`（プロジェクトの保存確認） |
 
 - 手順書とサービス情報は、プロジェクト、ユーザーの順に探します。同じ名前ならプロジェクトのものを使います。`catalog` は両方を一覧し、それぞれの出所を `(project)` / `(user)` で示します。
 - `record` は既定でプロジェクトに書きます（`.webhand/` がなければ git のルート、なければ現在のディレクトリに作ります）。`--scope user` でユーザーに書きます。
@@ -115,7 +115,7 @@ networkingMode=mirrored
 
 ## ヘッドレスシェル
 
-`--engine headless-shell`（または後述の `auto`）で、Chromium の窓のないビルド `chrome-headless-shell` でセッションを動かします。Chrome と同じエンジンなので（実際のレイアウト、複数タブ、コマンドが終わってもページが残る）、常駐プロセスは要りません。メモリは Chrome の `--headless=new` の約半分です。同じ測定で、1 ページあたり 240〜260 MB 前後に対して、350〜470 MB でした（`docs/research-plan.md`）。
+`--engine headless-shell`（または後述の `auto`）で、Chromium の窓のないビルド `chrome-headless-shell` でセッションを動かします。Chrome と同じエンジンなので（実際のレイアウト、複数タブ、コマンドが終わってもページが残る）、常駐プロセスは要りません。メモリは Chrome の `--headless=new` の約半分です。同じ測定で、1 ページあたり 240〜260 MB 前後に対して、350〜470 MB でした（[research-plan.md](research/research-plan.md)）。
 
 - 入れ方: Playwright の `chromium_headless_shell` を、そのブラウザキャッシュ（`~/.cache/ms-playwright`、または `PLAYWRIGHT_BROWSERS_PATH`）から探します。`WEBHAND_HEADLESS_SHELL` にバイナリを指定するか、`chrome-headless-shell` を `PATH` に置いてもかまいません。
 - ページは Chrome と同じ 1120x780 です。Chrome の窓には、ブラウザの UI が 87px 含まれます（`--window-size=1120,867`）。シェルには UI がないので `1120,780` で起動します。窓の大きさを同じにすると、別の要素を読んでしまいます。
@@ -158,29 +158,67 @@ networkingMode=mirrored
 
 ## コマンド
 
-下の表の `webhand` は、インストールしていなければ `npx -y webhand@0.5` と読み替えてください。`webhand --version` で版を確認できます。
+下の表の `webhand` は、インストールしていなければ `npx -y webhand@0.5` と読み替えてください。`webhand --version` で版を、`webhand COMMAND --help` で各コマンドの全オプションを確認できます。
 
 | コマンド | 担当 | 内容 |
 | --- | --- | --- |
-| `webhand catalog` | エージェント | 覚えたサービス情報、手順書、保存プロファイルを一覧する |
-| `webhand start --goal G --url U --step S ... --value L=V ... [--file L=PATH ...] [--download-dir DIR] [--har PATH] --session ...` | エージェント | 計画を記録し、Chrome で開始 URL を開く |
-| `webhand run` | Jev | GOAL まで操作する |
-| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | エージェント | 計画を見直して、次の試行を始める。開始 URL から（`--restart`）、または別のページから（`--url`） |
-| `webhand answer --note N [--value L=V] [--url URL]` | エージェント | 同じ試行の中で Jev に答える（flow v2 のみ）。履歴と予算は引き継ぐ。計画全体が違うときだけ `replan` を使う |
-| `webhand act OP [TARGET]` | エージェント | Jev の代わりに操作を1つ実行する |
-| `webhand observe` | エージェント | 現在のページを表示する |
-| `webhand check --expect KIND:ARGS ...` | エージェント | 期待を今のページと照合する（読み取り専用、モデルなし）。KIND は `text:S`、`no-text:S`、`field:ラベル=値`、`checked:ラベル=true\|false`、`count:ROLE=N`、`url:/path`、`title:S`。期待ごとに `PASS`/`FAIL`/`INCONCLUSIVE` と観測値の引用を出す。終了コードは 0、6（FAIL あり）、7（FAIL なし、INCONCLUSIVE あり）。ページ全体を見ていないときの否定の結果は `INCONCLUSIVE not_visible`。`--read` はその呼び出しだけページ全体の本文を読む（`replan` 不要、試行を使わない） |
-| `webhand check --saved service/name:ID [--param K=V] [--read] [--production] [--allow-draft]` | エージェント | 保存した確認（`.webhand/checks/<service>/<name>.toml`）の期待で今のページを照合する。期待はここでは変えられない。`draft` は（`--allow-draft` がなければ）拒否し、`--production` では `env` が `read-only` でない確認を拒否する。実行ログに `check_run`（確認、id、digest、判定）を残す。`MANUAL` はエージェントが読んで判定する |
-| `webhand check-last service/name` | エージェント | 保存した確認ごとの直前の判定と digest を、実行ログから出す（読み取り専用）。確認の内容が変わっていれば、そう言う |
-| `webhand finish --status STATUS` | エージェント | 独立検証、ログ記録、Chrome の終了 |
-| `webhand record --name NAME --url URL [--scope project\|user]` | 人 | 操作を記録する（旧名 `learn` も互換エイリアスとして利用可） |
-| `webhand profile login/list/delete` | 人 | 保存プロファイルを管理する |
-| `webhand auth save/list/delete NAME` | エージェント | セッションのログインを保存し、`--auth NAME` で新しいセッションを始められるようにする |
-| `webhand memory list/show HOST/clear [HOST]` | 人 | webhand が過去の実行から覚えたサイトの操作経験を表示・削除する（flow v2。旧名 `knowledge` も互換エイリアスとして利用可） |
+| `webhand catalog [--chrome ...]` | エージェント / 人 | 覚えたサービス情報（`allowed_domains` 含む）、手順書、保存確認、保存プロファイル、実行中セッションを一覧する |
+| `webhand doctor [--chrome ...] [--json]` | 人 / エージェント | 読み取り専用の環境診断。Node.js（>= 22）、`TYPESAFE_API_KEY`（値は非表示）、Chrome/WSL、headless shell、ワークスペース状態を確認する |
+| `webhand start --goal G --url U --step S ... [--runbook NAME --param K=V \| --batch ID [--row N]] [--service S] [--value L=V ...] [--file L=PATH ...] [--download-dir DIR] [--har PATH] [--read-only] [--explore --allow-domain H --max-total-actions N] --session ...` | エージェント | 計画を記録し、選んだブラウザエンジンで開始 URL を開く |
+| `webhand run [--value L=V] [--human-done]` | Jev | GOAL に届くか助けが要るまでページを操作する |
+| `webhand answer --note N [--value L=V] [--file L=PATH] [--url URL]` | エージェント | 同じ試行の中で Jev に答える（flow v2 のみ）。履歴と予算を引き継ぎ、`--url` は `allowed_domains` に従う |
+| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | エージェント | 計画を見直して次の試行を始める。`--url` は `allowed_domains` に従う |
+| `webhand act OP [TARGET]` | エージェント | Jev の代わりに操作を 1 つ実行する（`CLICK`, `TYPE_TEXT`, `SELECT`, `UPLOAD_FILE`, `SCROLL_DOWN`, `SCROLL_UP`, `SCROLL_TO`, `WAIT`, `TAB_n`） |
+| `webhand observe [--read KIND ...]` | エージェント | 操作せずに現在のページを表示する |
+| `webhand check --expect KIND:ARGS ...` | エージェント | 期待を今のページと決定的に照合する（読み取り専用、モデルなし）。`text:`・`no-text:`・`field:`・`checked:`・`count:`・`url:`・`title:`。`--read` はその呼び出しのみ全文を読む |
+| `webhand check --saved service/name:ID [--param K=V] [--read] [--production] [--allow-draft]` | エージェント | `.webhand/checks/<service>/<name>.toml` に固定した期待で照合し、ログに `check_run` を残す |
+| `webhand check-last service/name` | エージェント | 保存確認ごとの最新判定と digest を実行ログから表示する |
+| `webhand extract KIND [--within R] [--columns A,B] [--table N] [--rows raw\|data] [--expect-count N] [--format table\|json\|csv\|markdown] [--out PATH]` | エージェント | 決定的な読み取り専用 DOM 抽出（`table`, `list`, `link`, `fields`, `text`）。`--out` はカレントディレクトリ配下へ安全に保存する |
+| `webhand findings` | エージェント | `--explore` セッションで記録した異常候補を再現手順つきで表示する |
+| `webhand finish --status STATUS [--reason R]` | エージェント | 独立検証（設定時）、バッチ行の結果反映、HAR 書き出し、`run_end` 記録、ブラウザ終了 |
+| `webhand record --name NAME --url URL [--scope project\|user] [--session profile:NAME]` | 人 | Chrome で人の実演操作を記録する（旧名 `learn`） |
+| `webhand auth save\|list\|delete [NAME]` | エージェント / 人 | `start --auth NAME` で使う保存ログイン（`~/.webhand/state/auth/`）を管理する |
+| `webhand batch init\|status\|list\|skip\|clear [NAME]` | エージェント / 人 | 承認済み手順書を CSV / JSON の各行で実行するバッチを管理する（`start --batch ID [--row N]`） |
+| `webhand memory list\|show HOST\|clear [HOST]` | 人 | flow v2 が覚えたサイトの記憶（`~/.webhand/memory/`）を表示・消去する（旧名 `knowledge`） |
+| `webhand profile login\|list\|delete [NAME]` | 人 | webhand 専用の保存 Chrome プロファイルを管理する |
 
 手順の先頭に `[person]` を付けると、人が行う手順になります（`--headed` が必須です）。`start` と `replan` の `--focus REGION` / `--skip REGION` で、観測する領域を選べます（下の「ページの領域」）。`--read KIND` で、画面の外の内容を足せます（下の「画面の外を読む」）。`--runbook NAME --param k=v` を指定すると、手順書の GOAL、開始 URL、手順が既定値になり、params は入力値として Jev に渡されます。
 
 `start` に `--har PATH` を付けると（Chrome または `headless-shell` のみ）、セッションのあいだ CDP サイドカーが通信を記録し、`finish` で Chrome を閉じる直前に HAR 1.2 ファイルを原子的に書き出します（権限 `0600`）。コマンドをまたぐ通信、リダイレクト、新しいタブも記録し、Jev に渡す観測内容は変えません。HAR には Cookie、マスクなしのクエリ文字列、POST 本文、テキスト／JSON のレスポンス本文が含まれるため、機密情報として扱い、コミットや共有をしないでください。
+
+### 終了コード
+
+| コード | 名称 | 意味 |
+| --- | --- | --- |
+| `0` | `OK` | 正常終了（`doctor` 準備完了、`check` 全 PASS、`extract` COMPLETE、`findings` 0 件） |
+| `1` | `FAILED` | エラー、`CliExit`、`doctor` 未達、または `replan` / `answer` 拒否 |
+| `2` | `USAGE` | 引数エラー（`UsageError`） |
+| `3` | `STALE` | `act` 直前にページが変わり未実行 |
+| `4` | `UNCERTAIN` | 変更操作の結果が不明（自動リトライしない） |
+| `5` | `BUDGET` | 試行回数または操作数の上限に到達 |
+| `6` | `CHECK_FAIL` | `check` に `FAIL` がある、または `extract --expect-count` が不一致（`COUNT_MISMATCH`） |
+| `7` | `CHECK_INCONCLUSIVE` | `check` または `extract` が `INCONCLUSIVE` |
+| `8` | `EXTRACT_PARTIAL` | `extract` が部分取得（`PARTIAL`：列不足・非表示行・読めない frame/canvas あり） |
+| `9` | `FINDINGS` | `findings` で異常候補が 1 件以上見つかった |
+
+### 環境変数
+
+| 変数 | 既定値 | 内容 |
+| --- | --- | --- |
+| `TYPESAFE_API_KEY` | *(実行時必須)* | Jev（TypeSafe API）のキー。環境変数のみから読み、`.env` 等からは読まない |
+| `TYPESAFE_MODEL` | `jev-latest` | TypeSafe API に送るモデル名 |
+| `WEBHAND_HOME` | `~/.webhand` | ユーザーデータの保存ルート（`runbooks/`, `checks/`, `memory/`, `runs/`, `state/`） |
+| `WEBHAND_CHROME` | `auto` | `--chrome` の既定値（`auto`, `linux`, `windows`） |
+| `WEBHAND_ENGINE` | `auto` | `--engine` の既定値（`auto`, `chrome`, `headless-shell`, `lightpanda`, `obscura`, `browser-run`, `kitesurf`） |
+| `WEBHAND_FLOW` | `v2` | `start --flow` の既定値（`v2` または `v1`） |
+| `WEBHAND_MEMORY` | `1` | `0` で flow v2 のサイト記憶の記録と提示を停止（互換名: `WEBHAND_KNOWLEDGE`） |
+| `WEBHAND_MEMORY_USE` | `1` | `0` で記録は続けつつ Jev への提示だけを停止（互換名: `WEBHAND_KNOWLEDGE_USE`） |
+| `WEBHAND_SCREENSHOTS` | *(無効)* | `1` で実行ログの隣に PNG スクリーンショットを保存（入力値も写る。Jev には送らない） |
+| `WEBHAND_HEADLESS_SHELL` | *(自動検出)* | `chrome-headless-shell` バイナリの明示パス |
+| `WEBHAND_OBSCURA` | *(PATH)* | `obscura` バイナリの明示パス |
+| `WEBHAND_OBSCURA_ALLOW_PRIVATE` | *(無効)* | `1` で Obscura にループバック／プライベートアドレスへのアクセスを許可（ローカル専用） |
+| `CLOUDFLARE_ACCOUNT_ID` | — | `--engine browser-run` / `kitesurf` で必須 |
+| `CLOUDFLARE_API_TOKEN` | — | `--engine browser-run` / `kitesurf` で必須（"Browser Rendering - Edit"） |
 
 ### flow v1 と v2
 
@@ -202,9 +240,13 @@ v2 が記憶するのは、`~/.webhand/memory/<host>.json` に置く、ページ
 
 | ファイル | 内容 | 使われ方 |
 | --- | --- | --- |
-| `runbooks/<service>/service.toml` | サービスの説明、ログインの要否、ページと領域の一覧、Jev 向けの事実 | `catalog` でエージェントが読み、`--service` で Jev に渡す |
-| `checks/<service>/<name>.toml` | 保存した受け入れ確認（`status` は draft/approved、`env` は test/read-only、params、確認ごとの steps・`expect`・`manual`・`depends_on`）。実行では書き換えない。[design-regression.md](design-regression.md) |
-| `runbooks/<service>/<name>.toml` | 手順書（goal、params、steps、hints、done_when、focus、skip） | エージェントの計画の下敷き。手順と hints は Jev にも渡す |
+| `runbooks/<service>/service.toml` | サービスの説明、`base_url`、任意の `allowed_domains`、ログイン要否、ページと領域、Jev 向けの事実 | `catalog` で読み、`--service` で渡す。`allowed_domains`（ホスト名のみ。例: `["app.example.com"]`）を書くと、`start` / `replan --url` / `answer --url` および許可外ドメインへのナビゲーション・リダイレクト・新規タブ遷移を拒否する |
+| `checks/<service>/<name>.toml` | 保存した受け入れ確認（`status` は draft/approved、`env` は test/read-only、params、確認ごとの steps・`expect`・`manual`・`depends_on`）。実行では書き換えない。[design-regression.md](design/design-regression.md) | `webhand check --saved` と `/webhand-regress` で使用 |
+| `runbooks/<service>/<name>.toml` | 手順書（`goal`, `start_url`, `status`, `params`, `steps`, `hints`, `done_when`, `focus`, `skip`） | エージェントの計画とバッチ実行（`webhand batch init`）の下敷き。手順と hints は Jev にも渡す |
+
+### バッチ実行（`webhand batch`）
+
+`webhand batch init --runbook SERVICE/NAME --input FILE.csv|FILE.json [--allow-draft] [NAME]` はブラウザ起動前に全行を検証し、パラメータ不足・未知列・未承認の `draft` 手順書・資格情報っぽい列名（`password`・`otp`・`cvv`・`card_number` 等）を拒否します。状態ファイル `~/.webhand/state/batches/<id>.json`（権限 `0600`）には入力ファイルパス・SHA-256 ダイジェスト・パラメータ名・各行の結果とログパスのみを保存し、**生の行データは複製しません**。各行は `webhand start --batch ID [--row N]` → `run` → 実画面確認 → `finish` で実行され、入力ファイルの改変検知と `done` / `uncertain` 行の再実行防止を自動で行います。
 
 どちらも、プロジェクトの `.webhand/` かユーザーの `~/.webhand/` に置きます（「保存場所」）。`record` は書き込み先を `WRITE THE RUNBOOK TO ...` として表示します。`start_url` にローカルファイルの相対パスを書くと、その `.webhand/` を含むディレクトリからのパスになります。
 

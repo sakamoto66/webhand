@@ -189,10 +189,11 @@ Chrome is the only engine supporting visible windows and saved profiles. Obscura
 
 | Document | Contents |
 | --- | --- |
-| [Usage guide](docs/usage.md) | Step-by-step guide for all 6 skills and CLI commands, common pitfalls |
+| [Usage guide](docs/usage.md) | Task-oriented workflows for all 6 skills, batch runs, sessions, and troubleshooting |
 | [Starter runbooks](examples/runbooks/README.md) | Copy-and-adapt `service.toml`, runbook templates (`allowed_domains`, `[person]` sign-in), and a sample CSV for batch runs |
-| [Reference](docs/reference.md) | File locations, division of roles, sessions, commands, teaching & runbooks, page regions, logs |
-| [DEVELOPMENT.md](DEVELOPMENT.md) | For contributors: architecture, safety & experiment rules, tests, release steps |
+| [Reference](docs/reference.md) | Complete CLI spec (all 18 commands, exit codes, env vars), TOML schemas, engines, and logs |
+| [All docs](docs/README.md) | Full documentation index including design records (`docs/design/`) and research notes (`docs/research/`) |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | For contributors: modular layout, rules, tests, release steps |
 
 ---
 

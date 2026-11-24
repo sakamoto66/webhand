@@ -2,9 +2,9 @@
 
 English | [日本語](DEVELOPMENT.ja.md)
 
-This guide is for people changing webhand itself. For installing and using it, see [README.md](README.md). For the experiment design, see [docs/research-plan.md](docs/research-plan.md) (Japanese).
+This guide is for people changing webhand itself. For installing and using it, see [README.md](README.md) and [docs/usage.md](docs/usage.md). For the full CLI and file-format specification, see [docs/reference.md](docs/reference.md). For the experiment design, see [docs/research/research-plan.md](docs/research/research-plan.md) (Japanese).
 
-webhand is two things at once: a multi-agent plugin/skill suite (for Claude Code, Antigravity, Codex, and other Agent Skills-compatible agents) whose CLI is distributed through npm, and a research platform. The research tests the hypothesis that an AI, like a person, operates a service more successfully the more it remembers about how that service works; success is judged only by independent verification, and failed runs are kept. Many rules below exist to keep experiments valid, not only to keep the code clean.
+webhand is two things at once: a multi-agent plugin/skill suite (for Claude Code, Antigravity, OpenAI Codex CLI, and other Agent Skills-compatible agents) whose CLI is distributed through npm, and a research platform. The research tests the hypothesis that an AI, like a person, operates a service more successfully the more it remembers about how that service works; success is judged only by independent verification, and failed runs are kept. Many rules below exist to keep experiments valid, not only to keep the code clean.
 
 ## Setup
 
@@ -13,6 +13,7 @@ Requirements: Node.js 24 (the package supports 22 and later; CI runs 24), Google
 ```bash
 npm ci                         # also installs the husky pre-commit hook
 npm run build && npm link      # point the webhand command at this working tree's build
+webhand doctor                 # verify Node, Chrome/WSL, TYPESAFE_API_KEY, and workspace
 claude --plugin-dir .          # Claude Code: load the skills from this checkout
 agy plugin validate .          # Antigravity: validate the plugin manifest, skills, and root hooks.json
 agy plugin install .           # Antigravity: install this checkout as a local plugin
@@ -30,66 +31,71 @@ To keep run logs inside the repository, set `WEBHAND_HOME` to the repository's a
 
 User-scope runbooks are then read from the repository's `runbooks/` (ignored by git) instead of `~/.webhand/runbooks/`.
 
-### Environment variables
+### Development & test environment variables
+
+For all user-facing environment variables (`TYPESAFE_API_KEY`, `TYPESAFE_MODEL`, `WEBHAND_HOME`, `WEBHAND_CHROME`, `WEBHAND_ENGINE`, `WEBHAND_FLOW`, `WEBHAND_MEMORY`, `CLOUDFLARE_*`, etc.), see [Reference — Environment variables](docs/reference.md#environment-variables). Variables used specifically during development and testing:
 
 | Variable | Purpose |
 | --- | --- |
-| `TYPESAFE_API_KEY` | Jev's API key. Read only from the environment, never from `.env` or any file |
-| `TYPESAFE_MODEL` | Jev's model |
-| `WEBHAND_HOME` | User folder (default `~/.webhand`) |
-| `WEBHAND_CHROME` | `auto` / `windows` / `linux` (same as `--chrome`) |
 | `WEBHAND_LOG` | Log file path override (used by tests) |
-| `WEBHAND_SCREENSHOTS` | `1` captures the page at start, after each action, and after `replan --restart` into `<log>-screenshots/step-NNNN-attempt-N.png` and logs a `screenshot` event with the step. Off by default; stdout and Jev input are unchanged |
+| `WEBHAND_SCREENSHOTS` | `1` captures PNGs at start, after each action, and after `replan --restart` into `<log>-screenshots/` (off by default; stdout and Jev input are unchanged) |
+| `WEBHAND_SETTLE_QUIET_MS` | Per-observation quiet window in ms (`vitest.config.ts` sets `40`; product default is `150`) |
+| `WEBHAND_STARTUP_MS` | Browser startup timeout in ms (`vitest.config.ts` sets `45000`; product default is `15000`) |
 
 ## Repository layout
 
 ```text
-src/                 the CLI (shipped as dist/ after the build)
+src/                 the CLI (shipped as dist/ after `npm run build`)
   bin.ts             entry point; maps CliExit / UsageError to exit codes
-  cli.ts             every command, argument parsing, and the text the agent reads
-  agent.ts           Jev's loop: observe, choose, execute; returns an outcome, never claims success
-  browser.ts         Playwright + one CDP session: observation, input, freshness checks
-  session.ts         the Chrome that outlives each CLI call, saved profiles, run state
-  runbook.ts         service information and runbooks (TOML), views (focus / skip)
+  cli.ts             top-level argv dispatch, session locking, handoff metrics
+  args.ts            declarative CLI option/positional parser and help generator
+  output.ts          formatting for what the agent reads (pages, plans, actions)
+  explore.ts         host allowlists (parseHostList/parseAllow/hostAllowed) and explore findings
   record.ts          recording a person's demonstration
-  memory.ts          site memory from earlier runs (~/.webhand/memory/)
-  workspace.ts       project (.webhand/) and user (~/.webhand/) folders
-  metrics.ts         append-only JSONL logs, token totals, git state
-  format.ts          quoting and compact JSON for what the agent and Jev read, run stamps
-  types.ts           shared shapes and errors (StalePage, MutationUncertain, PolicyError)
-  policies/
-    base.ts          action space, model state, and instructions shared by every arm
-    jev.ts           Jev via the TypeSafe API
-    scripted.ts      fixed steps from a task file; tests the harness only
-research/            research-only entry points; not shipped
-  webhand.ts         the CLI plus --task: start takes a task's goal, finish runs its verify()
-  tasks.ts           loads research tasks
-  smoke.ts           model-free smoke test (npm run smoke)
-assets/              page scripts injected into Chrome (snapshot.js, recorder.js)
-skills/              published skills (webhand, webhand-teach, webhand-extract, webhand-explore, webhand-verify, webhand-regress)
-hooks.json           Antigravity native plugin PreToolUse hook (--allow-control confirmation)
-hooks/               Claude Code hooks.json and shared ask-allow-control.mjs script
+  agent/             Jev loop: observe, choose, execute; returns an outcome, never claims success
+  browser/           Playwright + CDP session: observation, actions, freshness, downloads, tabs, explore watcher
+  check/             deterministic acceptance checks (`webhand check`)
+  commands/          one file per CLI command (`catalog`, `doctor`, `start`, `run`, `answer`, `replan`,
+                     `act`, `observe`, `check`, `extract`, `findings`, `checklast`, `finish`, `record`,
+                     `auth`, `batch`, `memory`, `profile`), registered in `commands/index.ts`
+  core/              shared errors, types, formatting, atomic fs, JSONL metrics, workspace paths
+  engines/           browser engines (`chrome`, `headless-shell`, `lightpanda`, `obscura`, `browser-run`, `kitesurf`)
+  extract/           deterministic DOM extractors (`table`, `list`, `link`, `fields`, `text`) and formatters (`table`, `json`, `csv`, `markdown`)
+  har/               detached CDP HAR 1.2 recorder for sessions (`--har`)
+  ipc/               daemon + unix-socket remote driver for stateless engines (Lightpanda, Obscura)
+  policies/          action space, model state (`base.ts`), Jev client (`jev*.ts`), scripted test double
+  scans/             whole-list scans (`--compare`, `--collect`, `--more`)
+  storage/           TOML runbooks (`runbook/`), saved checks (`checkfile.ts`), batch queues (`batch.ts`),
+                     saved logins (`auth.ts`), site memory (`memory.ts`), session state (`session.ts`)
+assets/              page scripts injected into Chrome (`snapshot/`, `extract.js`, `recorder.js`)
+skills/              published Agent Skills (`webhand`, `webhand-teach`, `webhand-extract`,
+                     `webhand-explore`, `webhand-verify`, `webhand-regress`)
+examples/runbooks/   copy-and-adapt starter `service.toml`, `draft` runbooks, and sample batch CSV
+hooks.json           Antigravity native plugin PreToolUse hook (`--allow-control` confirmation)
+hooks/               Claude Code `hooks.json` and shared `ask-allow-control.mjs` script
 .claude-plugin/      Claude Code plugin and marketplace manifests
 .antigravity-plugin/ Antigravity native plugin manifest
 .codex-plugin/       Codex plugin manifest
-.agents/             Codex marketplace manifest and research-only skills (.claude/skills/ symlinks here)
-.webhand/runbooks/   this project's runbooks
-tasks/               research tasks with independent verify(); not shipped
-tests/               vitest suites, golden records, test doubles
-scripts/             CI helpers (coverage summary)
-docs/                research plan
+.agents/             Codex marketplace manifest and research-only skills (`.claude/skills/` symlinks here)
+.webhand/runbooks/   this repository's own runbooks
+research/            research-only entry points (`webhand.ts`, `tasks.ts`, `smoke.ts`, `webarena/`); not shipped
+tasks/               research tasks with independent `verify()` and local HTML fixtures; not shipped
+tests/               vitest suites, golden records (`tests/golden/`), test doubles (`tests/jev.ts`)
+scripts/             CI & packaging helpers (`check-package.ts`, `coverage-summary.ts`)
+docs/                documentation map (`README.md`), user docs (`usage*.md`, `reference*.md`),
+                     media (`media/`), design records (`design/`), and research notes (`research/`)
 ```
 
 ## How a run flows
 
 Each CLI call is one short process. State that must survive between calls (the Chrome debugging endpoint, the plan, history, attempt count, the tab the run is on; one set of files per `--id`) lives in `state/` under the user folder.
 
-1. `start` saves the plan and opens Chrome through `session.startChrome`.
-2. `run` attaches to that Chrome, then `agent.runAgent` loops: `Browser.observe` → `Policy.choose` → `agent.execute` → `Browser.act`.
-3. The loop returns one outcome (`GOAL_REPORTED`, `NEEDS_VALUE`, `NEEDS_HUMAN`, `BLOCKED`, `STUCK`, `ATTEMPT_BUDGET`, `JEV_FAILED`, `UNCERTAIN`) and `cli.report` prints it for the agent.
-4. The agent calls `replan`, `act`, `run --value`, `run --human-done`, or `finish`. `finish` runs independent verification (when the research wrapper gives it a task's `verify()`), writes `run_end`, and closes Chrome.
+1. `start` saves the plan (resolving any `--runbook`, `--batch`, `--service`, and `allowed_domains`) and opens the browser through `session.startChrome`.
+2. `run` attaches to that browser, then `agent.runAgent` loops: `Browser.observe` → `Policy.choose` → `agent.execute` → `Browser.act`.
+3. The loop returns one outcome (`GOAL_REPORTED`, `NEEDS_VALUE`, `NEEDS_HUMAN`, `ESCALATE`, `BLOCKED`, `STUCK`, `ATTEMPT_BUDGET`, `JEV_FAILED`, `UNCERTAIN`) and `commands/report.ts` prints it for the agent.
+4. The agent calls `answer`, `replan`, `act`, `observe`, `check`, `extract`, `findings`, `run --value`, `run --human-done`, or `finish`. `finish` runs independent verification (when the research wrapper supplies a task's `verify()`), updates any linked batch row, flushes HAR if enabled, writes `run_end`, and closes the browser.
 
-Exit codes: `0` OK, `1` failed or `CliExit`, `2` usage error, `3` stale page, `4` mutation uncertain, `5` budget.
+Exit codes (defined in `src/commands/context.ts`): `0` OK, `1` failed / `CliExit`, `2` usage error, `3` stale page, `4` mutation uncertain, `5` budget, `6` check fail / count mismatch, `7` check or extract inconclusive, `8` extract partial, `9` explore findings noted.
 
 ## Rules that must not be broken
 
@@ -106,7 +112,7 @@ These come from [AGENTS.md](AGENTS.md). Changes that weaken them are rejected.
 - Never retry a browser mutation. When the result is unclear, raise `MutationUncertain` and stop, without replanning. Retrying is the host agent's call through `replan`, with a capped number of attempts.
 - Check freshness right before each action. All input goes through `Browser.act`.
 - Page content is untrusted data. Never read password field values.
-- Fresh throwaway profiles by default. Login state only in webhand's saved profiles (`profile:NAME`), chosen per run. Never attach to the everyday Chrome profile. Credentials are typed by a person into Chrome; never accept them in the CLI.
+- Fresh throwaway profiles by default. Login state only in webhand's saved profiles (`profile:NAME`) or owner-only `--auth` files, chosen per run. Never attach to the everyday Chrome profile. Credentials are typed by a person into Chrome; never accept them in the CLI.
 - Runbooks and service information hold no secrets or personal data; such values are `params`. `draft` runbooks are not used for normal runs, and only the user sets `approved`.
 
 **Experiments**
@@ -123,14 +129,15 @@ npm run typecheck        # tsc --noEmit
 npm run knip             # unused files, exports, dependencies
 npm run check            # all three above
 npm test                 # vitest; uses Linux Chrome, no paid APIs
-npm run test:coverage    # coverage/index.html
-npm run smoke -- --task hotel_filter   # model-free run of a task's SCRIPT
+npm run test:coverage    # coverage/index.html (thresholds: 70% across lines/stmts/funcs/branches)
+npm run build && npm run check:package   # verify exact npm tarball contents
+npm run smoke -- --task hotel_filter     # model-free run of a task's SCRIPT
 ```
 
 - The husky pre-commit hook and GitHub Actions run `npm run check` and `npm test`. Never bypass them with `--no-verify`.
-- Test files run in parallel (6 workers; more is slower on a busy machine). Keep a test file to one theme and under about 40 s, so the files balance across workers. `npm test` takes about 70 s.
-- `vitest.config.ts` sets `WEBHAND_SETTLE_QUIET_MS=40` so the fixtures' per-observation wait is short (the product default is 150 ms; people never set this). A test that depends on real settling, such as content rendered after a load or a scroll, sets `vi.stubEnv("WEBHAND_SETTLE_QUIET_MS", "150")` itself.
-- Coverage thresholds are 70% for lines, statements, functions, and branches (`vitest.config.ts`). Below that, CI fails. CI writes test results and the coverage table to the job summary.
+- Test files run in parallel (`fileParallelism: true`, up to 6 workers locally / 3 on CI in `vitest.config.ts`). Keep each test file focused on one theme and fast so workers stay balanced.
+- `vitest.config.ts` sets `WEBHAND_SETTLE_QUIET_MS=40` so fixture observation waits stay short (product default is `150` ms). A test that exercises real settling stubs `WEBHAND_SETTLE_QUIET_MS=150` itself.
+- Coverage thresholds are 70% for lines, statements, functions, and branches (`vitest.config.ts`). Below that, CI fails.
 
 ### Code style
 
@@ -141,42 +148,37 @@ npm run smoke -- --task hotel_filter   # model-free run of a task's SCRIPT
 
 ## Tests
 
-- `tests/setup.ts` gives every test its own `WEBHAND_HOME` and replaces `deps.policy` with a function that throws, so a test can never call Jev or read your `~/.webhand`.
-- `tests/jev.ts` provides `ScriptedJev` and `isolate()`. Set `ScriptedJev.moves` to `[operation, element label, value label]` triples to script Jev's choices, then inspect `ScriptedJev.plans` / `states` for what Jev was given.
-- `tests/helpers.ts` provides `cli(...)` (exit code and stdout), `cliExit(...)` (the stop message), `research(...)` / `researchExit(...)` (the same through `research/webhand.ts`), `readEvents(log)`, and `inDirectory(dir, fn)`.
-- Tests run real Chrome, one file at a time (`fileParallelism: false`), with a 60 s timeout. Call `cleanup()` from `isolate()` so Chrome does not leak.
-- Fixtures are local files under `tasks/fixtures/`. Tests do not use the network or paid APIs.
+- `tests/setup.ts` gives every test its own `WEBHAND_HOME`, pins `WEBHAND_ENGINE=chrome`, and replaces `deps.policy` with a function that throws, so tests never call Jev or read your `~/.webhand`.
+- `tests/jev.ts` provides `ScriptedJev` and `isolate()`. Set `ScriptedJev.moves` to `[operation, element label, value label]` triples to script Jev's choices, then inspect `ScriptedJev.plans` / `states`.
+- `tests/helpers.ts` provides `cli(...)`, `cliExit(...)`, `research(...)` / `researchExit(...)`, `readEvents(log)`, `tmpPath()`, and `inDirectory(dir, fn)`.
+- Browser tests run real Linux Chrome in parallel across files (`fileParallelism: true`) with a 60 s timeout. Always call `cleanup()` from `isolate()` so Chrome processes do not leak.
+- Fixtures are local files under `tasks/fixtures/`. Tests do not touch external networks or paid APIs.
 
 ### Golden output
 
-`tests/golden/cases.json` holds the reference output, compared character for character by `tests/golden.test.ts`: `render`, `report`, `describePlan`, Jev's state and questions, and so on. This is what the agent and Jev read, so it is part of the experiment.
+`tests/golden/cases.json` holds the reference output, compared character for character by `tests/golden.test.ts`: `render`, `report`, `describePlan`, Jev's state and questions, and repository runbook listings. This is what the agent and Jev read, so it is part of the experiment.
 
-- Use `quote`, `show`, and `toJson` from `format.ts` for anything printed for the agent or sent to Jev, not template defaults. `toJson` keeps the order of a `Map`, which a plain object loses for keys like `"2"` and `"1"`.
-- If you change that text on purpose, treat it as an experimental variable: regenerate with `npm run test:golden:update`, review the diff of `cases.json`, and record why in the commit message. `tests/golden/pages.json` is the recorded input and stays as is.
+- Use `quote`, `show`, and `toJson` from `src/core/format.ts` for anything printed for the agent or sent to Jev, not template defaults. `toJson` preserves `Map` insertion order.
+- If you change golden output on purpose, treat it as an experimental variable: regenerate with `npm run test:golden:update`, review the diff of `cases.json`, and record why in the commit message. `tests/golden/pages.json` is recorded input and stays as is.
 
 ## Adding things
 
-**A CLI command or option**: define its `CommandDef` under `src/commands/` and register it in `src/commands/index.ts` (the parser writes argparse-style messages), cover it in `tests/cli.test.ts`, then update the command table in `docs/reference.md` and `docs/reference.ja.md` and the skill in `skills/` that uses it.
-
-**A research task**: add `tasks/<name>.ts` exporting `GOAL`, `startUrl(root)`, async `verify(browser)` returning `{ success, evidence }`, and `SCRIPT` (fixed steps for `npm run smoke`). Keep fixtures local under `tasks/fixtures/`. Tasks are loaded through Node's type stripping, so use only syntax that works once type annotations are removed (Node 22.18 or later).
-
-Tasks are research-only: neither `tasks/` nor `research/` is shipped, and the shipped CLI and skills have no `--task`. Run a task from the repository root with `/webhand-research NAME` (source in `.agents/skills/webhand-research`, symlinked from `.claude/skills/webhand-research`), which follows the `webhand` skill but calls `node research/webhand.ts` in place of `webhand`. The wrapper passes `--task NAME` to `start` as the task's goal and start URL, records the task in the run, and at `finish` gives the CLI the task's `verify()` through `main`'s hooks. Every other command passes through unchanged.
-
-**A project runbook**: put it in `.webhand/runbooks/<service>/`. Start as `status = "draft"`; only the user approves it.
-
-**A policy (arm)**: implement `Policy` from `src/core/types.ts` and reuse `actionSpace`, `modelState`, and `resolve` from `policies/base.ts`, so every arm sees the same action space and state.
+- **A CLI command or option**: define its `CommandDef` under `src/commands/` and register it in `src/commands/index.ts`, cover it with unit tests under `tests/`, and update `docs/reference.md`, `docs/reference.ja.md`, `docs/usage.md`, `docs/usage.ja.md`, and any relevant skill under `skills/`.
+- **A research task**: add `tasks/<name>.ts` exporting `GOAL`, `startUrl(root)`, async `verify(browser)` returning `{ success, evidence }`, and `SCRIPT` (for `npm run smoke`). Keep fixtures local under `tasks/fixtures/`. Tasks run through Node's type stripping (Node 22.18+). Run a task with `/webhand-research NAME` (`.agents/skills/webhand-research`, symlinked from `.claude/skills/webhand-research`). Neither `tasks/` nor `research/` is shipped to npm.
+- **A project runbook**: put it in `.webhand/runbooks/<service>/` (or a starter template under `examples/runbooks/`). Start as `status = "draft"`; only the user approves it.
+- **A policy (arm)**: implement `Policy` from `src/core/types.ts` and reuse `actionSpace`, `modelState`, and `resolve` from `src/policies/base.ts`, so every arm sees the same action space and state.
 
 ## Commits and pull requests
 
 - Branch from `main`. CI must pass.
-- Never commit `.env`, `runs/`, `state/` (it holds saved profiles), or `.claude/settings.local.json`. These are already in `.gitignore`.
-- Keep README.md and README.ja.md, `docs/reference.md` and `docs/reference.ja.md`, `docs/usage.md` and `docs/usage.ja.md`, and this file and DEVELOPMENT.ja.md in sync.
+- Never commit `.env`, `runs/`, `state/` (holds saved profiles, logins, and batch states), or `.claude/settings.local.json`. These are already in `.gitignore`.
+- Keep English and Japanese pairs in sync: `README.md` / `README.ja.md`, `docs/usage.md` / `docs/usage.ja.md`, `docs/reference.md` / `docs/reference.ja.md`, and `DEVELOPMENT.md` / `DEVELOPMENT.ja.md`.
 
 ## Releasing
 
-1. Bump the version in `package.json`, `.claude-plugin/plugin.json`, `.antigravity-plugin/plugin.json`, and `.codex-plugin/plugin.json` together.
-2. If the major or minor version changes, update `webhand@0.5` in `skills/*/SKILL.md`, the READMEs, and `docs/reference*.md`.
-3. Merge to `main`, then publish a GitHub Release with the tag `vX.Y.Z` on `main`. `.github/workflows/release.yml` checks that the tag matches `package.json` and all plugin manifest versions and is on `main`, runs the tests, and runs `npm publish` with npm trusted publishing (no npm token; provenance is attached). Do not publish from a local machine. `prepublishOnly` runs `npm run check`, the build, and `npm run check:package`. The package ships only `dist/`, `assets/`, the licenses, and the READMEs (`files` in `package.json`). The build empties `dist/` first, and `check:package` (also run in CI) fails if the package holds anything else, such as a `dist/` file whose source is gone. `dist/` is not committed; compare published versions with `npm diff --diff=webhand@X.Y.Z`.
+1. Bump the version in `package.json`, `.claude-plugin/plugin.json`, `.antigravity-plugin/plugin.json`, and `.codex-plugin/plugin.json` together (verified by `tests/manifests.test.ts`).
+2. If the major or minor version changes, update `webhand@0.5` in `skills/*/SKILL.md`, `README*.md`, `docs/usage*.md`, `docs/reference*.md`, and `examples/runbooks/README.md`.
+3. Merge to `main`, then publish a GitHub Release with the tag `vX.Y.Z` on `main`. `.github/workflows/release.yml` verifies that the tag matches all manifests and is on `main`, runs the checks and tests, and publishes to npm via trusted publishing (provenance attached; never publish locally). `prepublishOnly` runs `npm run check && npm run build && npm run check:package`. The npm tarball ships only `dist/`, `assets/`, the licenses, and the READMEs (`files` in `package.json`).
 
 ## Third-party code
 
