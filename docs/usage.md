@@ -45,6 +45,7 @@ webhand is used through coding-agent skills (Claude Code, Antigravity, Codex, an
 
    ```bash
    npx -y webhand@0.5 --version
+   npx -y webhand@0.5 doctor
    npx -y webhand@0.5 catalog
    ```
 
@@ -191,6 +192,7 @@ If it is not installed, read `webhand` as `npx -y webhand@0.5`. See `webhand COM
 | Command | Owner | What it does |
 | --- | --- | --- |
 | `catalog` | Agent | List known services, runbooks, and saved profiles |
+| `doctor` | Person | Check Node.js, Chrome, `TYPESAFE_API_KEY`, and local workspace readiness |
 | `start` | Agent | Record the plan and open the start URL in Chrome |
 | `run` | Jev | Operate toward the GOAL |
 | `replan` | Agent | Revise the plan and start the next attempt |

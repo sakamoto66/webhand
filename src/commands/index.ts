@@ -7,6 +7,7 @@ import { authCommand } from "./auth.ts";
 import { catalogCommand } from "./catalog.ts";
 import { checkCommand } from "./check.ts";
 import { checkLastCommand } from "./checklast.ts";
+import { doctorCommand } from "./doctor.ts";
 import { extractCommand } from "./extract.ts";
 import { findingsCommand } from "./findings.ts";
 import { finishCommand } from "./finish.ts";
@@ -21,6 +22,7 @@ import type { CommandDef } from "./types.ts";
 
 const DEFINITIONS: CommandDef[] = [
   catalogCommand,
+  doctorCommand,
   startCommand,
   runCommand,
   answerCommand,

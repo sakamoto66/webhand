@@ -105,10 +105,11 @@ echo 'export TYPESAFE_API_KEY=...' >> ~/.bashrc   # 使っているシェルの�
 > [!TIP]
 > CLI 本体のインストールは不要です（スキルが `npx -y webhand@0.5 ...` を自動実行します）。毎回の起動を速くしたい場合は `npm i -g webhand` でグローバル導入しておくと、スキルが `webhand` を直接使います。
 
-### 3. 動作確認して、最初の用事を頼んでみる
+### 3. 環境を確認して、最初の用事を頼んでみる
 
 ```bash
-npx -y webhand@0.5 catalog   # CLI の動作確認と、登録済みサービス・手順書の一覧表示
+npx -y webhand@0.5 doctor    # Node.js・Chrome・TYPESAFE_API_KEY・ワークスペースを一括診断
+npx -y webhand@0.5 catalog   # 登録済みサービス・手順書の一覧表示
 ```
 
 あとはコーディングエージェントから頼むだけです（Claude Code では `/webhand`、Antigravity や Codex では `webhand` スキルを指定して依頼します）：
