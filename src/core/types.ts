@@ -158,4 +158,9 @@ export interface Policy {
   recover?(page: Page, plan: Plan, history: HistoryEntry[]): Promise<{ strategy: string; confidence: number }>;
   /** Parallel selection of text blocks relevant to a read-only query. */
   selectBlocks?(page: Page, plan: Plan, query: string, blocks: { key: string; text: string }[]): Promise<Set<string>>;
+  /** Parallel noul (0..1) scoring of independent items against a shared state. */
+  scoreNoul?(
+    state: Record<string, unknown>,
+    items: { key: string; instructions: unknown }[],
+  ): Promise<Map<string, number>>;
 }

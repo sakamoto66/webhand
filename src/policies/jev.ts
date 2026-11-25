@@ -22,13 +22,14 @@ import {
 import { MATCH, NO, type Row } from "../scans/collect.ts";
 import { type Best, type Candidate, KEEP, NONE } from "../scans/compare.ts";
 import { actionSpace, fileChoices, modelState, resolve, valueChoices } from "./base.ts";
-import { type Fetch, type Json, postJson, validateChoice } from "./jev-client.ts";
+import { type Fetch, type Json, postJson, validateChoice, validateNoul } from "./jev-client.ts";
 import { estimateTokens, FIT_TRIES, fitChoose, OVER_LIMIT, requestSize, SHRINK, TOKEN_BUDGET } from "./jev-fit.ts";
 import {
   buildBlockSelect,
   buildCollect,
   buildCompare,
   buildMore,
+  buildNoulQuestions,
   buildQuestions,
   buildRecoveryQuestion,
   buildRegionQuestion,
@@ -47,7 +48,7 @@ import {
   REGION_ALL,
 } from "./prompts.ts";
 
-export { type Fetch, validateChoice };
+export { type Fetch, validateChoice, validateNoul };
 
 /** Minimum element count before 2-stage region narrowing activates (small pages go straight to 1-stage). */
 const TWO_STAGE_MIN_ELEMENTS = 16;
@@ -190,6 +191,20 @@ export class JevPolicy implements Policy {
       if (validateChoice(answers[`block_${block.key}`] ?? {}, [MATCH, NO]).choice === MATCH) keys.add(block.key);
     }
     return keys;
+  }
+
+  async scoreNoul(
+    state: Record<string, unknown>,
+    items: { key: string; instructions: unknown }[],
+  ): Promise<Map<string, number>> {
+    if (!items.length) return new Map();
+    const body = { model: this.model, state, questions: buildNoulQuestions(items) };
+    const answers = (await this.post(body, "noul")).answers ?? {};
+    const scores = new Map<string, number>();
+    for (const item of items) {
+      scores.set(item.key, validateNoul(answers[item.key]));
+    }
+    return scores;
   }
 
   /** Stage-1 region selection for 2-stage Jev; returns chosen region key or null when whole page should be used. */
