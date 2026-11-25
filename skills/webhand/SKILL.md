@@ -16,7 +16,7 @@ You plan and judge; Jev operates the browser toward your goal. Use only the `web
 
 ## 1. Plan from known services and runbooks
 
-Run `webhand catalog`. It lists known services (description, login, pages, facts), their procedures (goal template, params, status), and saved profiles. Each comes from this project's `.webhand/` `(project)` or the user's `~/.webhand/` `(user)`; a project one wins over a user one of the same name.
+Run `webhand catalog`. It lists known services (description, login, pages, facts), their procedures (goal template, params, status), and saved profiles. Each comes from this project's `.webhand/` `(project)` or the user's `~/.webhand/` `(user)`; a project one wins over a user one of the same name. For large catalogs, use `webhand catalog --match "REQUEST" [--top 5]` (optionally narrowed with `--service PREFIX`) to rank runbooks with Jev `noul` and read only the top matches; to re-read a specific runbook deterministically without calling Jev, use `webhand catalog --runbook SERVICE/NAME` (or `--service PREFIX --runbook NAME`).
 
 From the request and the catalog, write:
 

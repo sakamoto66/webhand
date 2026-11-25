@@ -85,3 +85,11 @@ export function validateChoice(answer: Json, ids: Iterable<string>): Json {
   if (!valid) throw new PolicyError("Invalid Jev response; no action executed.");
   return answer;
 }
+
+export function validateNoul(answer: Json): number {
+  const n = answer && typeof answer === "object" && !Array.isArray(answer) ? answer.noul : null;
+  if (typeof n !== "number" || !Number.isFinite(n) || n < 0 || n > 1) {
+    throw new PolicyError("Invalid Jev noul response; no action executed.");
+  }
+  return n;
+}

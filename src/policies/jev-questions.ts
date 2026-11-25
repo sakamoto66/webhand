@@ -245,3 +245,15 @@ export function buildBlockSelect(query: string, blocks: { key: string; text: str
   }
   return questions;
 }
+
+/** Parallel noul (0..1 probability) questions, evaluated independently against a shared state. */
+export function buildNoulQuestions(items: { key: string; instructions: unknown }[]): Record<string, unknown> {
+  const questions: Record<string, unknown> = {};
+  for (const item of items) {
+    questions[item.key] = {
+      type: "noul",
+      instructions: item.instructions,
+    };
+  }
+  return questions;
+}
