@@ -23,7 +23,7 @@ Every starter runbook here begins with `status = "draft"` — review it, try it 
 2. Verify webhand sees it:
 
    ```bash
-   npx -y webhand@0.6 catalog
+   npx -y webhand@0.7 catalog
    ```
 
 3. Trial it once (`--allow-draft`), then set `status = "approved"` in `reserve.toml` after reviewing:
@@ -35,5 +35,5 @@ Every starter runbook here begins with `status = "draft"` — review it, try it 
 4. Optional — run multiple rows from the sample CSV with `webhand batch`:
 
    ```bash
-   npx -y webhand@0.6 batch init --runbook hotel-planisphere/reserve --input examples/runbooks/hotel-planisphere/guests.sample.csv
+   npx -y webhand@0.7 batch init --runbook hotel-planisphere/reserve --input examples/runbooks/hotel-planisphere/guests.sample.csv
    ```

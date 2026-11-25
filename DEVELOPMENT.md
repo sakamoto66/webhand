@@ -21,7 +21,7 @@ agy plugin install .           # Antigravity: install this checkout as a local p
 
 For Codex CLI, add this directory as a local marketplace (`codex plugin marketplace add .`) or use `.agents/skills/` directly inside the checkout. Note that `agy plugin validate . --strict` emits two expected warnings in this multi-agent repo (`AGENTS.md` at the root is contributor rules, not plugin rules; `hooks/hooks.json` is for Claude Code while Antigravity loads root `hooks.json`).
 
-Inside this repository, `npx -y webhand@0.6` fails with `webhand: not found`: npm treats the repository itself (`webhand@0.6.0`) as satisfying the spec and looks for the bin in the local `node_modules/.bin`. Use `npm link` (the skills then run `webhand` directly) or `npx -y webhand@latest`.
+Inside this repository, `npx -y webhand@0.7` fails with `webhand: not found`: npm treats the repository itself (`webhand@0.7.0`) as satisfying the spec and looks for the bin in the local `node_modules/.bin`. Use `npm link` (the skills then run `webhand` directly) or `npx -y webhand@latest`.
 
 To keep run logs inside the repository, set `WEBHAND_HOME` to the repository's absolute path in your shell environment (for example `export WEBHAND_HOME=/absolute/path/to/this/repository`), or in Claude Code via `.claude/settings.local.json` (not committed):
 
@@ -177,7 +177,7 @@ npm run smoke -- --task hotel_filter     # model-free run of a task's SCRIPT
 ## Releasing
 
 1. Bump the version in `package.json`, `.claude-plugin/plugin.json`, `.antigravity-plugin/plugin.json`, and `.codex-plugin/plugin.json` together (verified by `tests/manifests.test.ts`).
-2. If the major or minor version changes, update `webhand@0.6` in `skills/*/SKILL.md`, `README*.md`, `docs/usage*.md`, `docs/reference*.md`, and `examples/runbooks/README.md`.
+2. If the major or minor version changes, update `webhand@0.7` in `skills/*/SKILL.md`, `README*.md`, `docs/usage*.md`, `docs/reference*.md`, and `examples/runbooks/README.md`.
 3. Merge to `main`, then publish a GitHub Release with the tag `vX.Y.Z` on `main`. `.github/workflows/release.yml` verifies that the tag matches all manifests and is on `main`, runs the checks and tests, and publishes to npm via trusted publishing (provenance attached; never publish locally). `prepublishOnly` runs `npm run check && npm run build && npm run check:package`. The npm tarball ships only `dist/`, `assets/`, the licenses, and the READMEs (`files` in `package.json`).
 
 ## Third-party code
