@@ -126,13 +126,61 @@ const SECRET_NAMES: [string, string][] = [
     (name): [string, string] => ["label", name],
   ),
   ...["口座番号", "マイナンバー"].map((name): [string, string] => ["label", name]),
+  ...[
+    "access_key",
+    "accessKey",
+    "security_code",
+    "securityCode",
+    "verification-code",
+    "confirmation_code",
+    "one_time_code",
+    "oneTimeCode",
+    "auth_code",
+    "2fa_code",
+    "mfaCode",
+    "seed_phrase",
+    "mnemonic",
+    "security_question",
+    "account_number",
+    "accountNumber",
+    "iban",
+    "payerIban",
+    "routing-number",
+    "my_number",
+    "mynumber",
+    "user[access][key]",
+  ].map((name): [string, string] => ["name", name]),
+  ...[
+    "Access key",
+    "Security code",
+    "Verification code",
+    "Confirmation code",
+    "One-time code",
+    "one time code",
+    "Auth code",
+    "2FA code",
+    "MFA code",
+    "Seed phrase",
+    "Security question",
+    "Account number",
+    "Routing number",
+    "My Number",
+  ].map((name): [string, string] => ["aria-label", name]),
+  ...["個人番号", "個人 番号", "秘密の答え", "秘密の・答え", "合言葉", "認証番号", "認証・番号", "確認番号"].map(
+    (name): [string, string] => ["label", name],
+  ),
+  ...["確認 番号", "口座名義", "口座 名義", "口座　番号"].map((name): [string, string] => ["placeholder", name]),
   // Words that were already masked stay masked.
   ...["passwd", "user_pwd", "pw", "client_secret", "token", "otp", "cvv", "cvc", "card_no", "ssn", "pin"].map(
     (name): [string, string] => ["name", name],
   ),
   ...["パスワード", "暗証番号", "認証コード", "カード番号"].map((name): [string, string] => ["label", name]),
 ];
-const PLAIN_NAMES = ["keyboard", "api_version", "private_note", "answer", "recovery_email", "確認事項", "商品コード"];
+const PLAIN_NAMES = [
+  ...["keyboard", "api_version", "private_note", "answer", "recovery_email", "確認事項", "商品コード"],
+  ...["access_level", "account_type", "routing", "verification_status", "zip_code", "phone_number", "seed", "my_name"],
+  ...["口座種別", "認証方式", "電話番号", "個人情報"],
+];
 
 test("fields with secret names are masked, however the name is separated", async () => {
   const fields = [...SECRET_NAMES, ...PLAIN_NAMES.map((name): [string, string] => ["name", name])];

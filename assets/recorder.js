@@ -4,13 +4,20 @@
   const read = () => __SNAPSHOT__;
   const inFrame = window !== window.top;
   // Words that mark a field or region name as secret. A match only ever masks more, never less.
-  // English words may be joined or separated in any way: api_key, api-key, apiKey, user[api][key].
+  // A space in a phrase matches any separator or none: 'api key' covers api_key, api-key, apiKey, user[api][key].
+  const phrases = (list, gap) => list.map(phrase => phrase.replaceAll(' ', gap));
   const secretWords = new RegExp([
-    /pass|pwd|\bpw\b|secret|token|otp|cvv|cvc|card|ssn|\bpin\b|パスワード|暗証|認証コード|カード/,
-    /api[\s_.:\/[\]-]*key|private[\s_.:\/[\]-]*key|credential|recovery[\s_.:\/[\]-]*phrase/,
-    /security[\s_.:\/[\]-]*(question[\s_.:\/[\]-]*)?answer/,
-    /秘密の質問|ワンタイム[\s・･_-]*コード|確認[\s・･_-]*コード|セキュリティー?[\s・･_-]*コード|口座番号|マイナンバー/,
-  ].map(pattern => pattern.source).join('|'), 'i');
+    /pass|pwd|\bpw\b|secret|token|otp|cvv|cvc|card|ssn|\bpin\b|パスワード|暗証|認証コード|カード/.source,
+    ...phrases([
+      'api key', 'private key', 'access key', 'credential', 'recovery phrase', 'seed phrase', 'mnemonic',
+      'security answer', 'security question', 'security code', 'verification code', 'confirmation code',
+      'one time code', 'auth code', '2fa code', 'mfa code', 'account number', 'routing number', 'iban', 'my number',
+    ], '[\\s_.:\\/[\\]-]*'),
+    ...phrases([
+      '秘密の 質問', '秘密の 答え', '合言葉', 'ワンタイム コード', '認証 番号', '確認 コード', '確認 番号',
+      'セキュリティー? コード', '口座 番号', '口座 名義', '個人 番号', 'マイナンバー',
+    ], '[\\s・･_-]*'),
+  ].join('|'), 'i');
   const secretAutocomplete = /(^|\s)(current-password|new-password|one-time-code|cc-[a-z-]+)(\s|$)/;
   const everPassword = new WeakSet();
   const secret = (e, label) => e.type === 'password' || everPassword.has(e) ||
