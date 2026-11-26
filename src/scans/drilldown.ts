@@ -20,6 +20,8 @@ export const HARD_MAX_ITEMS = 100;
 const NOUL_YES = 0.7;
 const NOUL_NO = 0.3;
 const LINK_NAME_CHARS = 80;
+/** In a list of this many rows or fewer, links share an answer only when their names and path endings are equal. */
+const SMALL_LIST = 3;
 const MAX_LABELS = 60;
 const LABEL_CHARS = 80;
 const SNIPPET_CHARS = 1500;
@@ -226,7 +228,7 @@ function shownPath(href: string, listUrl: string): string {
   return url.host === new URL(listUrl).host ? url.pathname : `//${url.host}${url.pathname}`;
 }
 
-/** Rows of one shape have links at the same places that lead to the same folders, so one answer serves them all. */
+/** Rows of one shape have links at the same places that lead to the same folders. */
 function rowShape(row: ListRow): string {
   const folder = (href: string) => {
     const url = new URL(href);
@@ -236,11 +238,40 @@ function rowShape(row: ListRow): string {
   return JSON.stringify([row.list, row.links.map((link) => [link.at, folder(link.href)])]);
 }
 
-type LinkVerdict = { sure: "yes" | "no" | "unsure"; index: number };
+/**
+ * What a link says it does: its name, and the end of its path with the query. Numbers are masked. The query is only
+ * compared here and never sent.
+ */
+function linkTerms(link: RowLink): [string, string] {
+  const mask = (text: string) => text.replace(/\d+/g, "#");
+  const url = new URL(link.href);
+  const query = [...url.searchParams].map(([key, value]) => `${key}=${value}`).sort();
+  return [mask(link.name.toLowerCase()), mask(`${url.pathname.split("/").at(-1)}?${query.join("&")}`)];
+}
+
+/** For each link place of a shape, how often each name and each path ending occurs in the rows seen. */
+interface ShapeRows {
+  rows: number;
+  places: [Map<string, number>, Map<string, number>][];
+}
+
+/**
+ * The term as rows are compared by it, or null for one that names this row alone, such as a title. A term counts when
+ * rows repeat it, when most terms at that place repeat (a column of actions, even one used once), or when the rows are
+ * too few to tell.
+ */
+function shared(term: string, counts: Map<string, number>, rows: number): string | null {
+  const tells = rows <= SMALL_LIST || counts.size * 2 <= rows || (counts.get(term) ?? 0) > 1;
+  return tells ? term : null;
+}
+
+type LinkVerdict = { sure: "yes" | "no" | "unsure"; index: number; terms: [string, string][] };
 
 /**
  * Picks the link to visit for each row, or null for a row without a detail link. --link-text is the user's own choice;
- * otherwise Jev is asked once per row shape, and the other rows of that shape take the link at the same place.
+ * otherwise Jev is asked, and another row of the same shape takes the answer only when the link it would visit has the
+ * same shared name and path ending (every link, for a row without a detail link). All rows must be passed to `see`
+ * before they are picked from.
  */
 function linkPicker(
   chooser: LinkChooser | null,
@@ -249,11 +280,32 @@ function linkPicker(
   recorder: Recorder,
   attempt: number,
 ) {
-  const verdicts = new Map<string, LinkVerdict>();
-  return async (row: ListRow): Promise<{ href: string; uncertain: boolean } | null> => {
+  const shapes = new Map<string, ShapeRows>();
+  const verdicts = new Map<string, LinkVerdict[]>();
+  const see = (row: ListRow) => {
+    if (row.bare || linkText) return;
+    const shape = rowShape(row);
+    const seen = shapes.get(shape) ?? { rows: 0, places: row.links.map(() => [new Map(), new Map()]) };
+    shapes.set(shape, seen as ShapeRows);
+    seen.rows += 1;
+    row.links.forEach((link, i) => {
+      linkTerms(link).forEach((term, part) => {
+        const counts = seen.places[i][part] as Map<string, number>;
+        counts.set(term, (counts.get(term) ?? 0) + 1);
+      });
+    });
+  };
+  const pick = async (row: ListRow): Promise<{ href: string; uncertain: boolean } | null> => {
     if (row.bare || linkText) return { href: row.links[0].href, uncertain: false };
     const shape = rowShape(row);
-    let verdict = verdicts.get(shape);
+    const { rows, places } = shapes.get(shape) as ShapeRows;
+    const terms = row.links.map(linkTerms);
+    const alike = (other: [string, string][], i: number) =>
+      places[i].every((counts, part) => shared(terms[i][part], counts, rows) === shared(other[i][part], counts, rows));
+    const known = verdicts.get(shape) ?? [];
+    let verdict = known.find((v) =>
+      v.sure === "no" ? row.links.every((_, i) => alike(v.terms, i)) : alike(v.terms, v.index),
+    );
     if (!verdict) {
       if (!chooser) throw new Error("A Jev chooser is required to pick drilldown links without --link-text");
       const views = row.links.map((link, i) => ({
@@ -265,14 +317,16 @@ function linkPicker(
       for (const call of chooser.calls) recorder.call(call);
       chooser.calls.length = 0;
       const sure = answer.noul >= NOUL_YES ? "yes" : answer.noul <= NOUL_NO ? "no" : "unsure";
-      verdict = { sure, index: views.findIndex((view) => view.key === answer.key) };
-      verdicts.set(shape, verdict);
+      // An unsure row's first link is visited, so that is the link another row must share.
+      const index = sure === "yes" ? views.findIndex((view) => view.key === answer.key) : 0;
+      verdict = { sure, index, terms };
+      verdicts.set(shape, [...known, verdict]);
       recorder.event("drilldown_link", { attempt, links: views.length, choice: answer.key, noul: answer.noul, sure });
     }
     if (verdict.sure === "no") return null;
-    if (verdict.sure === "unsure") return { href: row.links[0].href, uncertain: true };
-    return { href: row.links[verdict.index].href, uncertain: false };
+    return { href: row.links[verdict.index].href, uncertain: verdict.sure === "unsure" };
   };
+  return { see, pick };
 }
 
 function detailExtractExpression(withText: boolean): string {
@@ -546,7 +600,7 @@ export async function drilldownScan(
   const seenRows = new Set<string>();
   /** Matched rows whose link is not picked yet. */
   const pending: ListRow[] = [];
-  const pick = linkPicker(options.linkChooser ?? null, linkText, listUrl, recorder, attempt);
+  const links = linkPicker(options.linkChooser ?? null, linkText, listUrl, recorder, attempt);
   const toVisit: { row: string; href: string; uncertain: boolean }[] = [];
   const chosen = new Set<string>();
   let totalSeen = 0;
@@ -567,6 +621,7 @@ export async function drilldownScan(
       fresh.push({ ...found, links });
     }
     totalSeen += fresh.length;
+    for (const row of fresh) links.see(row);
 
     if (match) {
       if (!collector) throw new Error("A Jev chooser is required to filter drilldown rows with --match");
@@ -589,7 +644,7 @@ export async function drilldownScan(
 
     while (pending.length && toVisit.length < maxItems) {
       const row = pending.shift() as ListRow;
-      const link = await pick(row);
+      const link = await links.pick(row);
       if (!link) skipped += 1;
       else if (!chosen.has(link.href)) {
         chosen.add(link.href);
