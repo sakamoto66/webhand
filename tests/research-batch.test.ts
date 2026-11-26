@@ -22,6 +22,7 @@ function fake(verified: Record<string, boolean>, status = "idle") {
   write(join(claudeDir, "settings.json"), { enabledPlugins: { "other@market": true } });
   write(join(claudeDir, "skills", "mine", "SKILL.md"), "");
   write(join(claudeDir, "skills", "synced", "account", "docs", "SKILL.md"), "");
+  write(join(claudeDir, "skills", "synced", ".bucket-account_id"), "");
   write(join(claudeDir, "commands", "cmd.md"), "");
   const calls: string[][] = [];
   const output: string[] = [];
@@ -93,6 +94,20 @@ describe("research/batch.ts", () => {
     await batch(args(out), herdr.deps);
     expect(readEvents(join(out, "results.jsonl"))[0]).toMatchObject({ verified: null, end_reason: reason, blocked });
     expect(herdr.calls.at(-1)).toEqual(["pane", "close", "p2"]);
+  });
+
+  it("records a failure before the launch and goes on to the next run", async () => {
+    const out = tmpPath();
+    const herdr = fake({ hotel_filter: true });
+    write(join(herdr.deps.claudeDir, "settings.json"), "{");
+    await batch(args(out, "--repeat", "2"), herdr.deps);
+    const rows = readEvents(join(out, "results.jsonl"));
+    expect(rows.map((row) => [row.n, row.verified, row.end_reason])).toEqual([
+      [1, null, "launch_failed"],
+      [2, null, "launch_failed"],
+    ]);
+    expect(rows[0].error).toContain("JSON");
+    expect(herdr.calls.map((call) => call[1])).toEqual(["list"]);
   });
 
   it("lightens the session unless --full", async () => {

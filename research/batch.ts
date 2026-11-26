@@ -6,7 +6,7 @@
 
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -39,7 +39,9 @@ const defaults: Deps = {
   out: (text) => process.stdout.write(`${text}\n`),
 };
 
-const list = (dir: string): string[] => (existsSync(dir) ? readdirSync(dir) : []);
+/** The entries of a folder; none when it is missing or is a file (claude.ai sync leaves files beside its folders). */
+const list = (dir: string): string[] =>
+  statSync(dir, { throwIfNoEntry: false })?.isDirectory() ? readdirSync(dir) : [];
 const quote = (text: string) => `'${text.replaceAll("'", `'\\''`)}'`;
 
 function jsonLines(file: string): Json[] {
@@ -107,27 +109,30 @@ function runEnd(home: string, task: string): Json {
 /** One run: opens a tab, starts claude there, waits for run_end or the time limit, and closes only that pane. */
 async function runTask(task: string, home: string, model: string, full: boolean, deps: Deps) {
   const session = randomUUID();
-  const env = { WEBHAND_HOME: home, CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" };
-  // env goes into --settings too: a project's local settings would otherwise override the process environment.
-  const settings = JSON.stringify({ env, ...(full ? {} : leanSettings(deps.claudeDir)) });
-  const command = [
-    "env",
-    ...Object.entries(env).map(([key, value]) => `${key}=${value}`),
-    // The prompt comes first: --tools takes several values and would swallow it.
-    ...["claude", prompt(task), "--model", model, "--session-id", session, "--strict-mcp-config"],
-    ...(full ? [] : ["--tools", "Bash,Read,AskUserQuestion,Skill"]),
-    ...["--settings", settings],
-  ];
   const started = deps.now();
   let pane: string | null = null;
+  let launched = false;
   let end: Json = null;
   let blocked = false;
   let reason = "timeout";
   let error: string | undefined;
   try {
+    mkdirSync(home, { recursive: true });
+    const env = { WEBHAND_HOME: home, CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" };
+    // env goes into --settings too: a project's local settings would otherwise override the process environment.
+    const settings = JSON.stringify({ env, ...(full ? {} : leanSettings(deps.claudeDir)) });
+    const command = [
+      "env",
+      ...Object.entries(env).map(([key, value]) => `${key}=${value}`),
+      // The prompt comes first: --tools takes several values and would swallow it.
+      ...["claude", prompt(task), "--model", model, "--session-id", session, "--strict-mcp-config"],
+      ...(full ? [] : ["--tools", "Bash,Read,AskUserQuestion,Skill"]),
+      ...["--settings", settings],
+    ];
     const args = ["tab", "create", "--cwd", process.cwd(), "--label", `batch-${task}`, "--no-focus"];
     pane = JSON.parse(deps.herdr(args)).result.root_pane.pane_id as string;
     deps.herdr(["pane", "run", pane, command.map(quote).join(" ")]);
+    launched = true;
     const status = () => JSON.parse(deps.herdr(["pane", "get", pane as string])).result.pane.agent_status;
     let state = "";
     while (!end && deps.now() - started < TIMEOUT_MS) {
@@ -145,7 +150,7 @@ async function runTask(task: string, home: string, model: string, full: boolean,
       }
     } else if (state === "blocked") reason = "needs_input";
   } catch (caught) {
-    if (!end) reason = "herdr_error";
+    if (!end) reason = launched ? "herdr_error" : "launch_failed";
     error = caught instanceof Error ? caught.message : String(caught);
   }
   const duration = deps.now() - started;
@@ -210,7 +215,6 @@ export async function batch(argv: string[], deps: Deps = defaults): Promise<void
       if (!row) {
         // A new home for every run, so a log left by an interrupted run is never taken for this one.
         const home = join(out, "homes", `${task}-${n}-${randomUUID().slice(0, 8)}`);
-        mkdirSync(home, { recursive: true });
         deps.out(`RUN ${task} #${n} (${profile})`);
         const commit = git("rev-parse", "HEAD");
         row = { ...key, commit, ...(await runTask(task, home, model, full, deps)) };
