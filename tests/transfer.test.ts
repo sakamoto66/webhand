@@ -11,7 +11,8 @@ import { parseFiles } from "../src/commands/shared.ts";
 import { toJson } from "../src/core/format.ts";
 import { type Action, type Page, PolicyError, StalePage } from "../src/core/types.ts";
 import { describePlan, recentActions } from "../src/output.ts";
-import { actionSpace, fileChoices } from "../src/policies/base.ts";
+import { actionSpace, fileChoices, modelState } from "../src/policies/base.ts";
+import { JevPolicy } from "../src/policies/jev.ts";
 import { buildQuestions } from "../src/policies/jev-questions.ts";
 import { tmpPath } from "./helpers.ts";
 
@@ -127,6 +128,47 @@ test("Jev is asked which file by label, never by path", async () => {
   expect(asked).toContain("my resume");
   expect(asked).not.toContain("/home/x/secret");
   expect(questions).toHaveProperty("upload_file_file");
+});
+
+const uploaded = (value: string) => ({
+  step: 1,
+  attempt: 1,
+  kind: "upload",
+  operation: "UPLOAD_FILE",
+  action: "Resume",
+  text: value,
+  url: "u",
+  page_changed: true,
+});
+
+test("no request to Jev holds the path of an uploaded file", async () => {
+  browser = await Browser.open(url);
+  const page = await browser.observe();
+  const path = "/home/x/secret/cv.pdf";
+  const plan = { goal: "g", steps: [], values: [], files: [{ label: "my resume", value: path }], attempt: 1 };
+  const sent: string[] = [];
+  vi.stubEnv("TYPESAFE_API_KEY", "test");
+  const policy = new JevPolicy({
+    fetch: async (_url, init) => {
+      sent.push(init.body);
+      return { status: 400, json: async () => ({}) };
+    },
+  });
+  await expect(policy.choose(page, plan, [uploaded(path)])).rejects.toThrow(PolicyError);
+  vi.unstubAllEnvs();
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).not.toContain("/home/x/secret");
+  expect((modelState(page, [uploaded(path)], plan).action_history as { text: unknown }[])[0].text).toBe("my resume");
+});
+
+test("an uploaded file the plan no longer names is sent to Jev as no text", async () => {
+  browser = await Browser.open(url);
+  const page = await browser.observe();
+  const replaced = { goal: "g", steps: [], values: [], files: [{ label: "my resume", value: "/home/x/new.pdf" }] };
+  for (const plan of [replaced, null]) {
+    const state = modelState(page, [uploaded("/home/x/secret/cv.pdf")], plan);
+    expect((state.action_history as { text: unknown }[])[0].text).toBeNull();
+  }
 });
 
 test("only a file under the current directory can be given, and never a secret", () => {

@@ -161,6 +161,8 @@ export function modelState(page: Page, history: HistoryEntry[], plan: Plan | nul
   state.action_history = history.slice(-HISTORY_LIMIT).map((h) => {
     const entry: Record<string, unknown> = {};
     for (const key of ["attempt", "action", "kind", "text", "url", "page_changed"]) entry[key] = h[key] ?? null;
+    // An upload's text is the file's path: Jev gets the label only, or nothing when the plan no longer names it.
+    if (h.kind === "upload") entry.text = plan?.files?.find((file) => file.value === h.text)?.label ?? null;
     return entry;
   });
   return state;
