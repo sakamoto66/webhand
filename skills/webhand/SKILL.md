@@ -90,7 +90,7 @@ webhand replan --reason "Search was never submitted; Find stays must be pressed"
 
 ## 4b. Answer Jev (the default flow v2; not with `--flow v1` or `WEBHAND_FLOW=v1`)
 
-When the outcome is `ESCALATE`, `STUCK`, `BLOCKED`, `GOAL_REPORTED`, or `JEV_FAILED`, webhand prints `WHY:` and the page. Answer in the same attempt instead of replanning:
+When the outcome is `ESCALATE`, `STUCK`, `BLOCKED`, `READ_ONLY`, `GOAL_REPORTED`, or `JEV_FAILED`, webhand prints `WHY:` and the page. Answer in the same attempt instead of replanning:
 
 ```bash
 webhand answer --note "The cookie banner is closed; search for Lisbon first" [--value "LABEL=VALUE"] [--url URL]
