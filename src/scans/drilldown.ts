@@ -3,6 +3,7 @@
  * visit each matched detail URL via GET navigation, extract structured fields, and return to the list URL.
  */
 
+import { ITEMS } from "../browser/scripts/items.ts";
 import type { Recorder } from "../core/metrics.ts";
 import type { Page, Plan } from "../core/types.ts";
 import { hostAllowed } from "../explore.ts";
@@ -67,7 +68,7 @@ export function isAllowedDetailUrl(href: string, listUrl: string, allowedDomains
 }
 
 function listLinksExpression(linkText: string | null): string {
-  const fn = (wanted: string | null) => {
+  const fn = (wanted: string | null, items: Element[]) => {
     const norm = (s: string) => s.replace(/\s+/g, " ").trim();
     const wantedLow = wanted ? wanted.toLowerCase() : null;
     const isVisible = (el: Element): boolean => {
@@ -78,24 +79,32 @@ function listLinksExpression(linkText: string | null): string {
     };
     const skipChrome = (el: Element) => Boolean(el.closest("nav,header,footer,[role='navigation']"));
     const rowSelectors = "tbody tr, table tr, [role='row'], main li, article";
-    const containers = [...document.querySelectorAll(rowSelectors)].filter(
-      (el) => !skipChrome(el) && isVisible(el) && !el.querySelector("table"),
+    const eligible = (el: Element) => !skipChrome(el) && isVisible(el) && !el.querySelector("table");
+    const isHeader = (el: Element) =>
+      Boolean(el.closest("thead")) ||
+      Boolean(el.querySelector("th,[role='columnheader']") && !el.querySelector("td,[role='cell'],[role='gridcell']"));
+    const usableLinks = (root: Element) =>
+      [...root.querySelectorAll<HTMLAnchorElement>("a[href]")].filter((a) => {
+        if (!isVisible(a) || skipChrome(a)) return false;
+        const raw = a.getAttribute("href") ?? "";
+        if (!raw || raw.startsWith("#") || raw.toLowerCase().startsWith("javascript:")) return false;
+        if (!wantedLow) return true;
+        const txt = norm(a.textContent || a.getAttribute("aria-label") || a.getAttribute("title") || "");
+        return txt.toLowerCase().includes(wantedLow);
+      });
+    // Repeated items (as compare and collect read them) come first, so that cards built of divs are rows. The fixed
+    // selectors add the rows of lists too short to repeat, where they do not overlap one of those items.
+    const repeated = items.filter((el) => eligible(el) && usableLinks(el).length > 0);
+    const listed = [...document.querySelectorAll(rowSelectors)].filter(
+      (el) => eligible(el) && !isHeader(el) && !repeated.some((item) => item.contains(el) || el.contains(item)),
+    );
+    const containers = [...repeated, ...listed].sort((a, b) =>
+      a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
     );
     const seen = new Set<string>();
     const results: { row: string; href: string; linkText: string }[] = [];
     const pickLinks = (root: Element) => {
-      const links = [...root.querySelectorAll<HTMLAnchorElement>("a[href]")].filter((a) => {
-        if (!isVisible(a) || skipChrome(a)) return false;
-        const raw = a.getAttribute("href") ?? "";
-        if (!raw || raw.startsWith("#") || raw.toLowerCase().startsWith("javascript:")) return false;
-        if (wantedLow) {
-          const txt = norm(
-            a.textContent || a.getAttribute("aria-label") || a.getAttribute("title") || "",
-          ).toLowerCase();
-          return txt.includes(wantedLow);
-        }
-        return true;
-      });
+      const links = usableLinks(root);
       if (!links.length) return;
       const chosen = links[0];
       const href = chosen.href;
@@ -120,7 +129,7 @@ function listLinksExpression(linkText: string | null): string {
     }
     return results;
   };
-  return `(${fn.toString()})(${JSON.stringify(linkText)})`;
+  return `(${fn.toString()})(${JSON.stringify(linkText)}, ${ITEMS}())`;
 }
 
 function detailExtractExpression(wantedFields: string[] | null): string {
