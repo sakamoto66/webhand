@@ -174,16 +174,36 @@ export function findLogs(roots: string[]): string[] {
     .map((log) => log.path);
 }
 
-function isRunLog(path: string): boolean {
-  const fd = openSync(path, "r");
+function head(path: string, bytes: number): string {
+  let fd: number;
   try {
-    const buffer = Buffer.alloc(200);
-    const read = readSync(fd, buffer, 0, buffer.length, 0);
-    return /^\{"type":"(run_start|start_failed)"/.test(buffer.subarray(0, read).toString("utf8"));
+    fd = openSync(path, "r");
   } catch {
-    return false;
+    return "";
+  }
+  try {
+    const buffer = Buffer.alloc(bytes);
+    return buffer.subarray(0, readSync(fd, buffer, 0, bytes, 0)).toString("utf8");
+  } catch {
+    return "";
   } finally {
     closeSync(fd);
+  }
+}
+
+function isRunLog(path: string): boolean {
+  return /^\{"type":"(run_start|start_failed)"/.test(head(path, 200));
+}
+
+/** The task in a log's run_start (webarena_ID for research/webarena.ts), to name the run. */
+export function runName(path: string): string | null {
+  const text = head(path, 64 * 1024);
+  const end = text.indexOf("\n");
+  try {
+    const first = JSON.parse(end < 0 ? text : text.slice(0, end));
+    return first.type === "run_start" && typeof first.task === "string" && first.task ? clip(first.task, 40) : null;
+  } catch {
+    return null;
   }
 }
 
@@ -303,14 +323,31 @@ export function describe(event: Event): string | null {
       // Not the evidence: verify() may put the expected answer there, and finish does not print it either.
       return parts.join("");
     }
-    case "call":
-    case "screenshot":
-    case "page":
-    case "page_check":
-    case "handoff":
-      return null;
+    case "tactical_recovery":
+      return `recovery${at}: ${clip(event.strategy, 30)}`;
+    case "self_verify":
+      return `self-check${at}: met ${event.met ?? "?"}, unmet ${event.unmet ?? "?"}, unknown ${event.unknown ?? "?"}`;
+    case "read_only_refused":
+      return `read-only refused${at}: ${clip(event.kind, 12)} "${clip(event.target, 60)}"`;
+    case "compare_end":
+    case "collect_end":
+      return `${event.type.slice(0, -"_end".length)} done${at}`;
+    case "compare_failed":
+    case "collect_failed":
+      return `${event.type.slice(0, -"_failed".length)} FAILED${at}: ${clip(event.error, 120)}${event.uncertain ? " (uncertain)" : ""}`;
+    case "drilldown_end":
+      return `drilldown done${at}: seen ${event.seen ?? "?"}, matched ${event.matched ?? "?"}, visited ${event.visited ?? "?"}${event.truncated ? " (truncated)" : ""}`;
+    case "check": {
+      const verdicts = Array.isArray(event.results) ? event.results.map((r: Event) => clip(r?.verdict, 14)) : [];
+      const counts = [...new Set(verdicts)].map((v) => `${v} ${verdicts.filter((x: string) => x === v).length}`);
+      return `check: ${counts.join(", ") || "no results"}`;
+    }
+    case "extract":
+      return `extract: ${clip(event.kind, 20)} ${event.count ?? "?"} item(s)`;
     default:
-      return typeof event.type === "string" ? `${clip(event.type, 30)}${at}` : null;
+      // Everything else is internal: Jev calls, page outlines and checks, screenshots, handoffs, scan rounds,
+      // known_offered, into_view, more, findings, ignored windows, drilldown details, record and check_run lines.
+      return null;
   }
 }
 
@@ -475,7 +512,7 @@ export async function progress(argv: string[], io: IO, deps: Deps = realDeps): P
   };
 
   if (logArg) {
-    const entry = follow(logArg, basename(logArg, ".jsonl"), null, null);
+    const entry = follow(logArg, runName(logArg) ?? basename(logArg, ".jsonl"), null, null);
     sessions = findSessions(roots);
     entry.webarenaDir =
       sessionFor(entry)?.webarenaDir ?? (basename(logArg) === "webhand.jsonl" ? dirname(logArg) : null);

@@ -160,6 +160,7 @@ describe("progress", () => {
     const { io, text } = capture();
     expect(await progress(["--dir", root, "--log", log], io, deps)).toBe(0);
     const out = text();
+    expect(out).toContain(`── hotel_filter  log: ${log}`);
     expect(out).toMatch(/\+ {4}6s step 1 \(attempt 1\): CLICK "Search" \[jev\]/);
     expect(out).toContain("STOP (attempt 1): GOAL_REPORTED — Jev chose DONE");
     expect(out).toContain("END    status=done verified=true attempts=1 actions=1 decisions=2 elapsed=9s");
@@ -179,6 +180,8 @@ describe("progress", () => {
       if (tick === 3) writeFileSync(join(taskDir, "eval_result.json"), '{"expected":"answer"}');
     });
     expect(await progress(["--dir", root, "--log", live], io, deps)).toBe(0);
+    expect(text()).toContain("── hotel_filter  log:");
+    expect(text()).not.toContain("── webhand ");
     expect(text()).toContain(`wrote ${join(taskDir, "agent_response.json")}`);
     expect(text()).toContain(`wrote ${join(taskDir, "eval_result.json")}`);
     expect(text()).not.toContain("expected");
@@ -197,7 +200,15 @@ describe("progress", () => {
     expect(clip("a\u0007b‮c  d", 20)).toBe("a b c d");
     expect(clip("x".repeat(10), 5)).toBe("xxxx…");
     expect(describeEvent({ type: "screenshot" })).toBeNull();
-    expect(describeEvent({ type: "self_verify", attempt: 2, text: "secret" })).toBe("self_verify (attempt 2)");
+    for (const type of ["known_offered", "into_view", "more", "collect_round", "finding", "window_ignored", "x"]) {
+      expect(describeEvent({ type, attempt: 1 })).toBeNull();
+    }
+    expect(describeEvent({ type: "self_verify", attempt: 2, met: 1, unmet: 0, unknown: 2 })).toBe(
+      "self-check (attempt 2): met 1, unmet 0, unknown 2",
+    );
+    expect(
+      describeEvent({ type: "check", results: [{ verdict: "PASS" }, { verdict: "FAIL" }, { verdict: "PASS" }] }),
+    ).toBe("check: PASS 2, FAIL 1");
   });
 
   it("rejects unknown arguments", async () => {
