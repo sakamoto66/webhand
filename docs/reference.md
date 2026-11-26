@@ -167,7 +167,7 @@ If the CLI is not installed globally, read `webhand` in the table below as `npx 
 | `webhand start --goal G --url U --step S ... [--runbook NAME --param K=V \| --batch ID [--row N]] [--service S] [--value L=V ...] [--file L=PATH ...] [--download-dir DIR] [--har PATH] [--read-only] [--explore --allow-domain H --max-total-actions N] --session ...` | Agent | Records the plan and opens the start URL in the chosen browser engine |
 | `webhand run [--value L=V] [--human-done]` | Jev | Operates the page toward the GOAL until it stops and hands control back |
 | `webhand answer --note N [--value L=V] [--file L=PATH] [--url URL]` | Agent | Answers Jev in the same attempt (flow v2 only): keeps history and budget; respects `allowed_domains` on `--url` |
-| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | Agent | Revises the plan and starts the next attempt (stays in the current one if nothing ran in it); respects `allowed_domains` on `--url` |
+| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | Agent | Revises the plan and starts the next attempt; respects `allowed_domains` on `--url` |
 | `webhand act OP [TARGET]` | Agent | Performs a single action in Jev's place (`CLICK`, `TYPE_TEXT`, `SELECT`, `UPLOAD_FILE`, `SCROLL_DOWN`, `SCROLL_UP`, `SCROLL_TO`, `WAIT`, `TAB_n`) |
 | `webhand observe [--read KIND ...]` | Agent | Prints the current page observation without acting |
 | `webhand check --expect KIND:ARGS ...` | Agent | Deterministic read-only check against the current page (`text:`, `no-text:`, `field:`, `checked:`, `count:`, `url:`, `title:`); `--read` reads whole-page text for this call only |
