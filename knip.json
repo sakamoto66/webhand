@@ -13,5 +13,5 @@
     "tests/**/*.test.ts"
   ],
   "project": ["src/**/*.ts", "tests/**/*.ts", "tasks/**/*.ts", "research/**/*.ts", "scripts/**/*.ts"],
-  "ignoreBinaries": ["pgrep", "uvx"]
+  "ignoreBinaries": ["herdr", "pgrep", "uvx"]
 }
