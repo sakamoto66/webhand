@@ -167,7 +167,7 @@ networkingMode=mirrored
 | `webhand start --goal G --url U --step S ... [--runbook NAME --param K=V \| --batch ID [--row N]] [--service S] [--value L=V ...] [--file L=PATH ...] [--download-dir DIR] [--har PATH] [--read-only] [--explore --allow-domain H --max-total-actions N] --session ...` | エージェント | 計画を記録し、選んだブラウザエンジンで開始 URL を開く |
 | `webhand run [--value L=V] [--human-done]` | Jev | GOAL に届くか助けが要るまでページを操作する |
 | `webhand answer --note N [--value L=V] [--file L=PATH] [--url URL]` | エージェント | 同じ試行の中で Jev に答える（flow v2 のみ）。履歴と予算を引き継ぎ、`--url` は `allowed_domains` に従う |
-| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | エージェント | 計画を見直して次の試行を始める。現在の試行で何も実行していない（`run`、`act`、`drilldown --more` がない）ときは同じ試行のままで、試行回数を使わない。`--url` は `allowed_domains` に従う |
+| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | エージェント | 計画を見直して次の試行を始める（現在の試行で何も実行していなければ同じ試行のまま）。`--url` は `allowed_domains` に従う |
 | `webhand act OP [TARGET]` | エージェント | Jev の代わりに操作を 1 つ実行する（`CLICK`, `TYPE_TEXT`, `SELECT`, `UPLOAD_FILE`, `SCROLL_DOWN`, `SCROLL_UP`, `SCROLL_TO`, `WAIT`, `TAB_n`） |
 | `webhand observe [--read KIND ...]` | エージェント | 操作せずに現在のページを表示する |
 | `webhand check --expect KIND:ARGS ...` | エージェント | 期待を今のページと決定的に照合する（読み取り専用、モデルなし）。`text:`・`no-text:`・`field:`・`checked:`・`count:`・`url:`・`title:`。`--read` はその呼び出しのみ全文を読む |
@@ -412,7 +412,7 @@ flow v1 では（文章は v2 でも）、Jev とエージェントは、ふだ�
 | `page` | 開始時とページが変わるたびの領域の要約（キーと件数だけ。本文は入れない）。`--read` があるときは、`read` に種類ごとの表示した字数と全体の字数が入る |
 | `escalation` | `run` がエージェントに返した結果 |
 | `human_step` / `values` | 人の手順の依頼と完了、追加された入力値のラベル |
-| `attempt_end` | 試行の結果と、エージェントが書いた見直しの理由（何も実行する前の見直しでは書かず、理由は `plan` イベントに残る） |
+| `attempt_end` | 試行の結果と、エージェントが書いた見直しの理由 |
 | `handoff` | エージェントが読む CLI 出力の文字数 |
 | `screenshot` / `screenshot_failed` | `WEBHAND_SCREENSHOTS=1` のときだけ。画像がどの手順と試行のあとか、何のあとか（`start` / `action` / `restart`）、`<ログ名>-screenshots/` 内のファイル、クエリ値を伏せた URL。撮影に失敗しても記録して実行を続ける |
 | `page_check` / `page_check_failed` | `start` のあと（`when: start`）と、`run` が `BLOCKED`、`STUCK`、`ATTEMPT_BUDGET`、`NEEDS_HUMAN` で止まったとき（`when: escalation`）。試行、クエリ値を伏せた URL、文書の HTTP ステータス、ページの題名（120文字まで）、見つかったボット確認の目印（`cloudflare`、`recaptcha`、`hcaptcha`、`datadome`、`perimeterx`、`arkose`。目印であって証拠ではない）、表示されている文字数。読むだけで、Jev には送らない。確認に失敗しても記録して実行を続ける |
