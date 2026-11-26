@@ -1,5 +1,6 @@
 /** research/batch.ts with a fake herdr: no Claude, no Jev, no browser. */
 
+import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -16,6 +17,8 @@ const message = (id: string, output: number) => ({
   type: "assistant",
   message: { id, usage: { input_tokens: 1, output_tokens: output, cache_read_input_tokens: 10 } },
 });
+
+const HEAD = "a".repeat(40);
 
 /** A herdr whose panes finish at once when `verified` names the task, and otherwise stay in `status`. */
 function fake(verified: Record<string, boolean>, status = "idle") {
@@ -47,6 +50,12 @@ function fake(verified: Record<string, boolean>, status = "idle") {
     now: () => time,
     claudeDir,
     claudeVersion: () => "9.9.9 (Claude Code)",
+    // A clean tree on HEAD, whatever the checkout running the tests holds; only the ignore rules are real.
+    git(...args) {
+      if (args[0] === "status") return "";
+      if (args[0] === "rev-parse") return HEAD;
+      return execFileSync("git", args, { encoding: "utf8", stdio: "pipe" });
+    },
     out: (text) => output.push(text),
   };
   const commands = () => calls.filter((args) => args[1] === "run").map((args) => args[3]);
@@ -66,7 +75,7 @@ describe("research/batch.ts", () => {
       [2, true, 2, "run_end", "lean"],
     ]);
     expect(rows[0].tokens).toMatchObject({ input_tokens: 2, output_tokens: 9, cache_read_input_tokens: 20 });
-    expect(rows[0].commit).toMatch(/^[0-9a-f]{40}$/);
+    expect(rows[0].commit).toBe(HEAD);
     expect(rows[0]).toMatchObject({ claude_version: "9.9.9 (Claude Code)", batch_node_version: process.version });
     expect(herdr.calls.filter((call) => call[1] === "close").map((call) => call[2])).toEqual(["p2", "p6"]);
     expect(herdr.output).toContain("VERIFIED 2/2 (100%)");
@@ -81,6 +90,43 @@ describe("research/batch.ts", () => {
     expect(herdr.commands()).toHaveLength(1);
     expect(readEvents(join(out, "results.jsonl")).map((row) => row.verified)).toEqual([false, true]);
     expect(herdr.output).toContain("VERIFIED 1/2 (50%)");
+  });
+
+  /** The fake deps with another answer to one git command. */
+  const withGit = (deps: Deps, command: string, answer: () => string): Deps => ({
+    ...deps,
+    git: (...args) => (args[0] === command ? answer() : deps.git(...args)),
+  });
+
+  it("stops on an --out holding another commit's run, without reusing or adding a line", async () => {
+    const out = tmpPath();
+    await batch(args(out), fake({ hotel_filter: true }).deps);
+    const herdr = fake({ hotel_filter: true });
+    const deps = withGit(herdr.deps, "rev-parse", () => "b".repeat(40));
+    await expect(batch(args(out, "--repeat", "2"), deps)).rejects.toThrow("Use a new --out");
+    await expect(batch(args(out), deps)).rejects.toThrow(HEAD);
+    expect(herdr.calls).toEqual([]);
+    expect(readEvents(join(out, "results.jsonl"))).toHaveLength(1);
+  });
+
+  it("refuses to start with uncommitted or untracked files", async () => {
+    const herdr = fake({ hotel_filter: true });
+    const deps = withGit(herdr.deps, "status", () => "?? tasks/new.ts");
+    await expect(batch(args(tmpPath()), deps)).rejects.toThrow("?? tasks/new.ts");
+    expect(herdr.calls).toEqual([]);
+  });
+
+  it.each([
+    ["rev-parse", "b".repeat(40), "HEAD moved"],
+    ["status", " M research/batch.ts", "research/batch.ts"],
+  ])("stops before the next run when git %s changes during the batch", async (command, changed, message) => {
+    const out = tmpPath();
+    const herdr = fake({ hotel_filter: true });
+    const before = herdr.deps.git(command);
+    const deps = withGit(herdr.deps, command, () => (herdr.commands().length ? changed : before));
+    await expect(batch(args(out, "--repeat", "2"), deps)).rejects.toThrow(message);
+    expect(herdr.commands()).toHaveLength(1);
+    expect(readEvents(join(out, "results.jsonl"))).toHaveLength(1);
   });
 
   it.each([

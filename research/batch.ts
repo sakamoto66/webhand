@@ -2,6 +2,7 @@
  * Runs research tasks one at a time, each in a new interactive Claude Code session in its own herdr tab, and appends
  * one line per run to DIR/results.jsonl. Not shipped. Run from the repository root:
  * `node research/batch.ts --tasks A,B --repeat N --model MODEL --out DIR [--full]`
+ * It stops on uncommitted files, and when DIR/results.jsonl or the next run is not on the commit it started on.
  */
 
 import { execFileSync } from "node:child_process";
@@ -29,6 +30,7 @@ export interface Deps {
   now(): number;
   claudeDir: string;
   claudeVersion(): string;
+  git(...args: string[]): string;
   out(text: string): void;
 }
 
@@ -38,6 +40,7 @@ const defaults: Deps = {
   now: Date.now,
   claudeDir: process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"),
   claudeVersion: () => execFileSync("claude", ["--version"], { encoding: "utf8" }).trim(),
+  git: (...args) => execFileSync("git", args, { encoding: "utf8", stdio: "pipe" }).trim(),
   out: (text) => process.stdout.write(`${text}\n`),
 };
 
@@ -169,7 +172,12 @@ function claudeVersion(deps: Deps): string | null {
   }
 }
 
-const git = (...args: string[]) => execFileSync("git", args, { encoding: "utf8", stdio: "pipe" }).trim();
+/** HEAD, refused with uncommitted or untracked files: they change the conditions and the commit does not show them. */
+function cleanCommit(deps: Deps): string {
+  const changed = deps.git("status", "--porcelain", "--untracked-files=normal");
+  if (changed) throw new Error(`Commit, stash or ignore these files first:\n${changed}`);
+  return deps.git("rev-parse", "HEAD");
+}
 
 export async function batch(argv: string[], deps: Deps = defaults): Promise<void> {
   const { values } = parseArgs({
@@ -194,11 +202,14 @@ export async function batch(argv: string[], deps: Deps = defaults): Promise<void
   const results = join(out, "results.jsonl");
   if (!relative(process.cwd(), out).startsWith("..")) {
     try {
-      git("check-ignore", "-q", results);
+      deps.git("check-ignore", "-q", results);
     } catch {
       throw new Error("--out must be outside the repository or ignored by git");
     }
   }
+  const commit = cleanCommit(deps);
+  const other = jsonLines(results).find((row) => row.commit !== commit);
+  if (other) throw new Error(`${results} has a run of commit ${other.commit}, not HEAD ${commit}. Use a new --out.`);
   deps.herdr(["pane", "list"]); // Stops here, with nothing recorded, when herdr is not available.
   mkdirSync(out, { recursive: true });
   const profile = full ? "full" : "lean";
@@ -210,8 +221,8 @@ export async function batch(argv: string[], deps: Deps = defaults): Promise<void
       if (!row) {
         // A new home for every run, so a log left by an interrupted run is never taken for this one.
         const home = join(out, "homes", `${task}-${n}-${randomUUID().slice(0, 8)}`);
+        if (cleanCommit(deps) !== commit) throw new Error(`HEAD moved from ${commit} during the batch. Stopped.`);
         deps.out(`RUN ${task} #${n} (${profile})`);
-        const commit = git("rev-parse", "HEAD");
         const versions = { claude_version: claudeVersion(deps), batch_node_version: process.version };
         row = { ...key, commit, ...versions, ...(await runTask(task, home, model, full, deps)) };
         appendFileSync(results, `${JSON.stringify(row)}\n`);

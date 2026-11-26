@@ -2,7 +2,7 @@
 
 `research/batch.ts` で `tasks/` の研究タスクを一括実行するときの前提と、別のコーディングエージェントで同じ検証をするために決める項目をまとめる。使い方は [DEVELOPMENT.ja.md](../../DEVELOPMENT.ja.md)、規則の正は [AGENTS.md](../../AGENTS.md)。
 
-2026-11-26、コミット `12d5dcf` の時点。**現在対応しているのは Claude Code だけで、agy（Antigravity CLI）では未実行・未対応。**
+2026-11-26、コミット `12d5dcf` の時点（commit の照合と未コミット変更の拒否は、その後の追加で試走していない）。**現在対応しているのは Claude Code だけで、agy（Antigravity CLI）では未実行・未対応。**
 
 ## 1. どのエージェントでも共通の前提
 
@@ -15,7 +15,7 @@
 | `session: new`（使い捨てプロファイル） | 起動文で指定。実際の値（ログの `run_start.session`）は batch が照合しない |
 | 質問・権限確認に自動回答しない | batch は何も入力しない。ただし権限モード auto では判定器がツール呼び出しを許可・拒否し、研究スキルの `allowed-tools` は一部を事前許可する |
 | 失敗も記録し、自動再試行しない | 時間切れ・起動失敗も 1 行になる。ただし batch 自体が中断された実行は行が残らず、再実行でやり直される（セッション内の再計画は webhand の試行上限に従う） |
-| 変える変数は 1 つ。条件が違う回は比較しない | **強制しない**。再実行で飛ばす判定は `task`・`n`・`profile`・`model` だけで、commit や版が違っても同じ DIR の行を流用する。条件を変えたら新しい `--out` を使う |
+| 変える変数は 1 つ。条件が違う回は比較しない | **commit だけ強制**。DIR に HEAD と違う commit の行があれば停止し、開始時と各実行の直前に未コミット変更・未追跡ファイル（git の無視対象を除く）があるか、実行の間に HEAD が動いても停止する。再実行で飛ばす判定は `task`・`n`・`profile`・`model` で、版や環境変数が違っても同じ DIR の行を流用するので、条件を変えたら新しい `--out` を使う |
 | 直接呼び出し（`claude -p`・`codex exec`・`agy -p` など）と各社 API キー・SDK を使わない | 満たす。対話の CLI を端末で起動する |
 | ユーザー環境の差を持ち込まない（指示ファイル・hook・プラグイン・ユーザースキル・自動メモリ・MCP を読み込まず、`AGENTS.md` は読む） | **一部**。管理設定、ログイン、リポジトリより上のフォルダの `CLAUDE.md` / `AGENTS.md`、ペインが引き継ぐ環境変数（`TYPESAFE_MODEL`・`WEBHAND_*` など）、端末の Chrome は残る。リポジトリ内の設定（プロジェクトの設定・スキル、`.webhand/runbooks`）は条件の一部で、読まれる |
 | 項目を記録する | **一部**。下の表 |
@@ -31,7 +31,7 @@
 | 時間 | `duration_ms`。タブ作成から、`run_end` 後の応答待ち（最大 60 秒）の終わりまで。5 秒間隔の確認 |
 | ホストのトークン | `tokens`（input・output・cache 作成・cache 読込）。取れなければ null。Jev の分は実行ログの `run_end.providers` |
 | 構成・モデル | `profile`（lean / full）、`model`。`model` は `--model` の指定値で、実際に応答したモデルではない |
-| commit | `commit`（HEAD）。未コミット変更の有無は行になく、ログの `run_start.git.dirty` |
+| commit | `commit`（HEAD）。起動直前は未コミット変更なし。実行中の変更は行になく、ログの `run_start.git.dirty` |
 | 版 | `claude_version` と `batch_node_version` は **batch プロセス側**の値。ペイン内の `claude`・Node と同じとは限らない。Chrome の版は行になく、ログの `run_start.chrome` |
 | Jev のモデル | 行になく、ログの `call` の `model`（応答にあればその値）。既定の指定は `jev-latest` で固定されない |
 | 終了理由 | `end_reason`（`run_end`・`needs_input`・`timeout`・`herdr_error`・`launch_failed`）、`error` |
@@ -59,7 +59,7 @@
 | 版の取得 | `claude --version`、`process.version` | 試走 |
 | 認証と Jev のキー | 端末のログインと、ペインの `TYPESAFE_API_KEY` を使う | 試走 |
 
-`--out` はリポジトリ外か git の無視対象でなければ拒否する。
+`--out` はリポジトリ外か git の無視対象でなければ拒否する。未追跡の文書なども未コミット扱いで拒否するので、専用の worktree から実行する。無視対象のファイルと、実行中に変えて戻したファイルは検出しない。
 
 比較する回では `TYPESAFE_MODEL` で Jev のモデルを固定する。batch の起動時に指定してもペインには届かない（`batch.ts` がペインに渡す環境変数は `WEBHAND_HOME` と `CLAUDE_CODE_DISABLE_AUTO_MEMORY` だけで、`tab create` に `--env` を付けない。herdr 0.9.3 では、呼び出し側だけに設定した値は新しいペインで未設定だった）。指定はペインのシェルが読む起動ファイル（例: `~/.bashrc` の `export`）で実行前に行う。webhand は `process.env.TYPESAFE_MODEL`（なければ `jev-latest`）を使うが、ペインの値が `claude` を経て webhand に届くことは実セッションで未確認、herdr サーバー側の環境変数で指定する方法も未確認なので、実行後に各ログの `call` の `model` を確かめる。モデルは行にも再実行の判定にも含まれないので、変えるときは新しい `--out` を使う。
 
