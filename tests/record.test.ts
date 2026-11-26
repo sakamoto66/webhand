@@ -181,6 +181,10 @@ const SECRET_NAMES: [string, string][] = [
     "aria-label",
     name,
   ]),
+  // A capital right after "no" starts the next camelCase word.
+  ...["accountNoConfirm", "accountNoNotes", "AccountNoInput", "account_noConfirm", "routingNoConfirm"].map(
+    (name): [string, string] => ["name", name],
+  ),
   // Words that were already masked stay masked.
   ...["passwd", "user_pwd", "pw", "client_secret", "token", "otp", "cvv", "cvc", "card_no", "ssn", "pin"].map(
     (name): [string, string] => ["name", name],
@@ -193,6 +197,7 @@ const PLAIN_NAMES = [
   ...["口座種別", "認証方式", "電話番号", "個人情報"],
   ...["account_notes", "accountNotes", "account_notification", "accountNotification", "account-note"],
   ...["routing_notes", "routing_node", "two_factor_method", "recovery_contact"],
+  ...["AccountNotes", "ACCOUNT_NOTES", "accountNote", "routingNode"],
 ];
 
 test("fields with secret names are masked, however the name is separated", async () => {
@@ -289,7 +294,8 @@ test("changes inside open shadow DOM are recorded", async () => {
 });
 
 const REGIONS = `<title>Regions</title><nav aria-label="Top"><a href="#x">Home</a></nav>
-<main><form aria-label="Card number"><label>City <input name="city"></label><button>Go</button></form></main>`;
+<main><form aria-label="Card number"><label>City <input name="city"></label><button>Go</button></form>
+<form aria-label="routingNoEntry"><button>Ok</button></form></main>`;
 
 test("actions and pages carry regions without secret names", async () => {
   writeFileSync(join(dir, "form.html"), REGIONS);
@@ -307,6 +313,7 @@ test("actions and pages carry regions without secret names", async () => {
   expect(keys.has("nav:Top") && keys.has("main/form:<redacted>")).toBe(true);
   expect(Object.keys(outline[0]).every((key) => key in demo.REGION_FIELDS)).toBe(true);
   expect(readFileSync(log, "utf8")).not.toContain("Card number");
+  expect(readFileSync(log, "utf8")).not.toContain("routingNoEntry");
 });
 
 test("a forged outline keeps only typed fields", () => {

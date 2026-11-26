@@ -22,11 +22,14 @@
       'セキュリティー? コード', '口座 番号', '口座 名義', '個人 番号', 'マイナンバー',
     ], '[\\s・･_-]*'),
   ].join('|'), 'i');
+  // accountNoConfirm: here the capital ends 'no'. This needs a pattern without the i flag.
+  const camelNo = new RegExp('(?:[Aa]ccount|[Rr]outing)' + latinGap + '[Nn]o(?=[A-Z])');
+  const secretName = text => secretWords.test(text) || camelNo.test(text);
   const secretAutocomplete = /(^|\s)(current-password|new-password|one-time-code|cc-[a-z-]+)(\s|$)/;
   const everPassword = new WeakSet();
   const secret = (e, label) => e.type === 'password' || everPassword.has(e) ||
     secretAutocomplete.test(e.getAttribute('autocomplete') || '') ||
-    secretWords.test([e.name, e.id, e.getAttribute('aria-label'), e.getAttribute('placeholder'), label].join(' '));
+    secretName([e.name, e.id, e.getAttribute('aria-label'), e.getAttribute('placeholder'), label].join(' '));
   // A GET form copies field values into the URL under any key, so no query value is kept.
   const safeUrl = () => {
     const url = new URL(location.href);
@@ -37,7 +40,7 @@
   // A region key is built from labels and headings. A segment whose name looks secret keeps only its kind.
   const safeRegion = key => (key || '').split('/').map(segment => {
     const [kind, ...name] = segment.split(':');
-    return name.length && secretWords.test(name.join(':')) ? kind + ':<redacted>' : segment;
+    return name.length && secretName(name.join(':')) ? kind + ':<redacted>' : segment;
   }).join('/');
   const send = event => {
     const payload = {...event, url: safeUrl()};
