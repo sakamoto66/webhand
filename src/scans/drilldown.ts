@@ -159,13 +159,20 @@ function detailExtractExpression(wantedFields: string[] | null): string {
     };
 
     const rawFields: Record<string, string> = {};
-    const addField = (key: string, value: string) => {
+    // The element or name that each checkbox field was named after, to tell its other boxes from a namesake field.
+    const boxFields = new Map<string, Element | string>();
+    const addField = (key: string, value: string, boxField?: Element | string) => {
       const k = norm(key)
         .replace(/[:*]+$/, "")
         .trim();
       const v = norm(value);
       if (!k || !v) return;
-      if (!(k in rawFields)) rawFields[k] = v;
+      if (!(k in rawFields)) {
+        rawFields[k] = v;
+        if (boxField !== undefined) boxFields.set(k, boxField);
+      } else if (boxField !== undefined && boxFields.get(k) === boxField) {
+        rawFields[k] += `, ${v}`;
+      }
     };
 
     // 1. Form inputs (never password, hidden, or file).
@@ -179,15 +186,19 @@ function detailExtractExpression(wantedFields: string[] | null): string {
           if (!el.checked) continue;
           const fieldContainer = el.closest(".admin__field,.field,tr");
           const fieldHead = fieldContainer?.querySelector(":scope > label, :scope > .admin__field-label, label, th");
-          // A label that wraps a radio or checkbox names that option, not the field.
-          const headNamesOption = fieldHead?.matches('label:has(input[type="radio"],input[type="checkbox"])');
-          const groupLabel =
-            norm(
-              (fieldHead && !headNamesOption && !fieldHead.contains(el) ? fieldHead.textContent : "") ||
-                el.closest("fieldset")?.querySelector("legend")?.textContent ||
-                el.name ||
-                "Choice",
-            ) || "Choice";
+          // A label that wraps a radio or checkbox names that option, not the field. So does one that points to
+          // an option with label[for] when the field has several.
+          const options = 'input[type="radio"],input[type="checkbox"]';
+          const headNamesOption =
+            fieldHead?.matches(`label:has(${options})`) ||
+            (fieldHead instanceof HTMLLabelElement &&
+              Boolean(fieldHead.control?.matches(options)) &&
+              (fieldContainer?.querySelectorAll(options).length ?? 0) > 1);
+          const head = fieldHead && !headNamesOption && !fieldHead.contains(el) ? fieldHead : null;
+          const legend = el.closest("fieldset")?.querySelector("legend");
+          const groupSource = head?.textContent ? head : legend?.textContent ? legend : el.name || "Choice";
+          const groupText = typeof groupSource === "string" ? groupSource : groupSource.textContent;
+          const groupLabel = norm(groupText || "") || "Choice";
           const forLabel = el.id ? document.querySelector(`label[for="${CSS.escape(el.id)}"]`) : null;
           const wrapper = [...(el.labels ?? [])].find((l) => l !== forLabel && l.contains(el));
           const labels = [forLabel, wrapper].filter((l) => l != null);
@@ -214,7 +225,7 @@ function detailExtractExpression(wantedFields: string[] | null): string {
             norm(el.value || "") ||
             lblTexts.find(Boolean) ||
             "checked";
-          addField(groupLabel, optLabel);
+          addField(groupLabel, optLabel, type === "checkbox" ? groupSource : undefined);
           continue;
         }
         if (!isVisible(el)) continue;

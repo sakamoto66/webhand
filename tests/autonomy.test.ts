@@ -492,6 +492,55 @@ describe("real Chrome CLI: drilldown and one-shot read-only query", () => {
     await cli("finish", "--status", "done");
   });
 
+  async function drilledFields(detail: string): Promise<Record<string, string>> {
+    writeFileSync(join(dir, "detail-box.html"), `<title>Settings</title><main>${detail}</main>`);
+    writeFileSync(
+      join(dir, "list-box.html"),
+      `<title>List</title><main><table><tbody><tr><td>Item</td><td><a href="detail-box.html">Open</a></td></tr></tbody></table></main>`,
+    );
+    const url = pathToFileURL(join(dir, "list-box.html")).href;
+    expect((await cli("start", "--goal", "Read the settings", "--url", url, "--chrome", "linux")).code).toBe(OK);
+    const drilled = await cli("drilldown", "--format", "json");
+    expect(drilled.code).toBe(OK);
+    await cli("finish", "--status", "done");
+    return JSON.parse(drilled.out).items[0].fields;
+  }
+
+  test("webhand drilldown lists every checked box of one field", async () => {
+    const fields = await drilledFields(`
+      <fieldset><legend>Channels</legend>
+        <label><input type="checkbox" checked> Mail</label>
+        <label><input type="checkbox"> Phone</label>
+        <label><input type="checkbox" checked> Post</label>
+      </fieldset>
+      <div class="field"><label>Days</label>
+        <input type="checkbox" id="mon" checked><label for="mon">Mon</label>
+        <input type="checkbox" id="tue" checked><label for="tue">Tue</label>
+      </div>
+      <table><tr><th>Topics</th><td>
+        <label><input type="checkbox" name="topic[]" checked> News</label>
+        <label><input type="checkbox" name="topic[]" checked> Sales</label>
+      </td></tr></table>`);
+    expect(fields).toEqual({ Channels: "Mail, Post", Days: "Mon, Tue", Topics: "News, Sales" });
+  });
+
+  test("webhand drilldown does not name a field of several boxes after one box's label", async () => {
+    const fields = await drilledFields(`
+      <div class="field">
+        <input type="checkbox" id="a" name="tags" checked><label for="a">Alpha</label>
+        <input type="checkbox" id="b" name="tags" checked><label for="b">Beta</label>
+      </div>
+      <div class="field"><label for="n">Newsletter</label><input type="checkbox" id="n" checked></div>`);
+    expect(fields).toEqual({ tags: "Alpha, Beta", Newsletter: "Newsletter" });
+  });
+
+  test("webhand drilldown does not merge boxes of separate fields that share a name", async () => {
+    const fields = await drilledFields(`
+      <fieldset><legend>Notify</legend><label><input type="checkbox" checked> Mail</label></fieldset>
+      <fieldset><legend>Notify</legend><label><input type="checkbox" checked> Phone</label></fieldset>`);
+    expect(fields).toEqual({ Notify: "Mail" });
+  });
+
   test("webhand query runs read-only one-shot with drilldown and auto-closes Chrome on GOAL_REPORTED", async () => {
     deps.policy = () =>
       ({
