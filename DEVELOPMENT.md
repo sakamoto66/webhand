@@ -2,7 +2,7 @@
 
 English | [日本語](DEVELOPMENT.ja.md)
 
-This guide is for people changing webhand itself. For installing and using it, see [README.md](README.md) and [docs/usage.md](docs/usage.md). For the full CLI and file-format specification, see [docs/reference.md](docs/reference.md). For the experiment design, see [docs/research/research-plan.md](docs/research/research-plan.md) (Japanese).
+This guide is for people changing webhand itself. For installing and using it, see [README.md](README.md) and [docs/usage.md](docs/usage.md). For the full CLI and file-format specification, see [docs/reference.md](docs/reference.md).
 
 webhand is two things at once: a multi-agent plugin/skill suite (for Claude Code, Antigravity, OpenAI Codex CLI, and other Agent Skills-compatible agents) whose CLI is distributed through npm, and a research platform. The research tests the hypothesis that an AI, like a person, operates a service more successfully the more it remembers about how that service works; success is judged only by independent verification, and failed runs are kept. Many rules below exist to keep experiments valid, not only to keep the code clean.
 
