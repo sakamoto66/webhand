@@ -94,6 +94,23 @@ describe("research/batch.ts", () => {
     expect(herdr.calls.at(-1)).toEqual(["pane", "close", "p2"]);
   });
 
+  it("records a pane that blocks while the report is awaited", async () => {
+    const out = tmpPath();
+    const herdr = fake({ hotel_filter: true });
+    const states = ["working", "blocked"];
+    const deps: Deps = {
+      ...herdr.deps,
+      herdr(args) {
+        const result = herdr.deps.herdr(args);
+        if (args[1] !== "get") return result;
+        return JSON.stringify({ result: { pane: { agent_status: states.shift() } } });
+      },
+    };
+    await batch(args(out), deps);
+    expect(readEvents(join(out, "results.jsonl"))[0]).toMatchObject({ end_reason: "run_end", blocked: true });
+    expect(states).toEqual([]);
+  });
+
   it("records a failure before the launch and goes on to the next run", async () => {
     const out = tmpPath();
     const herdr = fake({ hotel_filter: true });
@@ -134,9 +151,14 @@ describe("research/batch.ts", () => {
     const settings = (one: string) => JSON.parse(/'--settings' '(.*)'$/.exec(one)?.[1] as string);
     const { env, ...lighter } = settings(command);
     expect(env.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe("1");
-    expect(lighter).toEqual({ claudeMdExcludes: [join(homedir(), ".claude", "**")], disableBundledSkills: true });
+    const shared = {
+      claudeMdExcludes: [join(homedir(), ".claude", "**")],
+      skillOverrides: { "auto-mode-setup": "off" },
+    };
+    expect(lighter).toEqual({ ...shared, disableBundledSkills: true });
     expect(full.commands()[0]).not.toContain("--tools");
-    expect(Object.keys(settings(full.commands()[0]))).toEqual(["env", "claudeMdExcludes"]);
+    const { env: _, ...whole } = settings(full.commands()[0]);
+    expect(whole).toEqual(shared);
   });
 
   it("refuses a missing model, an unknown task, and an --out that git would track", async () => {

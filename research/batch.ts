@@ -101,7 +101,10 @@ async function runTask(task: string, home: string, model: string, full: boolean,
     // env goes into --settings too: a project's settings would otherwise override the process environment.
     // Without the user source, ~/.claude/CLAUDE.md is still found as a project file when the repository is under home.
     const claudeMdExcludes = [join(homedir(), ".claude", "**")];
-    const settings = JSON.stringify({ env, claudeMdExcludes, ...(full ? {} : { disableBundledSkills: true }) });
+    // Turned off so that no "Teach auto mode about your environment?" dialog opens once the work is done.
+    const skillOverrides = { "auto-mode-setup": "off" };
+    const lean = full ? {} : { disableBundledSkills: true };
+    const settings = JSON.stringify({ env, claudeMdExcludes, skillOverrides, ...lean });
     const command = [
       "env",
       ...Object.entries(env).map(([key, value]) => `${key}=${value}`),
@@ -130,6 +133,7 @@ async function runTask(task: string, home: string, model: string, full: boolean,
       while (state === "working" && deps.now() < limit) {
         await deps.sleep(POLL_MS);
         state = status();
+        blocked ||= state === "blocked";
       }
     } else if (state === "blocked") reason = "needs_input";
   } catch (caught) {
