@@ -49,6 +49,7 @@ Experiment plans, capability models, benchmark guides, and point-in-time evaluat
 
 | Document | Topic |
 | --- | --- |
+| [batch-verification.md](research/batch-verification.md) | Premises for batch runs of research tasks with Claude Code, and open items for Antigravity CLI (`agy`) |
 | [capability-model.md](research/capability-model.md) | Capability layers (A–M) and single-variable experiment matrix |
 | [webarena-verified.md](research/webarena-verified.md) | Running WebArena-Verified benchmark tasks with HAR recording and offline grading |
 | [benchmark-survey.md](research/benchmark-survey.md) | Survey of browser-agent benchmarks and grading reliability |
