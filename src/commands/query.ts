@@ -1,6 +1,7 @@
 /**
  * The `query` command: read-only one-shot execution (start read-only -> Jev run with 2-stage, self-verify, and
- * tactical recovery -> compact structured extraction or Jev-selected answer blocks -> automatic finish on GOAL_REPORTED).
+ * tactical recovery -> compact structured extraction or Jev-selected answer blocks -> automatic finish on GOAL_REPORTED
+ * (blocked, not done, when no block matched the question).
  */
 
 import * as agent from "../agent/index.ts";
@@ -52,7 +53,7 @@ async function produceCompactAnswer(
   browser: Driver,
   policy: Policy,
   recorder: Recorder,
-): Promise<void> {
+): Promise<boolean> {
   // 1. Optional list-to-detail drilldown.
   if (args.drilldown_match || args.drilldown_link_text || args.fields) {
     const fields = args.fields
@@ -70,7 +71,7 @@ async function produceCompactAnswer(
     });
     const style = args.format === "table" || args.format === "markdown" ? args.format : "json";
     print(formatDrilldown(result, style));
-    return;
+    return true;
   }
 
   // 2. Optional structured page extraction (table/list/link/fields/text).
@@ -93,12 +94,13 @@ async function produceCompactAnswer(
     });
     const style = (args.format ?? "json") as ExtractFormat;
     print(formatExtract(extraction, style));
-    return;
+    return true;
   }
 
   // 3. Default compact answer: parallel Jev block selection for --answer-for (or goal) instead of full page dump.
   const queryText = String(args.answer_for || state.plan.goal);
   const blocks = textBlocks(state.page);
+  const snippet = String(state.page.text ?? "").slice(0, 1500);
   if (blocks.length > 1 && policy.selectBlocks) {
     const matchedKeys = await policy.selectBlocks(state.page, state.plan, queryText, blocks);
     for (const call of policy.calls) recorder.call(call);
@@ -106,11 +108,14 @@ async function produceCompactAnswer(
     const matched = blocks.filter((b) => matchedKeys.has(b.key)).map((b) => b.text);
     if (matched.length) {
       print(`QUERY ANSWER (${state.page.url}):\n${matched.join("\n---\n")}`);
-      return;
+      return true;
     }
+    print(`QUERY NO ANSWER (${state.page.url}): no block of the page matched the question`);
+    print(`The start of the page text, not an answer:\n${snippet}`);
+    return false;
   }
-  const snippet = String(state.page.text ?? "").slice(0, 1500);
   print(`QUERY ANSWER (${state.page.url}):\n${snippet}`);
+  return true;
 }
 
 async function commandQuery(args: Args): Promise<number> {
@@ -137,6 +142,7 @@ async function commandQuery(args: Args): Promise<number> {
   const browser = await attach(state, null, browserView(state));
   const recorder = new Recorder(state.log);
   let result: agent.AgentResult;
+  let answered = false;
   try {
     result = await runAgent(browser, policy, state.plan, recorder, new Budget(state.max_actions, state.max_decisions), {
       history: state.history,
@@ -164,7 +170,7 @@ async function commandQuery(args: Args): Promise<number> {
     session.save(state);
 
     if (result.outcome === agent.GOAL_REPORTED) {
-      await produceCompactAnswer(args, state, browser, policy, recorder);
+      answered = await produceCompactAnswer(args, state, browser, policy, recorder);
     }
   } finally {
     await browser.close();
@@ -173,6 +179,10 @@ async function commandQuery(args: Args): Promise<number> {
   }
 
   if (result.outcome === agent.GOAL_REPORTED) {
+    if (!answered) {
+      await commandFinish({ id: args.id, status: "blocked", reason: "query found no answer on the page" });
+      return FAILED;
+    }
     await commandFinish({ id: args.id, status: "done", reason: "read-only query completed" });
     return OK;
   }
