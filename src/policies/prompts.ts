@@ -50,6 +50,13 @@ for SCROLL_TO only, with where they are. When the element the next step needs is
 it comes into view, and the next operation can act on it. When a list loads more items as it is scrolled,
 SCROLL_TO its last offered element to load more. Do not scroll back and forth looking for an element.`;
 
+/** READ_RULES for v2 (whole page), where elements beyond the viewport have their own operations and no SCROLL_TO. */
+export const READ_RULES_WHOLE = `page.read holds chosen kinds of content from the whole page, beyond the viewport, for
+reading only: none of it can be acted on, and "@ below 900px" says where the lines after it are. Use it as
+evidence for DONE when it shows that every requirement is satisfied. To act, choose a listed element: one beyond
+the viewport is chosen directly with the operation it needs. When a list loads more items as it is scrolled,
+SCROLL_DOWN to load more. Do not scroll back and forth looking for an element.`;
+
 /** Added to NEXT_ACTION when more than one tab is open. */
 export const TAB_RULES = `page.tabs says how many tabs are open and which one this page is. A click can open a new
 tab; the page shown stays the current tab until a TAB_n operation switches to tab n. Switch only when the next
