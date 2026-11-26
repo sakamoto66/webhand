@@ -245,5 +245,6 @@ test("v2: the whole page Jev is given and asked about is as recorded", () => {
   const [, targets, controls] = actionSpace(page.actions);
   golden(toJson(modelState(page, history, v2)), "v2", "model_state");
   golden(toJson(buildQuestions(v2, targets, controls, valueChoices(v2), false)[0]), "v2", "questions");
+  golden(toJson(buildQuestions(v2, targets, controls, valueChoices(v2), true)[0]), "v2", "questions_read");
   golden(describePlan(v2, null), "v2", "describe_plan");
 });

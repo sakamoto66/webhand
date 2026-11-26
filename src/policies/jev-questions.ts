@@ -27,6 +27,7 @@ import {
   NOT_VISIBLE_HELP,
   OPERATION_HELP,
   READ_RULES,
+  READ_RULES_WHOLE,
   RECOVERY_RULES,
   RECOVERY_STRATEGIES,
   REGION_ALL,
@@ -78,9 +79,10 @@ export function buildQuestions(
 ): [Record<string, unknown>, Record<string, string>] {
   const brief = taskBrief(plan);
   const next = plan.flow === "v2" ? NEXT_ACTION_WHOLE : NEXT_ACTION;
+  const readRules = plan.flow === "v2" ? READ_RULES_WHOLE : READ_RULES;
   const rules = [
     next,
-    ...(reading ? [READ_RULES] : []),
+    ...(reading ? [readRules] : []),
     ...(tabbed ? [TAB_RULES] : []),
     ...(plan.compared ? [COMPARED_RULES] : []),
     ...(plan.instructions?.length ? [INSTRUCTION_RULES] : []),
