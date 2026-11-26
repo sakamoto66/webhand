@@ -116,6 +116,33 @@ describe("real Chrome CLI: drilldown --fields", () => {
     expect(jev.queries).toHaveLength(0);
   });
 
+  test("takes a field name equal to the word, ignoring case, without asking Jev", async () => {
+    const drilled = await drill(
+      [`<dl><dt>Price</dt><dd>5円</dd><dt>在庫</dt><dd>3点</dd></dl>`],
+      "--fields",
+      "price,在庫",
+    );
+    expect(first(drilled.out).fields).toEqual({ Price: "5円", 在庫: "3点" });
+    expect(first(drilled.out).field_labels).toEqual({ price: "Price", 在庫: "在庫" });
+    expect(jev.asked).toHaveLength(0);
+    expect(jev.queries).toHaveLength(0);
+  });
+
+  test("asks only about the words no field name equals", async () => {
+    const body = `<dl><dt>Total</dt><dd>9円</dd><dt>価格</dt><dd>5円</dd></dl>`;
+    const drilled = await drill([body, body], "--fields", "price,total");
+    expect(first(drilled.out).fields).toEqual({ 価格: "5円", Total: "9円" });
+    expect(jev.asked).toHaveLength(1);
+    expect(jev.asked[0].wanted).toEqual(["price"]);
+    expect(jev.asked[0].labels.map((l) => l.label)).toEqual(["Total", "価格"]);
+  });
+
+  test("asks Jev when two field names equal the word", async () => {
+    const drilled = await drill([`<dl><dt>Price</dt><dd>5円</dd><dt>PRICE</dt><dd>6円</dd></dl>`], "--fields", "price");
+    expect(drilled.code).toBe(OK);
+    expect(jev.asked.map((a) => a.wanted)).toEqual([["price"]]);
+  });
+
   test("names the missing field and shows the part of the page about it, not the page's start", async () => {
     const drilled = await drill([detail("1,200円")], "--fields", "price,colour");
     expect(first(drilled.out).fields).toEqual({ 価格: "1,200円" });

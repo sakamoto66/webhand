@@ -448,8 +448,9 @@ function detailExtractExpression(withText: boolean): string {
 }
 
 /**
- * Takes the page's fields that fit the words of --fields. Jev is asked once per set of field names, with the names only;
- * code copies the values. For a word without a sure field it also picks the blocks of the page about it.
+ * Takes the page's fields that fit the words of --fields. A word that exactly one field name equals, ignoring case, is
+ * that field. Jev is asked about the other words, once per set of field names, with the names only; code copies the
+ * values. For a word without a sure field it also picks the blocks of the page about it.
  */
 function fieldPicker(judge: FieldJudge, wanted: string[], plan: Plan, recorder: Recorder, attempt: number) {
   const answers = new Map<string, Map<string, FieldMatch>>();
@@ -458,18 +459,25 @@ function fieldPicker(judge: FieldJudge, wanted: string[], plan: Plan, recorder: 
     judge.calls.length = 0;
   };
   return async (detail: Detail, listPage: Page): Promise<FieldResult> => {
-    const observed = Object.entries(detail.fields).slice(0, MAX_LABELS);
+    const all = Object.entries(detail.fields);
+    const exact = new Map<string, [string, string]>();
+    for (const word of wanted) {
+      const equal = all.filter(([label]) => label.toLowerCase() === word.toLowerCase());
+      if (equal.length === 1) exact.set(word, equal[0]);
+    }
+    const asked = wanted.filter((word) => !exact.has(word));
+    const observed = all.slice(0, MAX_LABELS);
     const labels = observed.map(([label], i) => ({ key: String(i + 1), label: label.slice(0, LABEL_CHARS) }));
-    const signature = JSON.stringify(labels);
+    const signature = JSON.stringify([asked, labels]);
     let matches = answers.get(signature);
-    if (!matches && labels.length) {
-      matches = await judge.matchFields(wanted, labels);
+    if (!matches && asked.length && labels.length) {
+      matches = await judge.matchFields(asked, labels);
       record();
       answers.set(signature, matches);
       recorder.event("drilldown_fields", {
         attempt,
         labels: labels.length,
-        matches: wanted.map((word) => ({ ...matches?.get(word) })),
+        matches: asked.map((word) => ({ ...matches?.get(word) })),
       });
     }
     const fields: Record<string, string> = {};
@@ -477,6 +485,12 @@ function fieldPicker(judge: FieldJudge, wanted: string[], plan: Plan, recorder: 
     const missing: string[] = [];
     const uncertain: NonNullable<FieldResult["uncertain_fields"]> = [];
     for (const word of wanted) {
+      const equal = exact.get(word);
+      if (equal) {
+        fields[equal[0]] = equal[1];
+        found[word] = equal[0];
+        continue;
+      }
       const match = matches?.get(word);
       if (!match || match.noul <= NOUL_NO) {
         missing.push(word);
