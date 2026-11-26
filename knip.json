@@ -8,6 +8,7 @@
     "research/webarena.ts",
     "research/engines.ts",
     "research/drilldown-probe.ts",
+    "research/progress.ts",
     "research/shared.ts",
     "tasks/*.ts",
     "scripts/*.ts",
