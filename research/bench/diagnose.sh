@@ -26,6 +26,6 @@ fi
 id() { python3 -c "import json,sys; d=json.load(sys.stdin)['result']; print($1)"; }
 root=$(herdr workspace create --label "diag-$A-$B" --cwd "$DIR" --no-focus | id "d['root_pane']['pane_id']")
 second=$(herdr pane split "$root" --direction right --no-focus | id "d['pane']['pane_id']")
-herdr pane run "$root" "env WEBHAND_BENCH='$ROOT' $CODE/run_analysis.sh completion $A $B" >/dev/null
-herdr pane run "$second" "env WEBHAND_BENCH='$ROOT' $CODE/run_analysis.sh not-visible $A $B" >/dev/null
+herdr pane run "$root" "env WEBHAND_BENCH='$ROOT' '$CODE/run_analysis.sh' completion $A $B" >/dev/null
+herdr pane run "$second" "env WEBHAND_BENCH='$ROOT' '$CODE/run_analysis.sh' not-visible $A $B" >/dev/null
 echo "Analysis sessions started in herdr workspace diag-$A-$B: $root $second"

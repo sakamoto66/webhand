@@ -9,12 +9,12 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from common import WORK
+from common import WORK, project_slug
 
 task_id = sys.argv[1]
 work = WORK / task_id
 expected = json.loads((work / "meta.json").read_text()).get("model")
-folder = Path.home() / ".claude" / "projects" / str(work).replace("/", "-").replace(".", "-")
+folder = Path.home() / ".claude" / "projects" / project_slug(work.resolve())
 counts = Counter()
 for transcript in folder.glob("*.jsonl"):
     for line in transcript.read_text().split("\n"):

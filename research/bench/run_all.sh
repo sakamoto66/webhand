@@ -14,7 +14,7 @@ N=${1:-${BENCH_PARALLEL:-3}}
 if [ "$N" -le 1 ]; then exec "$CODE/worker.sh"; fi
 LABEL="${BENCH_ROUNDS:-${BENCH_ROUND:-main}}"
 # The rounds are quoted: BENCH_ROUNDS="sa sb" has a space, which the pane's shell would split into a command.
-WORKER="env WEBHAND_BENCH='$ROOT' BENCH_ROUND='${BENCH_ROUND:-}' BENCH_ROUNDS='${BENCH_ROUNDS:-}' $CODE/worker.sh"
+WORKER="env WEBHAND_BENCH='$ROOT' BENCH_ROUND='${BENCH_ROUND:-}' BENCH_ROUNDS='${BENCH_ROUNDS:-}' '$CODE/worker.sh'"
 id() { python3 -c "import json,sys; d=json.load(sys.stdin)['result']; print($1)"; }
 root=$(herdr workspace create --label "bench-$(printf %s "$LABEL" | tr ' ' '-')" --cwd "$ROOT" --no-focus | id "d['root_pane']['pane_id']")
 panes="$root"; last="$root"; i=1

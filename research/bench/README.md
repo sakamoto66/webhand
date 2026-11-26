@@ -59,12 +59,12 @@ research/bench/setup.sh
 
 ```sh
 R=/path/to/webhand/research/bench
-B="uv run --project $HOME/webhand-bench/benchmark python $R/scripts"
+B="uv run --project ${WEBHAND_BENCH:-$HOME/webhand-bench}/benchmark python $R/scripts"
 ```
 
 ## 手順
 
-1. 対象のタスクを、中身を見ずに決めます（シードを先に決めて記録しておく）。広げるときは `--exclude-prepared` で済んだタスクを除き、新しいシードで選びます。選んだ結果は `picks/picks-<シード>.txt` に残します。
+1. 対象のタスクを、中身を見ずに決めます（シードを先に決めて記録しておく）。広げるときは `--exclude-prepared` で済んだタスクを除き、新しいシードで選びます。選んだ結果は `picks/picks-<シード>.txt` に残し、`prepare.py` の前にコミットします（未コミットのファイルがあると `prepare.py` は断ります）。回の途中ではコミットしません（タスクごとの `harness_commit` が分かれます）。
 
    ```sh
    $B/pick.py 5 --seed 20261104

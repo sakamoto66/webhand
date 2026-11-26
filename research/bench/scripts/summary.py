@@ -8,7 +8,7 @@ from collections import Counter
 from statistics import mean
 
 import denials
-from common import RESULTS, ROUND, WORK, picks_files
+from common import RESULTS, ROUND, WORK, picks_files, project_slug
 
 
 def seeds() -> dict[str, str]:
@@ -39,7 +39,7 @@ def ended(task_id: str) -> str | None:
 
 def refused(task_id: str) -> dict:
     """What the auto mode classifier, and permission rules or a person, refused in this task's sessions (counts only)."""
-    project = "-" + str(WORK / task_id).strip("/").replace("/", "-")
+    project = project_slug((WORK / task_id).resolve())
     total = {"denied": 0, "no_verdict": 0, "rule_denied": 0, "reasons": Counter()}
     for transcript in denials.work_transcripts(project):
         found = denials.count(transcript)
