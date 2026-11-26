@@ -103,6 +103,129 @@ test("secrets never reach the record", async () => {
   ]);
 });
 
+// Each field carries one name, in one of the places the recorder looks at.
+const SECRET_NAMES: [string, string][] = [
+  ...["api_key", "api-key", "apiKey", "APIKEY", "user[api][key]", "private_key", "private-key", "privateKey"].map(
+    (name): [string, string] => ["name", name],
+  ),
+  ...["credential", "userCredentials", "security_answer", "securityAnswer", "security-question-answer"].map(
+    (name): [string, string] => ["id", name],
+  ),
+  ...["API key", "api.key", "Private Key", "Security answer", "Recovery phrase", "recovery_phrase"].map(
+    (name): [string, string] => ["aria-label", name],
+  ),
+  ...[
+    "recovery-phrase",
+    "recoveryPhrase",
+    "秘密の質問",
+    "秘密の質問の答え",
+    "ワンタイムコード",
+    "ワンタイム・コード",
+  ].map((name): [string, string] => ["placeholder", name]),
+  ...["確認コード", "確認 コード", "セキュリティコード", "セキュリティーコード", "セキュリティ　コード"].map(
+    (name): [string, string] => ["label", name],
+  ),
+  ...["口座番号", "マイナンバー"].map((name): [string, string] => ["label", name]),
+  ...[
+    "access_key",
+    "accessKey",
+    "security_code",
+    "securityCode",
+    "verification-code",
+    "confirmation_code",
+    "one_time_code",
+    "oneTimeCode",
+    "auth_code",
+    "2fa_code",
+    "mfaCode",
+    "seed_phrase",
+    "mnemonic",
+    "security_question",
+    "account_number",
+    "accountNumber",
+    "iban",
+    "payerIban",
+    "routing-number",
+    "my_number",
+    "mynumber",
+    "user[access][key]",
+  ].map((name): [string, string] => ["name", name]),
+  ...[
+    "Access key",
+    "Security code",
+    "Verification code",
+    "Confirmation code",
+    "One-time code",
+    "one time code",
+    "Auth code",
+    "2FA code",
+    "MFA code",
+    "Seed phrase",
+    "Security question",
+    "Account number",
+    "Routing number",
+    "My Number",
+  ].map((name): [string, string] => ["aria-label", name]),
+  ...["個人番号", "個人 番号", "秘密の答え", "秘密の・答え", "合言葉", "認証番号", "認証・番号", "確認番号"].map(
+    (name): [string, string] => ["label", name],
+  ),
+  ...["確認 番号", "口座名義", "口座 名義", "口座　番号"].map((name): [string, string] => ["placeholder", name]),
+  ...["account_no", "accountNo", "account-no2", "user[account][no]", "routing_no", "routingNo", "routing.no"].map(
+    (name): [string, string] => ["name", name],
+  ),
+  ...["two_factor_code", "twoFactorCode", "recovery_code", "recoveryCode"].map((name): [string, string] => [
+    "id",
+    name,
+  ]),
+  ...["Account No.", "Routing no", "Two-factor code", "Recovery code"].map((name): [string, string] => [
+    "aria-label",
+    name,
+  ]),
+  // A capital right after "no" starts the next camelCase word.
+  ...["accountNoConfirm", "accountNoNotes", "AccountNoInput", "account_noConfirm", "routingNoConfirm"].map(
+    (name): [string, string] => ["name", name],
+  ),
+  // Words that were already masked stay masked.
+  ...["passwd", "user_pwd", "pw", "client_secret", "token", "otp", "cvv", "cvc", "card_no", "ssn", "pin"].map(
+    (name): [string, string] => ["name", name],
+  ),
+  ...["パスワード", "暗証番号", "認証コード", "カード番号"].map((name): [string, string] => ["label", name]),
+];
+const PLAIN_NAMES = [
+  ...["keyboard", "api_version", "private_note", "answer", "recovery_email", "確認事項", "商品コード"],
+  ...["access_level", "account_type", "routing", "verification_status", "zip_code", "phone_number", "seed", "my_name"],
+  ...["口座種別", "認証方式", "電話番号", "個人情報"],
+  ...["account_notes", "accountNotes", "account_notification", "accountNotification", "account-note"],
+  ...["routing_notes", "routing_node", "two_factor_method", "recovery_contact"],
+  ...["AccountNotes", "ACCOUNT_NOTES", "accountNote", "routingNode"],
+];
+
+test("fields with secret names are masked, however the name is separated", async () => {
+  const fields = [...SECRET_NAMES, ...PLAIN_NAMES.map((name): [string, string] => ["name", name])];
+  const inputs = fields.map(([where, name], i) =>
+    where === "label" ? `<label>${name} <input data-n="${i}"></label>` : `<input data-n="${i}" ${where}="${name}">`,
+  );
+  writeFileSync(join(dir, "form.html"), `<title>Names</title>${inputs.join("<br>")}<br><button>End</button>`);
+  await play([
+    async (page) => {
+      for (const i of fields.keys()) {
+        await page.locator(`[data-n="${i}"]`).click();
+        await page.keyboard.type(`value-${i}.`);
+      }
+      await page.getByRole("button").click();
+    },
+  ]);
+  const values = actions()
+    .steps.filter((s) => s.operation === "fill")
+    .map((s) => s.value);
+  const seen = fields.map(([where, name], i) => [where, name, values[i]]);
+  expect(seen).toEqual(
+    fields.map(([where, name], i) => [where, name, i < SECRET_NAMES.length ? "<redacted>" : `value-${i}.`]),
+  );
+  const text = readFileSync(log, "utf8");
+  for (const i of SECRET_NAMES.keys()) expect(text).not.toContain(`value-${i}.`);
+});
+
 test("secrets in a GET form URL are masked", async () => {
   await play(MOVES);
   const pages = actions().events.filter((e) => e.type === "page" && e.title === "Done");
@@ -171,7 +294,8 @@ test("changes inside open shadow DOM are recorded", async () => {
 });
 
 const REGIONS = `<title>Regions</title><nav aria-label="Top"><a href="#x">Home</a></nav>
-<main><form aria-label="Card number"><label>City <input name="city"></label><button>Go</button></form></main>`;
+<main><form aria-label="Card number"><label>City <input name="city"></label><button>Go</button></form>
+<form aria-label="routingNoEntry"><button>Ok</button></form></main>`;
 
 test("actions and pages carry regions without secret names", async () => {
   writeFileSync(join(dir, "form.html"), REGIONS);
@@ -189,6 +313,7 @@ test("actions and pages carry regions without secret names", async () => {
   expect(keys.has("nav:Top") && keys.has("main/form:<redacted>")).toBe(true);
   expect(Object.keys(outline[0]).every((key) => key in demo.REGION_FIELDS)).toBe(true);
   expect(readFileSync(log, "utf8")).not.toContain("Card number");
+  expect(readFileSync(log, "utf8")).not.toContain("routingNoEntry");
 });
 
 test("a forged outline keeps only typed fields", () => {

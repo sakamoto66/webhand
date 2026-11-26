@@ -3,12 +3,33 @@
   window.__browserLabRecorder = true;
   const read = () => __SNAPSHOT__;
   const inFrame = window !== window.top;
-  const secretWords = /pass|pwd|\bpw\b|secret|token|otp|cvv|cvc|card|ssn|\bpin\b|パスワード|暗証|認証コード|カード/i;
+  // Words that mark a field or region name as secret. A match only ever masks more, never less.
+  // A space in a phrase matches any separator or none: 'api key' covers api_key, api-key, apiKey, user[api][key].
+  const phrases = (list, gap) => list.map(phrase => phrase.replaceAll(' ', gap));
+  const latinGap = '[\\s_.:\\/[\\]-]*';
+  const secretWords = new RegExp([
+    /pass|pwd|\bpw\b|secret|token|otp|cvv|cvc|card|ssn|\bpin\b|パスワード|暗証|認証コード|カード/.source,
+    ...phrases([
+      'api key', 'private key', 'access key', 'credential', 'recovery phrase', 'seed phrase', 'mnemonic',
+      'security answer', 'security question', 'security code', 'verification code', 'confirmation code',
+      'one time code', 'auth code', '2fa code', 'mfa code', 'two factor code', 'recovery code',
+      'account number', 'routing number', 'iban', 'my number',
+    ], latinGap),
+    // 'no' must end there, so that account_notes and account_notification stay readable.
+    ...phrases(['account no', 'routing no'], latinGap).map(pattern => pattern + '(?![a-z])'),
+    ...phrases([
+      '秘密の 質問', '秘密の 答え', '合言葉', 'ワンタイム コード', '認証 番号', '確認 コード', '確認 番号',
+      'セキュリティー? コード', '口座 番号', '口座 名義', '個人 番号', 'マイナンバー',
+    ], '[\\s・･_-]*'),
+  ].join('|'), 'i');
+  // accountNoConfirm: here the capital ends 'no'. This needs a pattern without the i flag.
+  const camelNo = new RegExp('(?:[Aa]ccount|[Rr]outing)' + latinGap + '[Nn]o(?=[A-Z])');
+  const secretName = text => secretWords.test(text) || camelNo.test(text);
   const secretAutocomplete = /(^|\s)(current-password|new-password|one-time-code|cc-[a-z-]+)(\s|$)/;
   const everPassword = new WeakSet();
   const secret = (e, label) => e.type === 'password' || everPassword.has(e) ||
     secretAutocomplete.test(e.getAttribute('autocomplete') || '') ||
-    secretWords.test([e.name, e.id, e.getAttribute('aria-label'), e.getAttribute('placeholder'), label].join(' '));
+    secretName([e.name, e.id, e.getAttribute('aria-label'), e.getAttribute('placeholder'), label].join(' '));
   // A GET form copies field values into the URL under any key, so no query value is kept.
   const safeUrl = () => {
     const url = new URL(location.href);
@@ -19,7 +40,7 @@
   // A region key is built from labels and headings. A segment whose name looks secret keeps only its kind.
   const safeRegion = key => (key || '').split('/').map(segment => {
     const [kind, ...name] = segment.split(':');
-    return name.length && secretWords.test(name.join(':')) ? kind + ':<redacted>' : segment;
+    return name.length && secretName(name.join(':')) ? kind + ':<redacted>' : segment;
   }).join('/');
   const send = event => {
     const payload = {...event, url: safeUrl()};
