@@ -22,6 +22,8 @@ const NOUL_NO = 0.3;
 const LINK_NAME_CHARS = 80;
 /** In a list of this many rows or fewer, links share an answer only when their names and path endings are equal. */
 const SMALL_LIST = 3;
+/** Link questions asked in one drilldown, the pages loaded by --more included. */
+const MAX_LINK_QUESTIONS = 10;
 const MAX_LABELS = 60;
 const LABEL_CHARS = 80;
 const SNIPPET_CHARS = 1500;
@@ -270,8 +272,8 @@ type LinkVerdict = { sure: "yes" | "no" | "unsure"; index: number; terms: [strin
 /**
  * Picks the link to visit for each row, or null for a row without a detail link. --link-text is the user's own choice;
  * otherwise Jev is asked, and another row of the same shape takes the answer only when the link it would visit has the
- * same shared name and path ending (every link, for a row without a detail link). All rows must be passed to `see`
- * before they are picked from.
+ * same shared name and path ending (every link, for a row without a detail link). After MAX_LINK_QUESTIONS, a row that
+ * no answer serves takes its first link as unsure. All rows must be passed to `see` before they are picked from.
  */
 function linkPicker(
   chooser: LinkChooser | null,
@@ -282,6 +284,8 @@ function linkPicker(
 ) {
   const shapes = new Map<string, ShapeRows>();
   const verdicts = new Map<string, LinkVerdict[]>();
+  let questions = 0;
+  let overLimit = 0;
   const see = (row: ListRow) => {
     if (row.bare || linkText) return;
     const shape = rowShape(row);
@@ -308,6 +312,12 @@ function linkPicker(
     );
     if (!verdict) {
       if (!chooser) throw new Error("A Jev chooser is required to pick drilldown links without --link-text");
+      if (questions >= MAX_LINK_QUESTIONS) {
+        if (!overLimit) recorder.event("drilldown_link_limit", { attempt, limit: MAX_LINK_QUESTIONS });
+        overLimit += 1;
+        return { href: row.links[0].href, uncertain: true };
+      }
+      questions += 1;
       const views = row.links.map((link, i) => ({
         key: String(i + 1),
         name: link.name.slice(0, LINK_NAME_CHARS),
@@ -326,7 +336,12 @@ function linkPicker(
     if (verdict.sure === "no") return null;
     return { href: row.links[verdict.index].href, uncertain: verdict.sure === "unsure" };
   };
-  return { see, pick };
+  return {
+    see,
+    pick,
+    /** Rows that took their first link because no more questions could be asked. */
+    overLimit: () => overLimit,
+  };
 }
 
 function detailExtractExpression(withText: boolean): string {
@@ -703,6 +718,7 @@ export async function drilldownScan(
     visited: result.visited,
     truncated: result.truncated,
     ...(skipped ? { skipped_no_link: skipped } : {}),
+    ...(links.overLimit() ? { link_limit_rows: links.overLimit() } : {}),
     ...(result.pages !== undefined ? { pages: result.pages } : {}),
   });
   return result;

@@ -2,6 +2,7 @@
 
 import { expect, test } from "vitest";
 import type { Recorder } from "../src/core/metrics.ts";
+import type { Page } from "../src/core/types.ts";
 import type { Driver } from "../src/ipc/remote.ts";
 import { drilldownScan, type LinkChooser, type LinkView } from "../src/scans/drilldown.ts";
 
@@ -17,15 +18,24 @@ function row(...links: [string, string][]) {
   };
 }
 
-/** Drills down the rows with a Jev that answers by `noul` and takes the link `take` of the row it is shown. */
-async function drill(rows: ReturnType<typeof row>[], noul: (links: LinkView[]) => number = () => 0.95, take = 0) {
+/**
+ * Drills down the rows, and the rows each "load more" adds, with a Jev that answers by `noul` and takes the link `take`
+ * of the row it is shown.
+ */
+async function drill(
+  rows: ReturnType<typeof row>[],
+  noul: (links: LinkView[]) => number = () => 0.95,
+  take = 0,
+  more: ReturnType<typeof row>[][] = [],
+) {
   let at = LIST;
+  let shown = rows;
   const driver = {
     observe: async () => ({ url: LIST }),
     goto: async (url: string) => {
       at = url;
     },
-    evaluate: async () => (at === LIST ? rows : { url: at, title: "", fields: {} }),
+    evaluate: async () => (at === LIST ? shown : { url: at, title: "", fields: {} }),
   } as unknown as Driver;
   const asked: LinkView[][] = [];
   const chooser: LinkChooser = {
@@ -35,10 +45,29 @@ async function drill(rows: ReturnType<typeof row>[], noul: (links: LinkView[]) =
       return { key: links[take].key, noul: noul(links) };
     },
   };
-  const recorder = { call: () => {}, event: () => {} } as unknown as Recorder;
+  const events: { type: string; fields: Record<string, unknown> }[] = [];
+  const recorder = {
+    call: () => {},
+    event: (type: string, fields: Record<string, unknown>) => events.push({ type, fields }),
+  } as unknown as Recorder;
+  const later = [...more];
+  const loadMore = async (page: Page) => {
+    const next = later.shift();
+    if (!next) return null;
+    shown = next;
+    return page;
+  };
   const plan = { goal: "g", steps: [], values: [] };
-  const result = await drilldownScan(driver, null, plan, { linkChooser: chooser, maxItems: 100 }, recorder);
-  return { asked: asked.length, visited: result.items.map((item) => item.url.replace("https://shop.example", "")) };
+  const options = { linkChooser: chooser, maxItems: 100, ...(more.length ? { loadMore } : {}) };
+  const result = await drilldownScan(driver, null, plan, options, recorder);
+  const path = (url: string) => url.replace("https://shop.example", "");
+  return {
+    asked: asked.length,
+    visited: result.items.map((item) => path(item.url)),
+    uncertain: result.items.filter((item) => item.link_uncertain).map((item) => path(item.url)),
+    skipped: result.skipped_no_link ?? 0,
+    events,
+  };
 }
 
 const deletes = (links: LinkView[]) => (links[0].path.includes("delete") ? 0.05 : 0.95);
@@ -48,12 +77,12 @@ const word = (i: number) => `item-${String.fromCharCode(97 + Math.floor(i / 26),
 
 test("does not reuse the answer about /users/3/edit for /users/4/delete", async () => {
   const drilled = await drill([row(["Edit", "/users/3/edit"]), row(["Delete", "/users/4/delete"])], deletes);
-  expect(drilled).toEqual({ asked: 2, visited: ["/users/3/edit"] });
+  expect(drilled).toMatchObject({ asked: 2, visited: ["/users/3/edit"] });
 });
 
 test("tells action words apart by their paths alone", async () => {
   const drilled = await drill([row(["開く", "/users/3/edit"]), row(["開く", "/users/4/delete"])], deletes);
-  expect(drilled).toEqual({ asked: 2, visited: ["/users/3/edit"] });
+  expect(drilled).toMatchObject({ asked: 2, visited: ["/users/3/edit"] });
 });
 
 test("tells actions apart by a query that is never sent", async () => {
@@ -109,4 +138,55 @@ test("conditions an unsure answer on the first link, which is the one visited", 
   const rows = times(12, (i) => row([word(i), `/items/${word(i)}`], [word(i % 3), `/c/${word(i % 3)}`]));
   const drilled = await drill(rows, () => 0.5, 1);
   expect(drilled.asked).toBe(1);
+});
+
+/** A row whose detail link, the second, is of the kind `kind`: each new kind needs a question. */
+const kinded = (i: number, kind: number) =>
+  row([`seller ${word(i)}`, `/s/${word(i)}`], [word(kind), `/items/${word(i)}`]);
+const limits = (events: { type: string; fields: Record<string, unknown> }[]) =>
+  events.filter((event) => event.type === "drilldown_link_limit");
+
+test("asks at most 10 link questions, then takes the first link as unsure, and still reuses answers", async () => {
+  // 15 kinds, each on rows i and i + 15.
+  const drilled = await drill(
+    times(30, (i) => kinded(i, i % 15)),
+    () => 0.95,
+    1,
+  );
+  expect(drilled.asked).toBe(10);
+  const over = (i: number) => i % 15 >= 10;
+  expect(drilled.visited).toEqual(times(30, (i) => `/${over(i) ? "s" : "items"}/${word(i)}`));
+  expect(drilled.uncertain).toEqual(drilled.visited.filter((url) => url.startsWith("/s/")));
+  expect(drilled.skipped).toBe(0);
+  expect(limits(drilled.events)).toEqual([{ type: "drilldown_link_limit", fields: { attempt: 1, limit: 10 } }]);
+  expect(drilled.events.find((event) => event.type === "drilldown_end")?.fields.link_limit_rows).toBe(10);
+});
+
+test("counts the questions of every page loaded by --more together", async () => {
+  const page = (from: number) => times(8, (i) => [kinded(from + i, from + i), kinded(from + i + 100, from + i)]).flat();
+  const drilled = await drill(page(0), () => 0.95, 1, [page(8), page(16)]);
+  expect(drilled.asked).toBe(10);
+  expect(drilled.visited).toHaveLength(48);
+  expect(drilled.uncertain).toHaveLength(28);
+  expect(limits(drilled.events)).toHaveLength(1);
+});
+
+test("keeps skipping rows of a kind without a detail link after the limit", async () => {
+  const rows = times(24, (i) => kinded(i, i % 12));
+  // The first kind has no detail link; its second row comes after the limit is reached.
+  const drilled = await drill(rows, (links) => (links[1].name === word(0) ? 0.05 : 0.95), 1);
+  expect(drilled.asked).toBe(10);
+  expect(drilled.skipped).toBe(2);
+  expect(drilled.visited).not.toContain(`/s/${word(12)}`);
+});
+
+test("logs no limit when 10 questions are enough", async () => {
+  const drilled = await drill(
+    times(20, (i) => kinded(i, i % 10)),
+    () => 0.95,
+    1,
+  );
+  expect(drilled).toMatchObject({ asked: 10, uncertain: [] });
+  expect(limits(drilled.events)).toEqual([]);
+  expect(drilled.events.find((event) => event.type === "drilldown_end")?.fields).not.toHaveProperty("link_limit_rows");
 });
