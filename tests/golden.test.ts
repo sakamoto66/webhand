@@ -20,6 +20,7 @@ import {
   buildCollect,
   buildCompare,
   buildDetailLink,
+  buildFieldMatch,
   buildMore,
   buildQuestions,
   compareState,
@@ -202,6 +203,25 @@ test("the drilldown link request is as recorded", async () => {
   });
   await expect(policy.detailLink("商品 1 ¥1,200", links)).rejects.toThrow(PolicyError);
   golden(body, "drilldown", "link_body");
+});
+
+test("the drilldown fields request is as recorded", async () => {
+  const labels = [
+    { key: "1", label: "価格" },
+    { key: "2", label: "在庫" },
+  ];
+  golden(toJson(buildFieldMatch(["price"], labels.slice(0, 1))), "drilldown", "field_questions_lone");
+  vi.stubEnv("TYPESAFE_API_KEY", "test");
+  vi.stubEnv("TYPESAFE_MODEL", undefined);
+  let body = "";
+  const policy = new JevPolicy({
+    fetch: async (_url, init) => {
+      body = init.body;
+      return { status: 200, json: async () => ({}) };
+    },
+  });
+  await expect(policy.matchFields(["price", "colour"], labels)).rejects.toThrow(PolicyError);
+  golden(body, "drilldown", "field_body");
 });
 
 test("the control for more items and the scans that pressed it are as recorded", () => {

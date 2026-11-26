@@ -26,10 +26,10 @@ import {
 } from "../src/core/types.ts";
 import { describePlan } from "../src/output.ts";
 import { type Fetch, JevPolicy } from "../src/policies/jev.ts";
-import { formatDrilldown, isAllowedDetailUrl, textBlocks } from "../src/scans/drilldown.ts";
+import { formatDrilldown, isAllowedDetailUrl, type LabelView, textBlocks } from "../src/scans/drilldown.ts";
 import * as session from "../src/storage/session.ts";
 import { cli, readEvents, tmpPath } from "./helpers.ts";
-import { isolate } from "./jev.ts";
+import { exactFields, isolate } from "./jev.ts";
 
 // biome-ignore lint/suspicious/noExplicitAny: mock Jev response helper.
 function choiceResp(answers: Record<string, { choice: string; confidence?: number; keys: string[] }>): any {
@@ -433,6 +433,12 @@ describe("real Chrome CLI: drilldown and one-shot read-only query", () => {
         async choose() {
           return new Decision("DONE");
         },
+        async matchFields(wanted: string[], labels: LabelView[]) {
+          return exactFields(wanted, labels);
+        },
+        async selectBlocks() {
+          return new Set<string>();
+        },
         async collect(_page: Page, _plan: Plan, _criterion: string, rows: { key: string; text: string }[]) {
           return new Set(rows.filter((r) => r.text.includes("Circe")).map((r) => r.key));
         },
@@ -552,6 +558,12 @@ describe("real Chrome CLI: drilldown and one-shot read-only query", () => {
         },
         async verifyClaims(_p: Page, _pl: Plan, claims: string[]) {
           return new Map(claims.map((c) => [c, "MET" as const]));
+        },
+        async matchFields(wanted: string[], labels: LabelView[]) {
+          return exactFields(wanted, labels);
+        },
+        async selectBlocks() {
+          return new Set<string>();
         },
         async collect(_page: Page, _plan: Plan, _criterion: string, rows: { key: string; text: string }[]) {
           return new Set(rows.filter((r) => r.text.includes("Circe")).map((r) => r.key));

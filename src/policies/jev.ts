@@ -21,7 +21,7 @@ import {
 } from "../core/types.ts";
 import { MATCH, NO, type Row } from "../scans/collect.ts";
 import { type Best, type Candidate, KEEP, NONE } from "../scans/compare.ts";
-import type { LinkView } from "../scans/drilldown.ts";
+import type { FieldMatch, LabelView, LinkView } from "../scans/drilldown.ts";
 import { actionSpace, fileChoices, modelState, resolve, valueChoices } from "./base.ts";
 import { type Fetch, type Json, postJson, validateChoice, validateNoul } from "./jev-client.ts";
 import { estimateTokens, FIT_TRIES, fitChoose, OVER_LIMIT, requestSize, SHRINK, TOKEN_BUDGET } from "./jev-fit.ts";
@@ -30,6 +30,7 @@ import {
   buildCollect,
   buildCompare,
   buildDetailLink,
+  buildFieldMatch,
   buildMore,
   buildNoulQuestions,
   buildQuestions,
@@ -165,6 +166,20 @@ export class JevPolicy implements Policy {
     const keys = links.map((link) => link.key);
     const key = links.length > 1 ? validateChoice(answers.detail_link ?? {}, keys).choice : keys[0];
     return { key, noul };
+  }
+
+  async matchFields(wanted: string[], labels: LabelView[]): Promise<Map<string, FieldMatch>> {
+    const state = { field_names: labels.map((item) => item.label) };
+    const body = { model: this.model, state, questions: buildFieldMatch(wanted, labels) };
+    const answers = (await this.post(body, "match_fields")).answers ?? {};
+    const keys = labels.map((item) => item.key);
+    return new Map(
+      wanted.map((word, i) => {
+        const noul = validateNoul(answers[`field_${i + 1}_exists`]);
+        const key = labels.length > 1 ? validateChoice(answers[`field_${i + 1}`] ?? {}, keys).choice : keys[0];
+        return [word, { key, noul }];
+      }),
+    );
   }
 
   async verifyClaims(page: Page, plan: Plan, claims: string[]): Promise<Map<string, ClaimVerdict>> {

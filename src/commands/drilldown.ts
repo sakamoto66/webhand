@@ -12,6 +12,7 @@ import {
   DEFAULT_MAX_ITEMS,
   type DrilldownResult,
   drilldownScan,
+  type FieldJudge,
   formatDrilldown,
   HARD_MAX_ITEMS,
   type LinkChooser,
@@ -64,13 +65,20 @@ export async function runDrilldown(
           throw new CliExit("This chooser cannot filter drilldown rows with --match");
         })()
     : null;
-  const linkChooser = options.linkText
+  const linkChooser = options.linkText?.trim()
     ? null
     : policy && "detailLink" in policy
       ? (policy as unknown as LinkChooser)
       : (() => {
           throw new CliExit("This chooser cannot pick drilldown detail links; use --link-text");
         })();
+  const fieldJudge = options.fields?.length
+    ? policy && "matchFields" in policy && "selectBlocks" in policy
+      ? (policy as unknown as FieldJudge)
+      : (() => {
+          throw new CliExit("This chooser cannot match drilldown --fields");
+        })()
+    : null;
   const allowedDomains = state.explore?.allow ?? state.allowed_domains ?? null;
   return drilldownScan(
     browser,
@@ -81,6 +89,7 @@ export async function runDrilldown(
       linkText: options.linkText,
       linkChooser,
       fields: options.fields,
+      fieldJudge,
       maxItems: options.maxItems,
       allowedDomains,
       loadMore: moreFn,
@@ -105,7 +114,7 @@ async function commandDrilldown(args: Args): Promise<number> {
     : null;
   const outPath = args.out ? resolveOutPath(String(args.out)) : null;
   const state = requireSession();
-  const needsPolicy = Boolean(args.match || args.more || !args.link_text?.toString().trim());
+  const needsPolicy = Boolean(args.match || args.more || fields || !args.link_text?.toString().trim());
   const policy = needsPolicy ? deps.policy() : null;
   const browser = await attach(state, null, browserView(state));
   const recorder = new Recorder(state.log);
@@ -165,7 +174,7 @@ export const drilldownCommand: CommandDef = {
         name: "fields",
         type: "string",
         metavar: "A,B",
-        help: "Keep only detail fields matching these comma-separated labels (such as Title,Rating)",
+        help: "Keep only these comma-separated detail fields (such as Title,Rating); Jev matches them to the page's field names",
       },
       {
         name: "max-items",
