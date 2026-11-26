@@ -13,8 +13,9 @@ choosing it scrolls it into view before its operation runs. Page text covers onl
 page.offscreen says how much of the page is above and below it. Choose the element the next step needs wherever
 it is listed, never a different element in view as a stand-in. page.regions outlines the whole page by region.
 Answer NOT_VISIBLE only when the needed element is not listed at all.
-page.status.kind says what kind of page this is: check (a bot check or CAPTCHA) or sign_in needs a person, so
-NEEDS_HUMAN; error is an error page, so BLOCKED; dialog means a dialog is open, so deal with it first.
+page.status.kind says what kind of page this is: check (a bot check or CAPTCHA) needs a person, so
+NEEDS_HUMAN; sign_in means a password field is shown, which does not by itself need a person: NEEDS_HUMAN only when the
+next step of the plan is marked [person] or cannot be done without signing in, a password, or a verification code. A password field is never listed as an element: when the next step needs it, answer NEEDS_HUMAN, not NOT_VISIBLE; error is an error page, so BLOCKED; dialog means a dialog is open, so deal with it first.
 page.status.unseen counts frames, canvases, and plugin objects, whose content is not observed.`;
 
 export const NEXT_ACTION = `Advance the user's entire goal from the CURRENT page using one operation.

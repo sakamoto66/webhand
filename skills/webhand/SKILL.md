@@ -100,7 +100,7 @@ A stop on one part of the goal is not a reason to leave the other parts undone. 
 
 ## 5. When the page is out of reach
 
-The page is out of reach when Jev reports `BLOCKED` or `NEEDS_HUMAN` because of it, or the printed page is an error, a page that is gone or has moved, a sign-in wall, or a bot check (`PAGE: error`, `check`, or `sign_in`, when shown). Do not finish yet. In this order:
+The page is out of reach when Jev reports `BLOCKED` or `NEEDS_HUMAN` because of it, or the printed page is an error, a page that is gone or has moved, a sign-in wall that hides what the goal needs, or a bot check (`PAGE: error` or `check`, when shown). `PAGE: sign_in` alone only says that a password field is shown: it is a sign-in wall only when the goal cannot go on without signing in. Do not finish yet. In this order:
 
 1. **Another way in**, at most two: the site's home page, its own search, or a page that lists what the goal needs (a category, an index, a site map). Use `replan --url URL` with steps from that page. Use only the same site, or a URL the user or the catalog gave. Never try to get past a bot check or a CAPTCHA (another address for the same page, reloading, waiting it out); that is for the user to decide.
 2. **Return to the user** when those ways failed, or when only the user can go on (signing in, a CAPTCHA, a choice the goal leaves open). Say which page you are on and what it shows, what is done so far, and why it stopped. Offer: the next way you would try; the user does it in the Chrome window, then you continue with `run --human-done` (only with `--headed`); or stop and report what was found. If the user does not choose, or cannot help, finish with what you have.
