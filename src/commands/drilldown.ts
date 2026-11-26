@@ -18,7 +18,7 @@ import {
   type LinkChooser,
 } from "../scans/drilldown.ts";
 import { loadMore, type MoreChooser } from "../scans/more.ts";
-import type * as session from "../storage/session.ts";
+import * as session from "../storage/session.ts";
 import { CliExit, deps, FAILED, OK, print, UNCERTAIN } from "./context.ts";
 import { resolveOutPath } from "./extract.ts";
 import { idOption } from "./options.ts";
@@ -119,6 +119,11 @@ async function commandDrilldown(args: Args): Promise<number> {
   const browser = await attach(state, null, browserView(state));
   const recorder = new Recorder(state.log);
   try {
+    if (args.more) {
+      // --more presses a control on the page: an operation of this attempt.
+      state.attempt_unused = false;
+      session.save(state);
+    }
     const result = await runDrilldown(state, browser, policy, recorder, {
       match: args.match ?? null,
       linkText: args.link_text ?? null,

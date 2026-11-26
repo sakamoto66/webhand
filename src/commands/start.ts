@@ -240,6 +240,8 @@ function initialState(
     history: [],
     decisions: 0,
     attempt_decisions: 0,
+    // Until run or act does something in it, replan keeps this attempt.
+    attempt_unused: true,
     outcome: null,
     outcomes: [],
     max_attempts: args.max_attempts,
