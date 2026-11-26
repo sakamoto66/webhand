@@ -49,7 +49,6 @@ Experiment plans, capability models, benchmark guides, and point-in-time evaluat
 
 | Document | Topic |
 | --- | --- |
-| [research-plan.md](research/research-plan.md) | Research hypotheses, experiment log, and A/B methodology |
 | [capability-model.md](research/capability-model.md) | Capability layers (A–M) and single-variable experiment matrix |
 | [webarena-verified.md](research/webarena-verified.md) | Running WebArena-Verified benchmark tasks with HAR recording and offline grading |
 | [benchmark-survey.md](research/benchmark-survey.md) | Survey of browser-agent benchmarks and grading reliability |

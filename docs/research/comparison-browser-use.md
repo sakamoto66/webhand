@@ -56,7 +56,7 @@ webhand は役割を分けています。GOAL と手順の計画、入力値、�
    - 理由: 保存プロファイルでログインしたまま、ほかのサイトへ誘導されるのを防ぐ。ページ本文を信頼しないという規則を、プロンプトだけでなく実行側でも守らせる。
    - 規則との関係: Jev の選択肢は変わらないので、golden への影響は止めたときの出力だけ。
 2. **観測の拡張（iframe、新しいタブ、入れ子のスクロール）**
-   - 内容: research-plan に既知の穴として挙がっている部分。browser-use は iframe と shadow DOM をインラインで印付けし、タブの切り替えを行動として持つ。
+   - 内容: 既知の穴。browser-use は iframe と shadow DOM をインラインで印付けし、タブの切り替えを行動として持つ。
    - 指標: これまで観測できなかったページでの `verified`。iframe を含むタスクを `tasks/` に追加してから測る。
 3. **新しく出た要素の印付け**
    - 内容: 前回の観測になかった要素に印を付けて Jev に見せる。browser-use の `*` に当たる。
@@ -67,7 +67,7 @@ webhand は役割を分けています。GOAL と手順の計画、入力値、�
 5. **除外属性**
    - 内容: サービス側がページに印を付けて、その部分を観測から外せるようにする。browser-use の `data-browser-use-exclude` に当たる。サービスのソースを読んで手順書にまとめるとき（`webhand-teach`）に、skip regions と並ぶ手段になる。
 6. **評価タスクの追加**
-   - 内容: browser-use benchmark の課題の形（検索、絞り込み、フォーム、複数ページにまたがる作業）を参考に、`verify()` 付きのローカルタスクを増やす。research-plan の「次の一手」と同じ方向。
+   - 内容: browser-use benchmark の課題の形（検索、絞り込み、フォーム、複数ページにまたがる作業）を参考に、`verify()` 付きのローカルタスクを増やす。
    - 規則との関係: judge や rubric は使わず、検証はタスク自身の `verify()` で行う。
 
 参考として挙げるだけのもの:
@@ -78,4 +78,4 @@ webhand は役割を分けています。GOAL と手順の計画、入力値、�
 ## 出典
 
 - browser-use: [repo](https://github.com/browser-use/browser-use)、[releases](https://github.com/browser-use/browser-use/releases)、[README](https://raw.githubusercontent.com/browser-use/browser-use/main/README.md)、[benchmark](https://github.com/browser-use/benchmark)。パスは repo 内のもの: `browser_use/agent/service.py`、`browser_use/agent/views.py`、`browser_use/dom/serializer/serializer.py`、`browser_use/tools/service.py`、`browser_use/browser/watchdogs/security_watchdog.py`、`browser_use/agent/message_manager/service.py`
-- webhand: `src/agent.ts`、`src/browser.ts`、`src/session.ts`、`src/policies/base.ts`、`src/policies/jev.ts`、`src/runbook.ts`、`src/record.ts`、`assets/snapshot.js`、`docs/research-plan.md`
+- webhand: `src/agent.ts`、`src/browser.ts`、`src/session.ts`、`src/policies/base.ts`、`src/policies/jev.ts`、`src/runbook.ts`、`src/record.ts`、`assets/snapshot.js`

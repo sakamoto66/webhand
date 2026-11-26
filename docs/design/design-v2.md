@@ -1,6 +1,6 @@
 # webhand v2 の設計
 
-Claude と Jev の役割と流れを、0から見直した設計です（2026-11-09）。今の流れと並べて作り、段階ごとにローカルの A/B で確かめます。結果は `docs/research-plan.md` に書きます。
+Claude と Jev の役割と流れを、0から見直した設計です（2026-11-09）。今の流れと並べて作り、段階ごとにローカルの A/B で確かめます。
 
 ## なぜ見直すか
 
@@ -84,7 +84,7 @@ CLAUDE.md の役割分担（GOAL・計画・値・完了確認・見直し・最
 - 段階5の1つ目: 一覧を最後まで読む（読む画面数の上限 20 → 100、読み取り用のスクロールに鮮度の確認をかけない、`a20de6a`）。22回目で、`collect_long` の成功は 0/5 → 5/5。
 
 - 段階2の1つ目（実装とテストまで、A/B は未実施）: Jev の選択肢に `ESCALATE` を足し（v2 のみ）、`webhand answer --note [--value] [--url]` で同じ試行を続ける。履歴と予算は引き継ぎ、答えは `plan.instructions` として Jev の state（`claude_instructions`）に載る。`ESCALATE`・`STUCK`・`BLOCKED`・`GOAL_REPORTED`・`JEV_FAILED` のあとに `WHY:` の診断を出す。run のログには答えの文字数だけを残す（本文は残さない）。golden は v2 の質問に `ESCALATE` が1行増えただけで、v1 は変わらない。スキルに 4b 節を足した。第23回は `ESCALATE` が0回で、差が出なかった。Jev が相談する条件を `ESCALATE_RULES`（消す・払う・送る・取り消せないことを、目的も計画も求めていないとき）で書き直し、`off_plan_purge` で相談 0/5 → 5/5、答えを受けて続けると成功 5/5（Jev のみ）。第24回: `off_plan_purge` で、pb は `ESCALATE` が5/5、`verify()` 成功 5/7（pa は 1/5）。BU Bench の回 `ev`（5件）で、実サイトでは `ESCALATE` が行き詰まりの繰り返しで出ること、`NOT_VISIBLE` が `ESCALATE` に回らないこと、`unseen` が Claude に出ないこと、スクロールの往復が `STUCK` にならないことが分かった。これに対して、v2 のとき、`NOT_VISIBLE` が2回続いて `unseen` があれば止め、`WHY:` に `unseen` の件数を出し、スクロールの3往復を `STUCK` として止める（効果は未測定）。回 `sa`・`sb` の完了の型で、`ESCALATE` のあとに run を閉じて、残りの対象に進まなかった回が見えたので、スキルに、`ESCALATE` の行（次に `answer` して同じ試行を続ける）と、「目的が複数の部分から成るとき、1つで止まっても、ほかの部分に進んでから報告する」を足した（`skills/webhand/SKILL.md`、効果は未測定）。`--allow`（取り消せない操作の許可）と、A/B 用タスク（`off_plan_detour`、`needs_extra_value`）は未作成。
-- frame の観測（実装とテストまで、A/B は未実施）: v2 で、見えている frame（同一・別オリジン）の要素を一覧に足し、番号に frame を含めて、鮮度確認と操作を frame ごとに行う。設計書の「iframe は諦める」を変更した。詳細は docs/research-plan.md の「frame の中の要素を読む」。
+- frame の観測（実装とテストまで、A/B は未実施）: v2 で、見えている frame（同一・別オリジン）の要素を一覧に足し、番号に frame を含めて、鮮度確認と操作を frame ごとに行う。設計書の「iframe は諦める」を変更した。
 - `status.unseen.frames` から、一辺が 20px 未満の frame（計測や広告の小さな部品）を除く（回 `fc` で、bu2-072 の「見えない frame 3」が小さな部品だったため。次の回で、`unseen` ありの NOT_VISIBLE の件数と早期 STUCK の回数をログで見る）。
 - 段階3の1つ目（記録だけ、実装とテストまで）: v2 の実行が、操作（click、select）の結果を `$WEBHAND_HOME/knowledge/<host>.json` に積む（`src/knowledge.ts`）。ページの種類（アドレスの id と query の値を除いた形）ごとに、操作（種類とラベル）を何回試し、何回ページが変わり、どこへ行ったかだけ。入力した文、fill の操作、メールアドレスや長い数字を含むラベル、60文字を超えるラベルは残さない。1サイトにつきページ 200、1ページにつき操作 30 まで。`WEBHAND_KNOWLEDGE=0` で止める。**この段階では Jev にも Claude にも見せない**（動作は変わらない）。使う段階（2つ目）は、別の変数として、同じサイトの2回目の実行（知識あり／なし）で測る。
 - 段階3の2つ目（使う、実装とテストまで、A/B は未実施）: `webhand finish --status done` で終えた v2 の実行は、その手順（click、select）に `ok` の印を付ける。次の実行で、いまのページの種類に印のある操作があれば、Jev の state に `known_from_earlier_runs`（最大5件: 操作、ラベル、何回中何回、行き先のページの種類。「この目的に合うときだけ、一覧にあるものを使う」という注意つき）として足す。印がなければ欄を足さない（golden は変わらない）。`WEBHAND_KNOWLEDGE_USE=0` で、記録は続けて、使わない。測るのは、ローカルの `tasks/menu_invoice`（請求書の置き場所が `More` → `Billing` にある8ページ）で、知識あり（完了した1回の記録を入れた）と知識なし。
@@ -106,7 +106,7 @@ CLAUDE.md の役割分担（GOAL・計画・値・完了確認・見直し・最
 | 4 | 利用者に返す流れ（スキル v2） | 着けないページ（ブロックの模擬）で、選択肢を返すか |
 | 5 | 一覧の操作（比べる、集める、続きを読む）を Jev の操作にする | 今の `collect_*`、`plan_*` のタスク |
 
-各段階のあと、`docs/research-plan.md` に結果を書きます。golden（`tests/golden/`）が変わるのは、v2 の state と質問を足すときだけです。そのつど実験の変数として、理由をコミットに書きます。いくつかの段階が揃ったら、BU Bench の大きめの組（40〜60件、Sonnet 5.5 固定）で、頼まれた作業が終わったかを `completion.md` と同じ型の分析で比べます。
+golden（`tests/golden/`）が変わるのは、v2 の state と質問を足すときだけです。そのつど実験の変数として、理由をコミットに書きます。いくつかの段階が揃ったら、BU Bench の大きめの組（40〜60件、Sonnet 5.5 固定）で、頼まれた作業が終わったかを `completion.md` と同じ型の分析で比べます。
 
 ## 変更するファイル（主なもの）
 

@@ -2,7 +2,7 @@
 
 [English](DEVELOPMENT.md) | 日本語
 
-webhand 自体に変更を加える人向けのガイドです。インストールと使い方は [README.ja.md](README.ja.md) と [docs/usage.ja.md](docs/usage.ja.md)、完全な CLI・ファイル仕様は [docs/reference.ja.md](docs/reference.ja.md)、実験設計は [docs/research/research-plan.md](docs/research/research-plan.md) を参照してください。
+webhand 自体に変更を加える人向けのガイドです。インストールと使い方は [README.ja.md](README.ja.md) と [docs/usage.ja.md](docs/usage.ja.md)、完全な CLI・ファイル仕様は [docs/reference.ja.md](docs/reference.ja.md)を参照してください。
 
 webhand は、npm で CLI を配布する複数エージェント向けプラグイン／スキル群（Claude Code・Antigravity・OpenAI Codex CLI などの Agent Skills 対応ツール）であると同時に、研究基盤でもあります。「人がサービスに慣れるように、使い方を覚えてから操作するほど成功する」という仮説を検証し、成功は独立検証（`verify()`）のみで判定し、失敗実行も除外しません。下の規則の多くは、コードの保守だけでなく実験の妥当性を守るためのものです。
 
