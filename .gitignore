@@ -27,3 +27,6 @@ coverage/
 .DS_Store
 Thumbs.db
 *:Zone.Identifier
+
+# research/bench の Python キャッシュ
+__pycache__/
