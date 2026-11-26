@@ -72,7 +72,9 @@ Add `--run` to `start` (or `replan` / `act`) to hand straight to Jev in the same
 | `NEEDS_VALUE` | `run --value "LABEL=VALUE"` with a value the goal or the user gave, where LABEL is the field's label exactly as the output shows it. Ask the user if you do not have it |
 | `NEEDS_HUMAN` | Ask the user to do it in the Chrome window, wait for them, then `run --human-done` |
 | `ESCALATE` | Jev handed the decision to you. Read `WHY:`, then answer (section 4b) so the same attempt goes on. It is not the end of the goal: do not finish while parts of the goal are still undone |
-| `BLOCKED`, `STUCK`, `ATTEMPT_BUDGET` | Replan (section 4), or `act` once and `run` again. If the page is out of reach, section 5 |
+| `BLOCKED`, `STUCK` | Replan (section 4), or `act` once and `run` again. If the page is out of reach, section 5 |
+| `ATTEMPT_BUDGET` | The attempt used up its actions or decisions, and `run` cannot go on in it, even after `act`. Replan (section 4), or `finish`. If the page is out of reach, section 5 |
+| `READ_ONLY` | The read-only session refused the action Jev chose; nothing ran, and `run` is refused. Default flow v2: `answer --note` with a way that only reads. v1: `replan` (section 4). Either flow: `act` with an operation that only reads, then `run`; or `finish` |
 | `JEV_FAILED` | Nothing ran. `run` again once; if it repeats, replan or `act` |
 | `UNCERTAIN` | The action may have happened. Never repeat it or replan. Finish `error` |
 
