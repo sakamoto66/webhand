@@ -646,6 +646,39 @@ test("v2: GOAL_REPORTED on an error page still says it is an error page", async 
   expect(out).toContain("WHY: the page is an error page");
 });
 
+test.each([
+  ["STUCK", [], "the last three actions did not change the page"],
+  ["BLOCKED", [["BLOCKED", null, null]], "Jev handed the decision to Claude"],
+  ["ESCALATE", [["ESCALATE", null, null]], "Jev handed the decision to Claude"],
+])(
+  "v2: %s on a page marked sign_in keeps its own diagnosis and names the password field",
+  async (outcome, moves, why) => {
+    await begin("--flow", "v2");
+    const state = session.load() as session.State;
+    if (outcome === "STUCK") {
+      state.history = [1, 2, 3].map((step) => ({
+        step,
+        attempt: 1,
+        kind: "click",
+        operation: "CLICK",
+        action: "CLICK",
+        text: null,
+        url: "u",
+        page_changed: false,
+      }));
+    }
+    state.page = { ...state.page, status: { kind: "sign_in", unseen: { frames: 0, canvases: 0, objects: 0 } } };
+    session.save(state);
+    vi.spyOn(Browser.prototype, "fresh").mockResolvedValue(true);
+    ScriptedJev.moves = moves as typeof ScriptedJev.moves;
+    const { out } = await cli("run");
+    expect(out).toContain(`OUTCOME ${outcome}`);
+    expect(out).toContain(`WHY: ${why}`);
+    expect(out).toContain(". The page has a password field; check whether it blocks the goal");
+    expect(out).not.toContain("a person must sign in");
+  },
+);
+
 test("answer is for v2 only", async () => {
   await begin("--flow", "v1");
   ScriptedJev.moves = [["BLOCKED", null, null]];

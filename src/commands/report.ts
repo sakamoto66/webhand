@@ -18,7 +18,6 @@ export const ANSWERABLE: string[] = [
 
 const PAGE_STATUS_DIAGNOSIS: Record<string, string> = {
   check: "the page is a bot check or CAPTCHA; a person must pass it",
-  sign_in: "the page asks for a sign-in; a person must sign in",
   error: "the page is an error page",
   dialog: "a dialog covers the page",
 };
@@ -36,7 +35,10 @@ const OUTCOME_NEXT_HINTS: Record<string, string> = {
   [agent.JEV_FAILED]: "Nothing was executed. Run again, replan, or act",
 };
 
-/** The same kinds after GOAL_REPORTED: what was found, since it comes from signs only and may not block the goal. */
+/**
+ * What was found, since it comes from signs only and may not block the goal: always for sign_in (any password field
+ * marks it), and for the other kinds after GOAL_REPORTED.
+ */
 const PAGE_STATUS_SIGNS: Record<string, string> = {
   check: "a bot check or CAPTCHA widget",
   sign_in: "a password field",
@@ -70,18 +72,22 @@ function diagnoseStuck(state: session.State): string {
   return "the last three actions did not change the page";
 }
 
-/** Why the run came back, from the log of this attempt only. No page text. */
-function diagnose(state: session.State, outcome: string): string {
-  const pageKind = (state.page?.status as { kind?: string } | undefined)?.kind;
-  if (outcome === agent.GOAL_REPORTED && pageKind && pageKind in PAGE_STATUS_SIGNS) {
-    return `${OUTCOME_DIAGNOSIS[outcome]}. The page has ${PAGE_STATUS_SIGNS[pageKind]}; check whether it blocks the goal`;
-  }
-  if (pageKind && pageKind in PAGE_STATUS_DIAGNOSIS) return PAGE_STATUS_DIAGNOSIS[pageKind];
+function diagnoseOutcome(state: session.State, outcome: string): string {
   if (outcome === agent.STUCK) return diagnoseStuck(state);
   if (outcome in OUTCOME_DIAGNOSIS) return OUTCOME_DIAGNOSIS[outcome];
   const handed =
     "Jev handed the decision to Claude: the page is not what the plan expects, nothing offered fits, or the operation cannot be undone";
   return `${handed}${unseenHint(state.page)}`;
+}
+
+/** Why the run came back, from the log of this attempt only. No page text. */
+function diagnose(state: session.State, outcome: string): string {
+  const pageKind = (state.page?.status as { kind?: string } | undefined)?.kind;
+  if (pageKind && pageKind in PAGE_STATUS_SIGNS && (pageKind === "sign_in" || outcome === agent.GOAL_REPORTED)) {
+    return `${diagnoseOutcome(state, outcome)}. The page has ${PAGE_STATUS_SIGNS[pageKind]}; check whether it blocks the goal`;
+  }
+  if (pageKind && pageKind in PAGE_STATUS_DIAGNOSIS) return PAGE_STATUS_DIAGNOSIS[pageKind];
+  return diagnoseOutcome(state, outcome);
 }
 
 const REPORT_MAX_OPTIONS = 12;
