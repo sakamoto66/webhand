@@ -6,13 +6,17 @@
   // Words that mark a field or region name as secret. A match only ever masks more, never less.
   // A space in a phrase matches any separator or none: 'api key' covers api_key, api-key, apiKey, user[api][key].
   const phrases = (list, gap) => list.map(phrase => phrase.replaceAll(' ', gap));
+  const latinGap = '[\\s_.:\\/[\\]-]*';
   const secretWords = new RegExp([
     /pass|pwd|\bpw\b|secret|token|otp|cvv|cvc|card|ssn|\bpin\b|パスワード|暗証|認証コード|カード/.source,
     ...phrases([
       'api key', 'private key', 'access key', 'credential', 'recovery phrase', 'seed phrase', 'mnemonic',
       'security answer', 'security question', 'security code', 'verification code', 'confirmation code',
-      'one time code', 'auth code', '2fa code', 'mfa code', 'account number', 'routing number', 'iban', 'my number',
-    ], '[\\s_.:\\/[\\]-]*'),
+      'one time code', 'auth code', '2fa code', 'mfa code', 'two factor code', 'recovery code',
+      'account number', 'routing number', 'iban', 'my number',
+    ], latinGap),
+    // 'no' must end there, so that account_notes and account_notification stay readable.
+    ...phrases(['account no', 'routing no'], latinGap).map(pattern => pattern + '(?![a-z])'),
     ...phrases([
       '秘密の 質問', '秘密の 答え', '合言葉', 'ワンタイム コード', '認証 番号', '確認 コード', '確認 番号',
       'セキュリティー? コード', '口座 番号', '口座 名義', '個人 番号', 'マイナンバー',

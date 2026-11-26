@@ -170,6 +170,17 @@ const SECRET_NAMES: [string, string][] = [
     (name): [string, string] => ["label", name],
   ),
   ...["確認 番号", "口座名義", "口座 名義", "口座　番号"].map((name): [string, string] => ["placeholder", name]),
+  ...["account_no", "accountNo", "account-no2", "user[account][no]", "routing_no", "routingNo", "routing.no"].map(
+    (name): [string, string] => ["name", name],
+  ),
+  ...["two_factor_code", "twoFactorCode", "recovery_code", "recoveryCode"].map((name): [string, string] => [
+    "id",
+    name,
+  ]),
+  ...["Account No.", "Routing no", "Two-factor code", "Recovery code"].map((name): [string, string] => [
+    "aria-label",
+    name,
+  ]),
   // Words that were already masked stay masked.
   ...["passwd", "user_pwd", "pw", "client_secret", "token", "otp", "cvv", "cvc", "card_no", "ssn", "pin"].map(
     (name): [string, string] => ["name", name],
@@ -180,6 +191,8 @@ const PLAIN_NAMES = [
   ...["keyboard", "api_version", "private_note", "answer", "recovery_email", "確認事項", "商品コード"],
   ...["access_level", "account_type", "routing", "verification_status", "zip_code", "phone_number", "seed", "my_name"],
   ...["口座種別", "認証方式", "電話番号", "個人情報"],
+  ...["account_notes", "accountNotes", "account_notification", "accountNotification", "account-note"],
+  ...["routing_notes", "routing_node", "two_factor_method", "recovery_contact"],
 ];
 
 test("fields with secret names are masked, however the name is separated", async () => {
