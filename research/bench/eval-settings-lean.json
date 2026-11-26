@@ -1,0 +1,48 @@
+{
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "@CODE@/scripts/beep.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "@CODE@/scripts/auto_answer.py"
+          }
+        ]
+      }
+    ]
+  },
+  "disableBundledSkills": true,
+  "enabledPlugins": {
+    "andrej-karpathy-skills@karpathy-skills": false,
+    "typesafe@typesafe-ai": false
+  },
+  "skillOverrides": {
+    "bench-diagnose": "off",
+    "find-skills": "off",
+    "prompt-improver": "off",
+    "agmsg": "off",
+    "anthropic-skills:built-in-browser": "off",
+    "anthropic-skills:chrome-browser": "off",
+    "anthropic-skills:computer-use": "off",
+    "anthropic-skills:deep-research": "off",
+    "anthropic-skills:docs": "off",
+    "anthropic-skills:docx": "off",
+    "anthropic-skills:google-workspace": "off",
+    "anthropic-skills:import-memory": "off",
+    "anthropic-skills:morning": "off",
+    "anthropic-skills:pdf": "off",
+    "anthropic-skills:pptx": "off",
+    "anthropic-skills:xlsx": "off"
+  }
+}

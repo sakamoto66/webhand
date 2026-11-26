@@ -22,7 +22,7 @@
 | `scripts/` | 準備、監視、確認、収集、採点、集計 |
 | `run_all.sh`、`worker.sh`、`next.sh` | 評価セッションの起動 |
 | `diagnose.sh`、`run_analysis.sh`、`analysis_status.sh` | 2つの回の診断 |
-| `eval-settings.json` | 評価セッションの設定のひな形（`@CODE@` はこのフォルダー） |
+| `eval-settings.json`、`eval-settings-lean.json` | 評価セッションの設定のひな形（`BENCH_PROFILE` で選ぶ。`@CODE@` はこのフォルダー） |
 | `analysis/` | 分析セッションのプロンプトとテンプレート（手順は `ANALYSIS.md`） |
 | `picks/picks-<シード>.txt` | 選んだタスクの ID |
 
@@ -104,6 +104,7 @@ B="uv run --project $HOME/webhand-bench/benchmark python $R/scripts"
 | --- | --- |
 | `BENCH_ROUND` | 回の名前。ほかのコマンドにも付ける |
 | `BENCH_MODEL` | Claude のモデル（既定 `claude-sonnet-5-5`） |
+| `BENCH_PROFILE` | `full`（既定。これまでの回と同じ）か `lean`（下の「軽量化」） |
 | `BENCH_FLOW` | webhand の流れ `v1`（既定）か `v2` |
 | `BENCH_SKILL_REPO` | スキルをこの webhand リポジトリから `--plugin-dir` で読む（未指定はインストール済みのプラグイン） |
 | `BENCH_CLI_REPO` | この webhand チェックアウトの CLI を使う（ビルド済みで、ソースに未コミットの変更がないもの） |
@@ -113,6 +114,17 @@ B="uv run --project $HOME/webhand-bench/benchmark python $R/scripts"
 | `BENCH_RUNBOOKS_FROM` | `DIR/<ID>/` の手順書を、そのタスクの `WEBHAND_HOME/runbooks` へコピーする |
 
 `BENCH_CLI_REPO` は `launch.sh` の `WEBHAND_CLI_REPO` になります。これを読むには、`PATH` の `webhand` を、次の動きをする振り分けスクリプトにします（端末ごとの導入物なので、リポジトリには置きません）: `WEBHAND_CLI_REPO` があればそのチェックアウトの、なければ既定のチェックアウトの `dist/bin.js` を実行し、指定があるときは呼び出しごとにチェックアウトのパスを `$WEBHAND_HOME/cli_used.log` に追記する。
+
+### 軽量化（`BENCH_PROFILE=lean`）
+
+セッションの開始時に読み込むものを減らします。`full` との違いは次のとおりです。
+
+- `launch.sh` で `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`（自動メモリなし）。
+- `--tools` で組み込みツールを `Bash,Read,Write,Edit,AskUserQuestion,Skill,ToolSearch,WebFetch,WebSearch,Monitor,TaskStop` に限る。
+- `eval-settings-lean.json`: 組み込みスキルを無効にし、タスクに使わないプラグインとスキルを切る。フックは同じ。webhand プラグインは切りません。
+- `skillOverrides` は名前の完全一致だけです（Claude Code 2.1.332 の実装で確認。`anthropic-skills:*` のような指定は効きません）。同期スキルが増えたら、このファイルに足します。切るプラグインとスキルの名前は端末の構成に依存します。
+
+減る量と、次の点は実際のセッションでは未確認です。使う前に1件の試走で確かめます: 開始時のトークン、webhand スキルの読み込みと `check_*.py`、`ToolSearch` からの `WebFetch`・`WebSearch`、自動回答のフック、同期スキルへの `skillOverrides`。
 
 ## まとめて回す
 
@@ -125,7 +137,7 @@ B="uv run --project $HOME/webhand-bench/benchmark python $R/scripts"
 - タスクごとに、スキル、モデル、Jev、CLI、流れを確かめ、違えば `STOP` を作って全ワーカーを止めます。Jev がアカウントの理由で断ったタスクには `invalid` の印を付け、採点しません。
 - 今のタスクのあとで止めるには、`touch ~/webhand-bench/STOP` を実行します。
 - 答えが要りそうなときはビープ音が鳴ります。フックは音を鳴らすか、決まった答えを返すだけです。
-- 評価セッションは `--strict-mcp-config` で起動し、`/webhand:webhand` に指示文を渡します。作業フォルダーがタスクごとに別なので、自動メモリもタスクごとに分かれます。作業フォルダーには、会話を日本語にする `CLAUDE.md` を置きます。
+- 評価セッションは `--strict-mcp-config` で起動し、`/webhand:webhand` に指示文を渡します。作業フォルダーがタスクごとに別なので、自動メモリ（`full` のとき）もタスクごとに分かれます。作業フォルダーには、会話を日本語にする `CLAUDE.md` を置きます。
 
 ## 実行中の決まり
 

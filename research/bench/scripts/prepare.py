@@ -58,14 +58,23 @@ FLOW = os.environ.get("BENCH_FLOW", "v1")
 if FLOW not in ("v1", "v2"):
     raise SystemExit(f"BENCH_FLOW must be v1 or v2, not {FLOW!r}")
 
+# From 2026-11-26: BENCH_PROFILE chooses how much Claude Code loads into the session (an experiment variable). full is
+# the condition of every earlier round. lean drops auto memory, most built-in tools, and skills and plugins the task does
+# not use (eval-settings-lean.json). skillOverrides matches exact names only, so each synced skill is listed there.
+PROFILE = os.environ.get("BENCH_PROFILE", "full")
+if PROFILE not in ("full", "lean"):
+    raise SystemExit(f"BENCH_PROFILE must be full or lean, not {PROFILE!r}")
+SETTINGS = {"full": "eval-settings.json", "lean": "eval-settings-lean.json"}
+LEAN_TOOLS = "Bash,Read,Write,Edit,AskUserQuestion,Skill,ToolSearch,WebFetch,WebSearch,Monitor,TaskStop"
+
 LAUNCH = """#!/bin/sh
 # One BU Bench evaluation session. Do not guide the agent: see PROTOCOL in the README.
 set -eu
 cd {work}
-export WEBHAND_HOME={home} WEBHAND_SCREENSHOTS=1 WEBHAND_FLOW={flow} WEBHAND_KNOWLEDGE_USE={use}{cli}{engine}
+{profile_env}export WEBHAND_HOME={home} WEBHAND_SCREENSHOTS=1 WEBHAND_FLOW={flow} WEBHAND_KNOWLEDGE_USE={use}{cli}{engine}
 {knowledge}python3 {trust} "$PWD" || true  # A failure only means the trust prompt appears.
 date -u +%Y-%m-%dT%H:%M:%SZ > started_at
-exec claude --strict-mcp-config --model {model} {plugin_dir}--settings {settings} "$(cat prompt.txt)"
+exec claude --strict-mcp-config {tools}--model {model} {plugin_dir}--settings {settings} "$(cat prompt.txt)"
 """
 
 
@@ -102,8 +111,8 @@ def harness_commit() -> str:
 
 
 def eval_settings() -> dict:
-    """eval-settings.json with the hooks pointing into this checkout."""
-    settings = json.loads((CODE / "eval-settings.json").read_text())
+    """The profile's settings file with the hooks pointing into this checkout."""
+    settings = json.loads((CODE / SETTINGS[PROFILE]).read_text())
     for matchers in settings["hooks"].values():
         for matcher in matchers:
             for hook in matcher["hooks"]:
@@ -153,7 +162,8 @@ def main() -> None:
     settings = work / "eval-settings.json"
     write_json(settings, eval_settings())
     launch = work / "launch.sh"
-    launch.write_text(LAUNCH.format(work=shlex.quote(str(work)), home=shlex.quote(str(home)), plugin_dir=f"--plugin-dir {shlex.quote(SKILL_REPO)} " if SKILL_REPO else "", model=shlex.quote(MODEL), settings=shlex.quote(str(settings)), trust=shlex.quote(str(CODE / "scripts" / "trust.py")), flow=FLOW, use=KNOWLEDGE_USE, knowledge=knowledge_copy(work) + runbooks_copy(work), cli=f" WEBHAND_CLI_REPO={shlex.quote(CLI_REPO)}" if CLI_REPO else "", engine=f' WEBHAND_ENGINE={shlex.quote(ENGINE)} PATH="$HOME/.local/share/obscura:$PATH"' if ENGINE else ""))
+    lean = PROFILE == "lean"
+    launch.write_text(LAUNCH.format(profile_env="export CLAUDE_CODE_DISABLE_AUTO_MEMORY=1\n" if lean else "", tools=f"--tools {shlex.quote(LEAN_TOOLS)} " if lean else "", work=shlex.quote(str(work)), home=shlex.quote(str(home)), plugin_dir=f"--plugin-dir {shlex.quote(SKILL_REPO)} " if SKILL_REPO else "", model=shlex.quote(MODEL), settings=shlex.quote(str(settings)), trust=shlex.quote(str(CODE / "scripts" / "trust.py")), flow=FLOW, use=KNOWLEDGE_USE, knowledge=knowledge_copy(work) + runbooks_copy(work), cli=f" WEBHAND_CLI_REPO={shlex.quote(CLI_REPO)}" if CLI_REPO else "", engine=f' WEBHAND_ENGINE={shlex.quote(ENGINE)} PATH="$HOME/.local/share/obscura:$PATH"' if ENGINE else ""))
     launch.chmod(0o755)
     write_json(
         work / "meta.json",
@@ -165,6 +175,7 @@ def main() -> None:
             "claude_md": CLAUDE_MD,
             "round": ROUND or None,
             "model": MODEL,
+            "profile": PROFILE,
             "flow": FLOW,
             "engine": ENGINE or None,
             "knowledge_from": KNOWLEDGE_FROM or None,
