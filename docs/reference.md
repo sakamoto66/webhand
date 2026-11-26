@@ -115,7 +115,7 @@ Then restart WSL by running `wsl --shutdown` in PowerShell. Local file URLs are 
 
 ## Headless shell
 
-`--engine headless-shell` (or `auto`, below) runs the session on `chrome-headless-shell`, Chromium's windowless build. It is the same engine as Chrome (real layout, several tabs, a page that stays when a command ends), so it needs no daemon. It uses about half the memory of Chrome's `--headless=new`: roughly 240–260 MB for one page against 350–470 MB, in the same measurement (see [research-plan.md](research/research-plan.md)).
+`--engine headless-shell` (or `auto`, below) runs the session on `chrome-headless-shell`, Chromium's windowless build. It is the same engine as Chrome (real layout, several tabs, a page that stays when a command ends), so it needs no daemon. It uses about half the memory of Chrome's `--headless=new`: roughly 240–260 MB for one page against 350–470 MB, in the same measurement.
 
 - Install: Playwright's `chromium_headless_shell` build is found in its browser cache (`~/.cache/ms-playwright`, or `PLAYWRIGHT_BROWSERS_PATH`), or set `WEBHAND_HEADLESS_SHELL` to the binary, or put `chrome-headless-shell` on `PATH`.
 - The page is 1120x780, the same as Chrome. Chrome's window includes 87px of browser UI (`--window-size=1120,867`); the shell has none, so it is started with `1120,780`. With the same window size the two read different elements.
