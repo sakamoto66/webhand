@@ -91,17 +91,9 @@ function applyReplanView(args: Args, state: session.State): boolean {
   return true;
 }
 
-/** Closes the attempt that ended and opens the next: the outcome, Claude's reason, and the new plan, saved and logged. */
-function startNextAttempt(args: Args, state: session.State, url: string | null): void {
+/** Logs the plan the current attempt now has. */
+function logPlan(args: Args, state: session.State, url: string | null, extra: Record<string, unknown> = {}): void {
   const plan = state.plan;
-  const ended = state.outcome || "CLAUDE_STOPPED";
-  state.outcomes.push({ attempt: plan.attempt, outcome: ended, reason: args.reason });
-  plan.notes.push(`Attempt ${plan.attempt} ended with ${ended}. Claude: ${args.reason}`);
-  plan.attempt += 1;
-  state.outcome = null;
-  state.attempt_decisions = 0;
-  session.save(state);
-  logOnce(state.log, "attempt_end", { attempt: plan.attempt - 1, outcome: ended, reason: args.reason });
   logOnce(state.log, "plan", {
     attempt: plan.attempt,
     steps: planText(plan),
@@ -112,8 +104,31 @@ function startNextAttempt(args: Args, state: session.State, url: string | null):
     ...(plan.more ? { more: plan.more } : {}),
     restart: args.restart,
     ...(url ? { url: safeUrl(url) } : {}),
+    ...extra,
     source: "claude",
   });
+}
+
+/** Nothing ran in this attempt, so there is nothing to try again: the new plan stays in it. */
+function reviseAttempt(args: Args, state: session.State, url: string | null): void {
+  state.plan.notes.push(`Plan revised before attempt ${state.plan.attempt} ran. Claude: ${args.reason}`);
+  session.save(state);
+  logPlan(args, state, url, { reason: args.reason });
+}
+
+/** Closes the attempt that ended and opens the next: the outcome, Claude's reason, and the new plan, saved and logged. */
+function startNextAttempt(args: Args, state: session.State, url: string | null): void {
+  const plan = state.plan;
+  const ended = state.outcome || "CLAUDE_STOPPED";
+  state.outcomes.push({ attempt: plan.attempt, outcome: ended, reason: args.reason });
+  plan.notes.push(`Attempt ${plan.attempt} ended with ${ended}. Claude: ${args.reason}`);
+  plan.attempt += 1;
+  state.outcome = null;
+  state.attempt_decisions = 0;
+  state.attempt_unused = true;
+  session.save(state);
+  logOnce(state.log, "attempt_end", { attempt: plan.attempt - 1, outcome: ended, reason: args.reason });
+  logPlan(args, state, url);
 }
 
 async function commandReplan(args: Args): Promise<number> {
@@ -123,7 +138,9 @@ async function commandReplan(args: Args): Promise<number> {
     print("REJECTED: the last action may have happened, so the run cannot continue. Run: finish --status error");
     return UNCERTAIN;
   }
-  if (plan.attempt >= state.max_attempts) {
+  // Absent in a session saved by an earlier version, which counts as used.
+  const unused = state.attempt_unused === true;
+  if (!unused && plan.attempt >= state.max_attempts) {
     print(`ATTEMPTS EXHAUSTED (${state.max_attempts}). Run: webhand finish --status blocked`);
     return BUDGET;
   }
@@ -139,7 +156,8 @@ async function commandReplan(args: Args): Promise<number> {
     print(`REJECTED: ${error.message}`);
     return FAILED;
   }
-  startNextAttempt(args, state, url);
+  if (unused) reviseAttempt(args, state, url);
+  else startNextAttempt(args, state, url);
   // Navigation only; no earlier mutation is repeated.
   if (url) await openPage(state, url, true);
   else if (args.restart) await openPage(state, state.start_url, true);
@@ -156,7 +174,7 @@ export const replanCommand: CommandDef = {
   name: "replan",
   session: "required",
   spec: () => ({
-    help: "Claude: revise the plan and start the next attempt",
+    help: "Claude: revise the plan and start the next attempt (the same one if nothing ran in it)",
     options: [
       idOption(),
       { name: "reason", type: "string", required: true, help: "Why the last attempt fell short; Jev sees it" },

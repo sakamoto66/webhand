@@ -241,10 +241,64 @@ test("a stuck attempt is replanned from the start URL", async () => {
   expect(end.attempt_outcomes.map((o: { outcome: string }) => o.outcome)).toEqual(["STUCK", "GOAL_REPORTED"]);
 });
 
+/** Runs the current attempt until Jev reports BLOCKED, so that the next replan starts a new one. */
+async function blockedRun(): Promise<void> {
+  ScriptedJev.moves = [["BLOCKED", null, null]];
+  await cli("run");
+}
+
 test("replanning stops at the attempt limit", async () => {
   await begin("--max-attempts", "2");
+  await blockedRun();
   expect((await cli("replan", "--reason", "x")).code).toBe(OK);
+  await blockedRun();
   expect((await cli("replan", "--reason", "y")).code).toBe(BUDGET);
+});
+
+test("replan before anything ran revises the plan of the same attempt, even at the limit", async () => {
+  await begin("--max-attempts", "1");
+  const first = await cli("replan", "--reason", "The goal is now known", "--step", "A different step");
+  expect(first.code).toBe(OK);
+  expect(first.out).toContain("ATTEMPT 1/1");
+  expect((await cli("replan", "--reason", "Once more", "--restart")).out).toContain("ATTEMPT 1/1");
+  const state = session.load() as session.State;
+  expect([state.plan.attempt, state.outcomes]).toEqual([1, []]);
+  expect(state.plan.notes).toEqual([
+    "Plan revised before attempt 1 ran. Claude: The goal is now known",
+    "Plan revised before attempt 1 ran. Claude: Once more",
+  ]);
+  const plans = events().filter((e) => e.type === "plan");
+  expect(plans.map((e) => [e.attempt, e.reason])).toEqual([
+    [1, undefined],
+    [1, "The goal is now known"],
+    [1, "Once more"],
+  ]);
+  expect(events().some((e) => e.type === "attempt_end")).toBe(false);
+  await blockedRun();
+  expect((await cli("replan", "--reason", "y")).code).toBe(BUDGET);
+});
+
+test("a run that stops without an action uses its attempt; the new attempt is unused until it runs", async () => {
+  await begin();
+  await blockedRun();
+  expect((await cli("replan", "--reason", "x")).out).toContain("ATTEMPT 2/3");
+  expect((await cli("replan", "--reason", "y")).out).toContain("ATTEMPT 2/3");
+  await blockedRun();
+  expect((await cli("replan", "--reason", "z")).out).toContain("ATTEMPT 3/3");
+});
+
+test("an operation by act alone uses the attempt", async () => {
+  await begin();
+  expect((await cli("act", "SCROLL_DOWN")).code).toBe(OK);
+  expect((await cli("replan", "--reason", "x")).out).toContain("ATTEMPT 2/3");
+});
+
+test("a session saved without the unused mark counts its attempt on replan", async () => {
+  await begin();
+  const state = session.load() as session.State;
+  delete state.attempt_unused;
+  session.save(state);
+  expect((await cli("replan", "--reason", "x")).out).toContain("ATTEMPT 2/3");
 });
 
 test("replan can replace steps and values", async () => {
@@ -566,6 +620,7 @@ test("replan --url opens another page for the next attempt; it is refused with -
     "REJECTED: --url file not found: tasks/fixtures/no_such.html",
   );
   expect(session.load()?.plan.attempt).toBe(1);
+  await blockedRun();
   const replanned = await cli("replan", "--reason", "The start page moved; try the dense page", "--url", other);
   expect(replanned.code).toBe(OK);
   const state = session.load() as session.State;

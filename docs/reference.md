@@ -167,7 +167,7 @@ If the CLI is not installed globally, read `webhand` in the table below as `npx 
 | `webhand start --goal G --url U --step S ... [--runbook NAME --param K=V \| --batch ID [--row N]] [--service S] [--value L=V ...] [--file L=PATH ...] [--download-dir DIR] [--har PATH] [--read-only] [--explore --allow-domain H --max-total-actions N] --session ...` | Agent | Records the plan and opens the start URL in the chosen browser engine |
 | `webhand run [--value L=V] [--human-done]` | Jev | Operates the page toward the GOAL until it stops and hands control back |
 | `webhand answer --note N [--value L=V] [--file L=PATH] [--url URL]` | Agent | Answers Jev in the same attempt (flow v2 only): keeps history and budget; respects `allowed_domains` on `--url` |
-| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | Agent | Revises the plan and starts the next attempt; respects `allowed_domains` on `--url` |
+| `webhand replan --reason R [--step ...] [--value ...] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | Agent | Revises the plan and starts the next attempt. If nothing ran in the current one (no `run`, `act`, or `drilldown --more`), it stays in it and the attempt limit is not used; respects `allowed_domains` on `--url` |
 | `webhand act OP [TARGET]` | Agent | Performs a single action in Jev's place (`CLICK`, `TYPE_TEXT`, `SELECT`, `UPLOAD_FILE`, `SCROLL_DOWN`, `SCROLL_UP`, `SCROLL_TO`, `WAIT`, `TAB_n`) |
 | `webhand observe [--read KIND ...]` | Agent | Prints the current page observation without acting |
 | `webhand check --expect KIND:ARGS ...` | Agent | Deterministic read-only check against the current page (`text:`, `no-text:`, `field:`, `checked:`, `count:`, `url:`, `title:`); `--read` reads whole-page text for this call only |
@@ -412,7 +412,7 @@ Logs are written as JSONL to `runs/<timestamp>/` in the user folder (`~/.webhand
 | `page` | The region outline at start and after each page change (keys and counts only, no page text). With `--read`, `read` holds the shown and total characters per kind |
 | `escalation` | The result `run` returned to the agent |
 | `human_step` / `values` | Requests and completions of human steps, labels of added input values |
-| `attempt_end` | Outcome of the attempt and the agent's reason for replanning |
+| `attempt_end` | Outcome of the attempt and the agent's reason for replanning (a replan before anything ran writes none; its `plan` event holds the reason) |
 | `handoff` | Number of characters of CLI output the agent reads |
 | `screenshot` / `screenshot_failed` | Only with `WEBHAND_SCREENSHOTS=1`: the step and attempt an image follows, what it follows (`start` / `action` / `restart`), its file in `<log>-screenshots/`, and the URL with query values masked. A failed capture is logged and the run goes on |
 | `page_check` / `page_check_failed` | After `start` (`when: start`) and when `run` stops at `BLOCKED`, `STUCK`, `ATTEMPT_BUDGET`, or `NEEDS_HUMAN` (`when: escalation`): the attempt, the URL with query values masked, the document's HTTP status, the page title (up to 120 characters), bot-check markers found (`cloudflare`, `recaptcha`, `hcaptcha`, `datadome`, `perimeterx`, `arkose`; a sign, not proof), and the visible text length. Read-only and never sent to Jev. A failed check is logged and the run goes on |

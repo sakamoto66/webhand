@@ -269,6 +269,9 @@ export async function commandRun(args: Args): Promise<number> {
   };
   let result: agent.AgentResult;
   try {
+    // From here Jev may be asked and the page changed, so the attempt counts however it ends.
+    state.attempt_unused = false;
+    session.save(state);
     const stopped = (await compareStep(ctx)) ?? (await collectStep(ctx));
     if (stopped !== null) return stopped;
     result = await runAttempt(ctx);

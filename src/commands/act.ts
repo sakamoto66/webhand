@@ -92,7 +92,9 @@ async function performAct(
   const browser = await attach(state, null, browserView(state));
   const recorder = new Recorder(state.log);
   let succeeded = false;
+  const unused = state.attempt_unused;
   try {
+    state.attempt_unused = false;
     await execute(browser, state.page, decision, state.history, recorder, {
       decidedBy: "claude",
       attempt: state.plan.attempt,
@@ -116,6 +118,7 @@ async function performAct(
     succeeded = true;
   } catch (error) {
     if (error instanceof StalePage) {
+      state.attempt_unused = unused;
       state.page = await browser.observe();
       session.save(state);
       print(`STALE, nothing executed: ${error.message}\n${render(state.page)}`);

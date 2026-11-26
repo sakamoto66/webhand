@@ -144,6 +144,7 @@ async function commandQuery(args: Args): Promise<number> {
   let result: agent.AgentResult;
   let answered = false;
   try {
+    state.attempt_unused = false;
     result = await runAgent(browser, policy, state.plan, recorder, new Budget(state.max_actions, state.max_decisions), {
       history: state.history,
       readOnly: inForce(state),
