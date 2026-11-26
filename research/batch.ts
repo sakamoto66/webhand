@@ -28,6 +28,7 @@ export interface Deps {
   sleep(ms: number): Promise<unknown>;
   now(): number;
   claudeDir: string;
+  claudeVersion(): string;
   out(text: string): void;
 }
 
@@ -36,10 +37,11 @@ const defaults: Deps = {
   sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
   now: Date.now,
   claudeDir: process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"),
+  claudeVersion: () => execFileSync("claude", ["--version"], { encoding: "utf8" }).trim(),
   out: (text) => process.stdout.write(`${text}\n`),
 };
 
-/** The entries of a folder; none when it is missing or is a file (claude.ai sync leaves files beside its folders). */
+/** The entries of a folder; none when it is missing or is a file. */
 const list = (dir: string): string[] =>
   statSync(dir, { throwIfNoEntry: false })?.isDirectory() ? readdirSync(dir) : [];
 const quote = (text: string) => `'${text.replaceAll("'", `'\\''`)}'`;
@@ -55,29 +57,6 @@ function jsonLines(file: string): Json[] {
         return []; // A line still being written.
       }
     });
-}
-
-/** The lean configuration: no bundled skills, user plugins, or user skills. The user's own files are only read. */
-function leanSettings(claudeDir: string) {
-  const file = join(claudeDir, "settings.json");
-  const user = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
-  const plugins = [...Object.keys(user.enabledPlugins ?? {}), "webhand@webhand"];
-  const skills = join(claudeDir, "skills");
-  const names = [
-    ...list(skills).filter((name) => existsSync(join(skills, name, "SKILL.md"))),
-    ...list(join(claudeDir, "commands")).flatMap((name) => (name.endsWith(".md") ? [name.slice(0, -3)] : [])),
-    // Skills synced from claude.ai, under both spellings: an override matches its key exactly.
-    ...list(join(skills, "synced")).flatMap((account) =>
-      list(join(skills, "synced", account))
-        .filter((name) => existsSync(join(skills, "synced", account, name, "SKILL.md")))
-        .flatMap((name) => [name, `anthropic-skills:${name}`]),
-    ),
-  ];
-  return {
-    disableBundledSkills: true,
-    enabledPlugins: Object.fromEntries(plugins.map((name) => [name, false])),
-    skillOverrides: Object.fromEntries(names.map((name) => [name, "off"])),
-  };
 }
 
 /** The host's usage from the session's transcripts; a message is written once per content block, so count it once. */
@@ -119,13 +98,17 @@ async function runTask(task: string, home: string, model: string, full: boolean,
   try {
     mkdirSync(home, { recursive: true });
     const env = { WEBHAND_HOME: home, CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" };
-    // env goes into --settings too: a project's local settings would otherwise override the process environment.
-    const settings = JSON.stringify({ env, ...(full ? {} : leanSettings(deps.claudeDir)) });
+    // env goes into --settings too: a project's settings would otherwise override the process environment.
+    // Without the user source, ~/.claude/CLAUDE.md is still found as a project file when the repository is under home.
+    const claudeMdExcludes = [join(homedir(), ".claude", "**")];
+    const settings = JSON.stringify({ env, claudeMdExcludes, ...(full ? {} : { disableBundledSkills: true }) });
     const command = [
       "env",
       ...Object.entries(env).map(([key, value]) => `${key}=${value}`),
       // The prompt comes first: --tools takes several values and would swallow it.
       ...["claude", prompt(task), "--model", model, "--session-id", session, "--strict-mcp-config"],
+      // The user's settings are left out, so the permission mode they might set is named here.
+      ...["--setting-sources", "project", "--permission-mode", "auto"],
       ...(full ? [] : ["--tools", "Bash,Read,AskUserQuestion,Skill"]),
       ...["--settings", settings],
     ];
@@ -174,6 +157,14 @@ async function runTask(task: string, home: string, model: string, full: boolean,
   };
 }
 
+function claudeVersion(deps: Deps): string | null {
+  try {
+    return deps.claudeVersion();
+  } catch {
+    return null; // The launch will record its own failure.
+  }
+}
+
 const git = (...args: string[]) => execFileSync("git", args, { encoding: "utf8", stdio: "pipe" }).trim();
 
 export async function batch(argv: string[], deps: Deps = defaults): Promise<void> {
@@ -217,7 +208,8 @@ export async function batch(argv: string[], deps: Deps = defaults): Promise<void
         const home = join(out, "homes", `${task}-${n}-${randomUUID().slice(0, 8)}`);
         deps.out(`RUN ${task} #${n} (${profile})`);
         const commit = git("rev-parse", "HEAD");
-        row = { ...key, commit, ...(await runTask(task, home, model, full, deps)) };
+        const versions = { claude_version: claudeVersion(deps), batch_node_version: process.version };
+        row = { ...key, commit, ...versions, ...(await runTask(task, home, model, full, deps)) };
         appendFileSync(results, `${JSON.stringify(row)}\n`);
         deps.out(`  verified=${row.verified} end_reason=${row.end_reason} blocked=${row.blocked}`);
       }

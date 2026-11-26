@@ -1,6 +1,7 @@
 /** research/batch.ts with a fake herdr: no Claude, no Jev, no browser. */
 
 import { mkdirSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { batch, type Deps } from "../research/batch.ts";
@@ -19,11 +20,6 @@ const message = (id: string, output: number) => ({
 /** A herdr whose panes finish at once when `verified` names the task, and otherwise stay in `status`. */
 function fake(verified: Record<string, boolean>, status = "idle") {
   const claudeDir = tmpPath();
-  write(join(claudeDir, "settings.json"), { enabledPlugins: { "other@market": true } });
-  write(join(claudeDir, "skills", "mine", "SKILL.md"), "");
-  write(join(claudeDir, "skills", "synced", "account", "docs", "SKILL.md"), "");
-  write(join(claudeDir, "skills", "synced", ".bucket-account_id"), "");
-  write(join(claudeDir, "commands", "cmd.md"), "");
   const calls: string[][] = [];
   const output: string[] = [];
   let time = 0;
@@ -50,6 +46,7 @@ function fake(verified: Record<string, boolean>, status = "idle") {
     },
     now: () => time,
     claudeDir,
+    claudeVersion: () => "9.9.9 (Claude Code)",
     out: (text) => output.push(text),
   };
   const commands = () => calls.filter((args) => args[1] === "run").map((args) => args[3]);
@@ -70,6 +67,7 @@ describe("research/batch.ts", () => {
     ]);
     expect(rows[0].tokens).toMatchObject({ input_tokens: 2, output_tokens: 9, cache_read_input_tokens: 20 });
     expect(rows[0].commit).toMatch(/^[0-9a-f]{40}$/);
+    expect(rows[0]).toMatchObject({ claude_version: "9.9.9 (Claude Code)", batch_node_version: process.version });
     expect(herdr.calls.filter((call) => call[1] === "close").map((call) => call[2])).toEqual(["p2", "p6"]);
     expect(herdr.output).toContain("VERIFIED 2/2 (100%)");
     expect(herdr.output.join("\n")).toContain("output_tokens=18");
@@ -99,15 +97,25 @@ describe("research/batch.ts", () => {
   it("records a failure before the launch and goes on to the next run", async () => {
     const out = tmpPath();
     const herdr = fake({ hotel_filter: true });
-    write(join(herdr.deps.claudeDir, "settings.json"), "{");
-    await batch(args(out, "--repeat", "2"), herdr.deps);
+    const deps: Deps = {
+      ...herdr.deps,
+      herdr(args) {
+        const result = herdr.deps.herdr(args);
+        if (args[1] === "create") throw new Error("no tab");
+        return result;
+      },
+      claudeVersion() {
+        throw new Error("no claude");
+      },
+    };
+    await batch(args(out, "--repeat", "2"), deps);
     const rows = readEvents(join(out, "results.jsonl"));
     expect(rows.map((row) => [row.n, row.verified, row.end_reason])).toEqual([
       [1, null, "launch_failed"],
       [2, null, "launch_failed"],
     ]);
-    expect(rows[0].error).toContain("JSON");
-    expect(herdr.calls.map((call) => call[1])).toEqual(["list"]);
+    expect(rows[0]).toMatchObject({ error: "no tab", claude_version: null });
+    expect(herdr.calls.map((call) => call[1])).toEqual(["list", "create", "create"]);
   });
 
   it("lightens the session unless --full", async () => {
@@ -116,20 +124,19 @@ describe("research/batch.ts", () => {
     const [command] = lean.commands();
     expect(command).toContain("'--tools' 'Bash,Read,AskUserQuestion,Skill'");
     expect(command).toContain("'--strict-mcp-config'");
-    const settings = JSON.parse(/'--settings' '(.*)'$/.exec(command)?.[1] as string);
-    expect(settings.disableBundledSkills).toBe(true);
-    expect(settings.enabledPlugins).toEqual({ "other@market": false, "webhand@webhand": false });
-    expect(Object.keys(settings.skillOverrides)).toEqual(["mine", "cmd", "docs", "anthropic-skills:docs"]);
-
     const full = fake({ hotel_filter: true });
     await batch(args(tmpPath(), "--full"), full.deps);
     for (const one of [command, full.commands()[0]]) {
       expect(one).toContain("'/webhand-research hotel_filter (session: new)'");
+      expect(one).toContain("'--strict-mcp-config' '--setting-sources' 'project' '--permission-mode' 'auto'");
+      expect(one).toContain("CLAUDE_CODE_DISABLE_AUTO_MEMORY=1");
     }
+    const settings = (one: string) => JSON.parse(/'--settings' '(.*)'$/.exec(one)?.[1] as string);
+    const { env, ...lighter } = settings(command);
+    expect(env.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe("1");
+    expect(lighter).toEqual({ claudeMdExcludes: [join(homedir(), ".claude", "**")], disableBundledSkills: true });
     expect(full.commands()[0]).not.toContain("--tools");
-    expect(full.commands()[0]).not.toContain("disableBundledSkills");
-    expect(full.commands()[0]).toContain("'--strict-mcp-config'");
-    expect(full.commands()[0]).toContain("CLAUDE_CODE_DISABLE_AUTO_MEMORY=1");
+    expect(Object.keys(settings(full.commands()[0]))).toEqual(["env", "claudeMdExcludes"]);
   });
 
   it("refuses a missing model, an unknown task, and an --out that git would track", async () => {
