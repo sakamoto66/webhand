@@ -6,6 +6,7 @@
 import type { Action, Page, Plan, Value } from "../core/types.ts";
 import { MATCH, NO, type Row } from "../scans/collect.ts";
 import { type Best, type Candidate, describeBest, KEEP, NONE } from "../scans/compare.ts";
+import type { LinkView } from "../scans/drilldown.ts";
 import { type Controls, jevGoal, modelState, planText, type Targets } from "./base.ts";
 import {
   BLOCK_SELECT_RULES,
@@ -15,6 +16,9 @@ import {
   COLLECT_RULES,
   COMPARE_RULES,
   COMPARED_RULES,
+  DETAIL_LINK_CHOICE,
+  DETAIL_LINK_EXISTS,
+  DETAIL_LINK_RULES,
   ESCALATE,
   ESCALATE_HELP,
   ESCALATE_RULES,
@@ -255,6 +259,21 @@ export function buildNoulQuestions(items: { key: string; instructions: unknown }
     questions[item.key] = {
       type: "noul",
       instructions: item.instructions,
+    };
+  }
+  return questions;
+}
+
+/** The drilldown link questions: whether the row has a detail link, and which. A lone link needs no choice. */
+export function buildDetailLink(links: LinkView[]): Record<string, unknown> {
+  const questions: Record<string, unknown> = {
+    has_detail_link: { type: "noul", instructions: { question: DETAIL_LINK_EXISTS, rules: DETAIL_LINK_RULES } },
+  };
+  if (links.length > 1) {
+    questions.detail_link = {
+      type: "choice",
+      criteria: new Map(links.map((link) => [link.key, `[${link.key}] ${link.name || "(no name)"} → ${link.path}`])),
+      instructions: { question: DETAIL_LINK_CHOICE, rules: DETAIL_LINK_RULES },
     };
   }
   return questions;

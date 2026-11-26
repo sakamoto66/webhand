@@ -1,11 +1,12 @@
 /**
  * Read-only list-to-detail drilldown: collect list rows + detail links, filter matching rows in parallel via Jev,
- * visit each matched detail URL via GET navigation, extract structured fields, and return to the list URL.
+ * pick each row's detail link, visit it via GET navigation, extract structured fields, and return to the list URL.
+ * Jev only judges which observed link opens the row's item; the decision and every copied value are code's.
  */
 
 import { ITEMS } from "../browser/scripts/items.ts";
 import type { Recorder } from "../core/metrics.ts";
-import type { Page, Plan } from "../core/types.ts";
+import type { ModelCall, Page, Plan } from "../core/types.ts";
 import { hostAllowed } from "../explore.ts";
 import type { Driver } from "../ipc/remote.ts";
 import type { Collector } from "./collect.ts";
@@ -14,11 +15,38 @@ import { type LoadMore, MAX_PAGES } from "./list-scanner.ts";
 const BATCH = 40;
 export const DEFAULT_MAX_ITEMS = 20;
 export const HARD_MAX_ITEMS = 100;
+/** A Noul at or above this is yes, at or below NOUL_NO is no, and between them unsure. */
+const NOUL_YES = 0.7;
+const NOUL_NO = 0.3;
+const LINK_NAME_CHARS = 80;
 
-interface ListLinkCandidate {
-  row: string;
+interface RowLink {
   href: string;
-  linkText: string;
+  name: string;
+  /** Where the link sits in its row, such as "td:2>a:1". */
+  at: string;
+}
+
+interface ListRow {
+  row: string;
+  /** The tags and classes around the row, to tell one list from another. */
+  list: string;
+  /** A link taken as a row of its own because the page has no rows: there is nothing to choose. */
+  bare: boolean;
+  links: RowLink[];
+}
+
+/** A row's link as Jev is shown it: no query value, and no folder of a local file. */
+export interface LinkView {
+  key: string;
+  name: string;
+  path: string;
+}
+
+export interface LinkChooser {
+  calls: ModelCall[];
+  /** The link that best opens the row's item, and the probability that one of the links does. */
+  detailLink(row: string, links: LinkView[]): Promise<{ key: string; noul: number }>;
 }
 
 interface DrilldownItem {
@@ -27,6 +55,8 @@ interface DrilldownItem {
   title: string;
   fields: Record<string, string>;
   snippet?: string;
+  /** Jev could not tell whether the row has a detail link, so its first link was visited. */
+  link_uncertain?: true;
 }
 
 export interface DrilldownResult {
@@ -36,6 +66,8 @@ export interface DrilldownResult {
   matched: number;
   visited: number;
   truncated: boolean;
+  /** Matched rows left out because none of their links opens the item. */
+  skipped_no_link?: number;
   pages?: number;
   items: DrilldownItem[];
 }
@@ -43,6 +75,7 @@ export interface DrilldownResult {
 interface DrilldownOptions {
   match?: string | null;
   linkText?: string | null;
+  linkChooser?: LinkChooser | null;
   fields?: string[] | null;
   maxItems?: number;
   allowedDomains?: string[] | null;
@@ -101,35 +134,102 @@ function listLinksExpression(linkText: string | null): string {
     const containers = [...repeated, ...listed].sort((a, b) =>
       a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
     );
-    const seen = new Set<string>();
-    const results: { row: string; href: string; linkText: string }[] = [];
-    const pickLinks = (root: Element) => {
-      const links = usableLinks(root);
-      if (!links.length) return;
-      const chosen = links[0];
-      const href = chosen.href;
-      if (!href || seen.has(href)) return;
-      seen.add(href);
-      const row = norm(root.textContent || "").slice(0, 320);
-      const text = norm(chosen.textContent || chosen.getAttribute("aria-label") || chosen.getAttribute("title") || "");
-      if (row) results.push({ row, href, linkText: text });
+    const nameOf = (a: Element) =>
+      norm(
+        a.textContent ||
+          a.getAttribute("aria-label") ||
+          a.getAttribute("title") ||
+          a.querySelector("img[alt]")?.getAttribute("alt") ||
+          "",
+      );
+    const position = (el: Element, root: Element) => {
+      const path: string[] = [];
+      for (let e: Element | null = el; e && e !== root; e = e.parentElement) {
+        let n = 1;
+        for (let s = e.previousElementSibling; s; s = s.previousElementSibling) if (s.tagName === e.tagName) n += 1;
+        path.unshift(`${e.tagName.toLowerCase()}:${n}`);
+      }
+      return path.join(">");
     };
-    for (const container of containers) pickLinks(container);
+    const listOf = (row: Element) =>
+      [row.parentElement?.parentElement, row.parentElement, row]
+        .map((e, i) => (e ? `${e.tagName}.${i < 2 ? (e.getAttribute("class") ?? "") : ""}` : ""))
+        .join(">");
+    const results: { row: string; list: string; bare: boolean; links: { href: string; name: string; at: string }[] }[] =
+      [];
+    for (const root of containers) {
+      const links = usableLinks(root)
+        .filter((a) => a.href)
+        .map((a) => ({ href: a.href, name: nameOf(a), at: position(a, root) }));
+      const row = norm(root.textContent || "").slice(0, 320);
+      if (row && links.length) results.push({ row, list: listOf(root), bare: false, links });
+    }
     if (!results.length) {
-      for (const a of [...document.querySelectorAll<HTMLAnchorElement>("a[href]")]) {
-        if (skipChrome(a) || !isVisible(a)) continue;
-        const raw = a.getAttribute("href") ?? "";
-        if (!raw || raw.startsWith("#") || raw.toLowerCase().startsWith("javascript:")) continue;
-        const text = norm(a.textContent || a.getAttribute("aria-label") || a.getAttribute("title") || "");
-        if (wantedLow && !text.toLowerCase().includes(wantedLow)) continue;
-        if (!a.href || seen.has(a.href)) continue;
-        seen.add(a.href);
-        results.push({ row: text || a.href, href: a.href, linkText: text });
+      for (const a of usableLinks(document.documentElement)) {
+        if (!a.href) continue;
+        const name = nameOf(a);
+        results.push({ row: name || a.href, list: "", bare: true, links: [{ href: a.href, name, at: "" }] });
       }
     }
     return results;
   };
   return `(${fn.toString()})(${JSON.stringify(linkText)}, ${ITEMS}())`;
+}
+
+/** The address of a link without its query or fragment. A local file's folders are left out. */
+function shownPath(href: string, listUrl: string): string {
+  const url = new URL(href, listUrl);
+  if (url.protocol === "file:") return url.pathname.split("/").at(-1) ?? "";
+  return url.host === new URL(listUrl).host ? url.pathname : `//${url.host}${url.pathname}`;
+}
+
+/** Rows of one shape have links at the same places that lead to the same folders, so one answer serves them all. */
+function rowShape(row: ListRow): string {
+  const folder = (href: string) => {
+    const url = new URL(href);
+    const folders = url.pathname.split("/").slice(0, -1);
+    return `${url.protocol}//${url.host}${folders.map((part) => (/\d/.test(part) ? "#" : part)).join("/")}`;
+  };
+  return JSON.stringify([row.list, row.links.map((link) => [link.at, folder(link.href)])]);
+}
+
+type LinkVerdict = { sure: "yes" | "no" | "unsure"; index: number };
+
+/**
+ * Picks the link to visit for each row, or null for a row without a detail link. --link-text is the user's own choice;
+ * otherwise Jev is asked once per row shape, and the other rows of that shape take the link at the same place.
+ */
+function linkPicker(
+  chooser: LinkChooser | null,
+  linkText: string | null,
+  listUrl: string,
+  recorder: Recorder,
+  attempt: number,
+) {
+  const verdicts = new Map<string, LinkVerdict>();
+  return async (row: ListRow): Promise<{ href: string; uncertain: boolean } | null> => {
+    if (row.bare || linkText) return { href: row.links[0].href, uncertain: false };
+    const shape = rowShape(row);
+    let verdict = verdicts.get(shape);
+    if (!verdict) {
+      if (!chooser) throw new Error("A Jev chooser is required to pick drilldown links without --link-text");
+      const views = row.links.map((link, i) => ({
+        key: String(i + 1),
+        name: link.name.slice(0, LINK_NAME_CHARS),
+        path: shownPath(link.href, listUrl),
+      }));
+      const answer = await chooser.detailLink(row.row, views);
+      for (const call of chooser.calls) recorder.call(call);
+      chooser.calls.length = 0;
+      const sure = answer.noul >= NOUL_YES ? "yes" : answer.noul <= NOUL_NO ? "no" : "unsure";
+      verdict = { sure, index: views.findIndex((view) => view.key === answer.key) };
+      verdicts.set(shape, verdict);
+      recorder.event("drilldown_link", { attempt, links: views.length, choice: answer.key, noul: answer.noul, sure });
+    }
+    if (verdict.sure === "no") return null;
+    if (verdict.sure === "unsure") return { href: row.links[0].href, uncertain: true };
+    return { href: row.links[verdict.index].href, uncertain: false };
+  };
 }
 
 function detailExtractExpression(wantedFields: string[] | null): string {
@@ -303,19 +403,29 @@ export async function drilldownScan(
 
   let page: Page = await browser.observe();
   const listUrl = String(page.url ?? "");
-  const seenHrefs = new Set<string>();
-  const matchedCandidates: ListLinkCandidate[] = [];
+  const seenRows = new Set<string>();
+  /** Matched rows whose link is not picked yet. */
+  const pending: ListRow[] = [];
+  const pick = linkPicker(options.linkChooser ?? null, linkText, listUrl, recorder, attempt);
+  const toVisit: { row: string; href: string; uncertain: boolean }[] = [];
+  const chosen = new Set<string>();
   let totalSeen = 0;
+  let matched = 0;
+  let skipped = 0;
   let pages = 0;
 
   while (true) {
-    const raw = (await browser.evaluate(listLinksExpression(linkText))) as ListLinkCandidate[];
-    const fresh = (Array.isArray(raw) ? raw : []).filter((c) => {
-      if (!c?.href || seenHrefs.has(c.href)) return false;
-      if (!isAllowedDetailUrl(c.href, listUrl, options.allowedDomains)) return false;
-      seenHrefs.add(c.href);
-      return true;
-    });
+    const raw = (await browser.evaluate(listLinksExpression(linkText))) as ListRow[];
+    const fresh: ListRow[] = [];
+    for (const found of Array.isArray(raw) ? raw : []) {
+      const links = (found?.links ?? []).filter((l) => isAllowedDetailUrl(l.href, listUrl, options.allowedDomains));
+      if (!links.length) continue;
+      // With --link-text the first link is the one to visit, so it alone tells rows apart.
+      const key = JSON.stringify(linkText || found.bare ? links[0].href : links.map((l) => l.href));
+      if (seenRows.has(key)) continue;
+      seenRows.add(key);
+      fresh.push({ ...found, links });
+    }
     totalSeen += fresh.length;
 
     if (match) {
@@ -327,21 +437,33 @@ export async function drilldownScan(
         for (const call of collector.calls) recorder.call(call);
         collector.calls.length = 0;
         chunk.forEach((candidate, i) => {
-          if (keys.has(String(start + i + 1))) matchedCandidates.push(candidate);
+          if (!keys.has(String(start + i + 1))) return;
+          matched += 1;
+          pending.push(candidate);
         });
       }
     } else {
-      matchedCandidates.push(...fresh);
+      matched += fresh.length;
+      pending.push(...fresh);
     }
 
-    if (!options.loadMore || matchedCandidates.length >= maxItems || pages >= MAX_PAGES) break;
+    while (pending.length && toVisit.length < maxItems) {
+      const row = pending.shift() as ListRow;
+      const link = await pick(row);
+      if (!link) skipped += 1;
+      else if (!chosen.has(link.href)) {
+        chosen.add(link.href);
+        toVisit.push({ row: row.row, ...link });
+      }
+    }
+
+    if (!options.loadMore || toVisit.length >= maxItems || pages >= MAX_PAGES) break;
     const loaded = await options.loadMore(page);
     if (!loaded) break;
     pages += 1;
     page = loaded;
   }
 
-  const toVisit = matchedCandidates.slice(0, maxItems);
   const items: DrilldownItem[] = [];
   if (toVisit.length > 0 && !browser.goto) {
     throw new Error("This browser engine does not support URL navigation for drilldown");
@@ -362,6 +484,7 @@ export async function drilldownScan(
         title: extracted?.title ?? "",
         fields: extracted?.fields ?? {},
         ...(extracted?.snippet ? { snippet: extracted.snippet } : {}),
+        ...(candidate.uncertain ? { link_uncertain: true as const } : {}),
       });
     }
   } finally {
@@ -374,9 +497,10 @@ export async function drilldownScan(
     list_url: listUrl,
     match,
     seen: totalSeen,
-    matched: matchedCandidates.length,
+    matched,
     visited: items.length,
-    truncated: matchedCandidates.length > toVisit.length,
+    truncated: pending.length > 0,
+    ...(skipped ? { skipped_no_link: skipped } : {}),
     ...(options.loadMore ? { pages } : {}),
     items,
   };
@@ -386,6 +510,7 @@ export async function drilldownScan(
     matched: result.matched,
     visited: result.visited,
     truncated: result.truncated,
+    ...(skipped ? { skipped_no_link: skipped } : {}),
     ...(result.pages !== undefined ? { pages: result.pages } : {}),
   });
   return result;
@@ -396,7 +521,10 @@ export function formatDrilldown(result: DrilldownResult, style: "json" | "table"
   if (style === "json") return JSON.stringify(result, null, 2);
   const keys = [...new Set(result.items.flatMap((item) => Object.keys(item.fields)))];
   const header = [
-    `DRILLDOWN: visited=${result.visited} matched=${result.matched} seen=${result.seen}${result.truncated ? " (truncated)" : ""}`,
+    `DRILLDOWN: visited=${result.visited} matched=${result.matched} seen=${result.seen}${result.skipped_no_link ? ` skipped_no_detail_link=${result.skipped_no_link}` : ""}${result.truncated ? " (truncated)" : ""}`,
+    ...result.items
+      .filter((item) => item.link_uncertain)
+      .map((item) => `UNCERTAIN LINK (first link of the row used): ${item.title || item.row.slice(0, 60)}`),
   ];
   if (!result.items.length) return `${header[0]}\n(no matching items)`;
   const cols = keys.length ? ["title", ...keys] : ["title", "snippet"];

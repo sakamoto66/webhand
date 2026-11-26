@@ -21,6 +21,7 @@ import {
 } from "../core/types.ts";
 import { MATCH, NO, type Row } from "../scans/collect.ts";
 import { type Best, type Candidate, KEEP, NONE } from "../scans/compare.ts";
+import type { LinkView } from "../scans/drilldown.ts";
 import { actionSpace, fileChoices, modelState, resolve, valueChoices } from "./base.ts";
 import { type Fetch, type Json, postJson, validateChoice, validateNoul } from "./jev-client.ts";
 import { estimateTokens, FIT_TRIES, fitChoose, OVER_LIMIT, requestSize, SHRINK, TOKEN_BUDGET } from "./jev-fit.ts";
@@ -28,6 +29,7 @@ import {
   buildBlockSelect,
   buildCollect,
   buildCompare,
+  buildDetailLink,
   buildMore,
   buildNoulQuestions,
   buildQuestions,
@@ -154,6 +156,15 @@ export class JevPolicy implements Policy {
       if (validateChoice(answers[`item_${row.key}`] ?? {}, [MATCH, NO]).choice === MATCH) keys.add(row.key);
     }
     return keys;
+  }
+
+  async detailLink(row: string, links: LinkView[]): Promise<{ key: string; noul: number }> {
+    const body = { model: this.model, state: { row, links }, questions: buildDetailLink(links) };
+    const answers = (await this.post(body, "detail_link")).answers ?? {};
+    const noul = validateNoul(answers.has_detail_link);
+    const keys = links.map((link) => link.key);
+    const key = links.length > 1 ? validateChoice(answers.detail_link ?? {}, keys).choice : keys[0];
+    return { key, noul };
   }
 
   async verifyClaims(page: Page, plan: Plan, claims: string[]): Promise<Map<string, ClaimVerdict>> {

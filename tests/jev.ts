@@ -7,6 +7,7 @@ import { Decision, type HistoryEntry, type ModelCall, modelCall, type Page, type
 import { actionSpace, modelState, resolve, valueChoices } from "../src/policies/base.ts";
 import type { Row } from "../src/scans/collect.ts";
 import { type Best, type Candidate, KEEP, NONE } from "../src/scans/compare.ts";
+import type { LinkView } from "../src/scans/drilldown.ts";
 import * as session from "../src/storage/session.ts";
 import { tmpPath } from "./helpers.ts";
 
@@ -50,6 +51,12 @@ export class ScriptedJev {
     const limit = Number(/€(\d+)/.exec(criterion)?.[1] ?? 0);
     const price = (text: string) => Number(/€(\d+)/.exec(text)?.[1] ?? Number.POSITIVE_INFINITY);
     return new Set(rows.filter((r) => r.text.includes("200 GB") && price(r.text) < limit).map((r) => r.key));
+  }
+
+  /** Takes each row's first link as its detail link. */
+  async detailLink(_row: string, links: LinkView[]): Promise<{ key: string; noul: number }> {
+    this.calls.push(modelCall("typesafe", "jev", "detail_link", 1, 10, 1));
+    return { key: links[0].key, noul: 0.95 };
   }
 
   async choose(page: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {
