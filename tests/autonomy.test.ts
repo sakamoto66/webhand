@@ -467,6 +467,31 @@ describe("real Chrome CLI: drilldown and one-shot read-only query", () => {
     await cli("finish", "--status", "done");
   });
 
+  test("webhand drilldown names a checked option by a label in any script, not by its value or position", async () => {
+    writeFileSync(
+      join(dir, "detail-ja.html"),
+      `<title>設定</title><main>
+        <fieldset><legend>公開状態</legend>
+          <input type="radio" id="on" name="state" value="1" checked><label for="on">有効</label>
+          <input type="radio" id="off" name="state" value="0"><label for="off">無効</label>
+        </fieldset>
+        <fieldset><legend>通知</legend><input type="checkbox" id="mail" checked><label for="mail">メール</label></fieldset>
+        <fieldset><legend>알림</legend><input type="checkbox" value="1" checked aria-label="공개"></fieldset>
+      </main>`,
+    );
+    writeFileSync(
+      join(dir, "list-ja.html"),
+      `<title>一覧</title><main><table><tbody><tr><td>記事</td><td><a href="detail-ja.html">編集</a></td></tr></tbody></table></main>`,
+    );
+    const url = pathToFileURL(join(dir, "list-ja.html")).href;
+    expect((await cli("start", "--goal", "設定を確認する", "--url", url, "--chrome", "linux")).code).toBe(OK);
+
+    const drilled = await cli("drilldown", "--format", "json");
+    expect(drilled.code).toBe(OK);
+    expect(JSON.parse(drilled.out).items[0].fields).toEqual({ 公開状態: "有効", 通知: "メール", 알림: "공개" });
+    await cli("finish", "--status", "done");
+  });
+
   test("webhand query runs read-only one-shot with drilldown and auto-closes Chrome on GOAL_REPORTED", async () => {
     deps.policy = () =>
       ({

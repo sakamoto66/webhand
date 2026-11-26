@@ -187,7 +187,8 @@ function detailExtractExpression(wantedFields: string[] | null): string {
           const lblText = norm(lbl?.textContent || "");
           const lblTitle = norm(lbl?.getAttribute("title") || lbl?.getAttribute("aria-label") || "");
           const elAttr = norm(el.getAttribute("aria-label") || el.getAttribute("title") || "");
-          const meaningful = (s: string) => /[a-z0-9]/i.test(s);
+          // A label with a letter or digit of any script names the option; a symbol-only one (a star) does not.
+          const meaningful = (s: string) => /[\p{L}\p{N}]/u.test(s);
           let groupPos = "";
           if (type === "radio" && el.name) {
             const group = [
