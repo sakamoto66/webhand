@@ -6,6 +6,7 @@
 import type { Action, Page, Plan, Value } from "../core/types.ts";
 import { MATCH, NO, type Row } from "../scans/collect.ts";
 import { type Best, type Candidate, describeBest, KEEP, NONE } from "../scans/compare.ts";
+import type { LabelView, LinkView } from "../scans/drilldown.ts";
 import { type Controls, jevGoal, modelState, planText, type Targets } from "./base.ts";
 import {
   BLOCK_SELECT_RULES,
@@ -15,9 +16,15 @@ import {
   COLLECT_RULES,
   COMPARE_RULES,
   COMPARED_RULES,
+  DETAIL_LINK_CHOICE,
+  DETAIL_LINK_EXISTS,
+  DETAIL_LINK_RULES,
   ESCALATE,
   ESCALATE_HELP,
   ESCALATE_RULES,
+  FIELD_CHOICE,
+  FIELD_EXISTS,
+  FIELD_RULES,
   FILE,
   INSTRUCTION_RULES,
   MORE_RULES,
@@ -257,5 +264,42 @@ export function buildNoulQuestions(items: { key: string; instructions: unknown }
       instructions: item.instructions,
     };
   }
+  return questions;
+}
+
+/** The drilldown link questions: whether the row has a detail link, and which. A lone link needs no choice. */
+export function buildDetailLink(links: LinkView[]): Record<string, unknown> {
+  const questions: Record<string, unknown> = {
+    has_detail_link: { type: "noul", instructions: { question: DETAIL_LINK_EXISTS, rules: DETAIL_LINK_RULES } },
+  };
+  if (links.length > 1) {
+    questions.detail_link = {
+      type: "choice",
+      criteria: new Map(links.map((link) => [link.key, `[${link.key}] ${link.name || "(no name)"} → ${link.path}`])),
+      instructions: { question: DETAIL_LINK_CHOICE, rules: DETAIL_LINK_RULES },
+    };
+  }
+  return questions;
+}
+
+/**
+ * The drilldown field questions, for each word of --fields (numbered from 1): whether a field name fits it, and which.
+ * A lone name needs no choice.
+ */
+export function buildFieldMatch(wanted: string[], labels: LabelView[]): Record<string, unknown> {
+  const questions: Record<string, unknown> = {};
+  wanted.forEach((word, i) => {
+    questions[`field_${i + 1}_exists`] = {
+      type: "noul",
+      instructions: { question: FIELD_EXISTS, user_field: word, rules: FIELD_RULES },
+    };
+    if (labels.length > 1) {
+      questions[`field_${i + 1}`] = {
+        type: "choice",
+        criteria: new Map(labels.map((item) => [item.key, `[${item.key}] ${item.label}`])),
+        instructions: { question: FIELD_CHOICE, user_field: word, rules: FIELD_RULES },
+      };
+    }
+  });
   return questions;
 }

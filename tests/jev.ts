@@ -7,11 +7,21 @@ import { Decision, type HistoryEntry, type ModelCall, modelCall, type Page, type
 import { actionSpace, modelState, resolve, valueChoices } from "../src/policies/base.ts";
 import type { Row } from "../src/scans/collect.ts";
 import { type Best, type Candidate, KEEP, NONE } from "../src/scans/compare.ts";
+import type { FieldMatch, LabelView, LinkView } from "../src/scans/drilldown.ts";
 import * as session from "../src/storage/session.ts";
 import { tmpPath } from "./helpers.ts";
 
 /** [operation, element label, value label]. The value label picks one of Claude's values; null: none fits. */
 export type Move = [string, string | null, string | null];
+
+export function exactFields(wanted: string[], labels: LabelView[]): Map<string, FieldMatch> {
+  return new Map(
+    wanted.map((word) => {
+      const found = labels.find((item) => item.label.toLowerCase() === word.toLowerCase());
+      return [word, { key: found?.key ?? labels[0].key, noul: found ? 0.95 : 0.05 }];
+    }),
+  );
+}
 
 /** Plays Jev: chooses from the observed page and records the plan and state it was given. */
 export class ScriptedJev {
@@ -50,6 +60,23 @@ export class ScriptedJev {
     const limit = Number(/€(\d+)/.exec(criterion)?.[1] ?? 0);
     const price = (text: string) => Number(/€(\d+)/.exec(text)?.[1] ?? Number.POSITIVE_INFINITY);
     return new Set(rows.filter((r) => r.text.includes("200 GB") && price(r.text) < limit).map((r) => r.key));
+  }
+
+  /** Takes each row's first link as its detail link. */
+  async detailLink(_row: string, links: LinkView[]): Promise<{ key: string; noul: number }> {
+    this.calls.push(modelCall("typesafe", "jev", "detail_link", 1, 10, 1));
+    return { key: links[0].key, noul: 0.95 };
+  }
+
+  /** Takes only a field name equal to the word, ignoring case. */
+  async matchFields(wanted: string[], labels: LabelView[]): Promise<Map<string, FieldMatch>> {
+    this.calls.push(modelCall("typesafe", "jev", "match_fields", 1, 10, 1));
+    return exactFields(wanted, labels);
+  }
+
+  async selectBlocks(_page: Page, _plan: Plan, _query: string, _blocks: { key: string; text: string }[]) {
+    this.calls.push(modelCall("typesafe", "jev", "select_blocks", 1, 10, 1));
+    return new Set<string>();
   }
 
   async choose(page: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {

@@ -1,10 +1,13 @@
 /**
  * Read-only list-to-detail drilldown: collect list rows + detail links, filter matching rows in parallel via Jev,
- * visit each matched detail URL via GET navigation, extract structured fields, and return to the list URL.
+ * pick each row's detail link, visit it via GET navigation, extract structured fields, and return to the list URL.
+ * Jev only judges which observed link opens the row's item, which observed field name is each word of --fields, and
+ * which blocks of a page are about a field it lacks; the decision and every copied value are code's.
  */
 
+import { ITEMS } from "../browser/scripts/items.ts";
 import type { Recorder } from "../core/metrics.ts";
-import type { Page, Plan } from "../core/types.ts";
+import type { ModelCall, Page, Plan } from "../core/types.ts";
 import { hostAllowed } from "../explore.ts";
 import type { Driver } from "../ipc/remote.ts";
 import type { Collector } from "./collect.ts";
@@ -13,19 +16,93 @@ import { type LoadMore, MAX_PAGES } from "./list-scanner.ts";
 const BATCH = 40;
 export const DEFAULT_MAX_ITEMS = 20;
 export const HARD_MAX_ITEMS = 100;
+/** A Noul at or above this is yes, at or below NOUL_NO is no, and between them unsure. */
+const NOUL_YES = 0.7;
+const NOUL_NO = 0.3;
+const LINK_NAME_CHARS = 80;
+/** In a list of this many rows or fewer, links share an answer only when their names and path endings are equal. */
+const SMALL_LIST = 3;
+/** Link questions asked in one drilldown, the pages loaded by --more included. */
+const MAX_LINK_QUESTIONS = 10;
+const MAX_LABELS = 60;
+const LABEL_CHARS = 80;
+const SNIPPET_CHARS = 1500;
 
-interface ListLinkCandidate {
-  row: string;
+interface RowLink {
   href: string;
-  linkText: string;
+  name: string;
+  /** Where the link sits in its row, such as "td:2>a:1". */
+  at: string;
 }
 
-interface DrilldownItem {
+interface ListRow {
   row: string;
+  /** The tags and classes around the row, to tell one list from another. */
+  list: string;
+  /** A link taken as a row of its own because the page has no rows: there is nothing to choose. */
+  bare: boolean;
+  links: RowLink[];
+}
+
+/** A row's link as Jev is shown it: no query value, and no folder of a local file. */
+export interface LinkView {
+  key: string;
+  name: string;
+  path: string;
+}
+
+export interface LinkChooser {
+  calls: ModelCall[];
+  /** The link that best opens the row's item, and the probability that one of the links does. */
+  detailLink(row: string, links: LinkView[]): Promise<{ key: string; noul: number }>;
+}
+
+/** A field name observed on a detail page, as Jev is shown it. Its value stays here. */
+export interface LabelView {
+  key: string;
+  label: string;
+}
+
+/** The field name that best fits one word of --fields, and the probability that one of the names does. */
+export interface FieldMatch {
+  key: string;
+  noul: number;
+}
+
+export interface FieldJudge {
+  calls: ModelCall[];
+  matchFields(wanted: string[], labels: LabelView[]): Promise<Map<string, FieldMatch>>;
+  selectBlocks(page: Page, plan: Plan, query: string, blocks: { key: string; text: string }[]): Promise<Set<string>>;
+}
+
+interface Detail {
   url: string;
   title: string;
   fields: Record<string, string>;
   snippet?: string;
+  /** The page's main text, read only with --fields. */
+  text?: string;
+}
+
+/** What --fields found on one page. Without --fields, only fields and perhaps the start of the page. */
+interface FieldResult {
+  fields: Record<string, string>;
+  /** The page's field name taken for each word of --fields. */
+  field_labels?: Record<string, string>;
+  /** Words of --fields that no field name of the page fits. */
+  missing_fields?: string[];
+  /** Words for which Jev could not tell whether the field name fits. */
+  uncertain_fields?: { field: string; label: string; value: string }[];
+  /** With --fields, the blocks of the page about the missing and uncertain words; otherwise its start. */
+  snippet?: string;
+}
+
+interface DrilldownItem extends FieldResult {
+  row: string;
+  url: string;
+  title: string;
+  /** Jev could not tell whether the row has a detail link, so its first link was visited. */
+  link_uncertain?: true;
 }
 
 export interface DrilldownResult {
@@ -35,6 +112,8 @@ export interface DrilldownResult {
   matched: number;
   visited: number;
   truncated: boolean;
+  /** Matched rows left out because none of their links opens the item. */
+  skipped_no_link?: number;
   pages?: number;
   items: DrilldownItem[];
 }
@@ -42,7 +121,9 @@ export interface DrilldownResult {
 interface DrilldownOptions {
   match?: string | null;
   linkText?: string | null;
+  linkChooser?: LinkChooser | null;
   fields?: string[] | null;
+  fieldJudge?: FieldJudge | null;
   maxItems?: number;
   allowedDomains?: string[] | null;
   loadMore?: LoadMore | null;
@@ -67,7 +148,7 @@ export function isAllowedDetailUrl(href: string, listUrl: string, allowedDomains
 }
 
 function listLinksExpression(linkText: string | null): string {
-  const fn = (wanted: string | null) => {
+  const fn = (wanted: string | null, items: Element[]) => {
     const norm = (s: string) => s.replace(/\s+/g, " ").trim();
     const wantedLow = wanted ? wanted.toLowerCase() : null;
     const isVisible = (el: Element): boolean => {
@@ -78,53 +159,193 @@ function listLinksExpression(linkText: string | null): string {
     };
     const skipChrome = (el: Element) => Boolean(el.closest("nav,header,footer,[role='navigation']"));
     const rowSelectors = "tbody tr, table tr, [role='row'], main li, article";
-    const containers = [...document.querySelectorAll(rowSelectors)].filter(
-      (el) => !skipChrome(el) && isVisible(el) && !el.querySelector("table"),
-    );
-    const seen = new Set<string>();
-    const results: { row: string; href: string; linkText: string }[] = [];
-    const pickLinks = (root: Element) => {
-      const links = [...root.querySelectorAll<HTMLAnchorElement>("a[href]")].filter((a) => {
+    const eligible = (el: Element) => !skipChrome(el) && isVisible(el) && !el.querySelector("table");
+    const isHeader = (el: Element) =>
+      Boolean(el.closest("thead")) ||
+      Boolean(el.querySelector("th,[role='columnheader']") && !el.querySelector("td,[role='cell'],[role='gridcell']"));
+    const usableLinks = (root: Element) =>
+      [...root.querySelectorAll<HTMLAnchorElement>("a[href]")].filter((a) => {
         if (!isVisible(a) || skipChrome(a)) return false;
         const raw = a.getAttribute("href") ?? "";
         if (!raw || raw.startsWith("#") || raw.toLowerCase().startsWith("javascript:")) return false;
-        if (wantedLow) {
-          const txt = norm(
-            a.textContent || a.getAttribute("aria-label") || a.getAttribute("title") || "",
-          ).toLowerCase();
-          return txt.includes(wantedLow);
-        }
-        return true;
+        if (!wantedLow) return true;
+        const txt = norm(a.textContent || a.getAttribute("aria-label") || a.getAttribute("title") || "");
+        return txt.toLowerCase().includes(wantedLow);
       });
-      if (!links.length) return;
-      const chosen = links[0];
-      const href = chosen.href;
-      if (!href || seen.has(href)) return;
-      seen.add(href);
-      const row = norm(root.textContent || "").slice(0, 320);
-      const text = norm(chosen.textContent || chosen.getAttribute("aria-label") || chosen.getAttribute("title") || "");
-      if (row) results.push({ row, href, linkText: text });
+    // Repeated items (as compare and collect read them) come first, so that cards built of divs are rows. The fixed
+    // selectors add the rows of lists too short to repeat, where they do not overlap one of those items.
+    const repeated = items.filter((el) => eligible(el) && usableLinks(el).length > 0);
+    const listed = [...document.querySelectorAll(rowSelectors)].filter(
+      (el) => eligible(el) && !isHeader(el) && !repeated.some((item) => item.contains(el) || el.contains(item)),
+    );
+    const containers = [...repeated, ...listed].sort((a, b) =>
+      a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+    );
+    const nameOf = (a: Element) =>
+      norm(
+        a.textContent ||
+          a.getAttribute("aria-label") ||
+          a.getAttribute("title") ||
+          a.querySelector("img[alt]")?.getAttribute("alt") ||
+          "",
+      );
+    const position = (el: Element, root: Element) => {
+      const path: string[] = [];
+      for (let e: Element | null = el; e && e !== root; e = e.parentElement) {
+        let n = 1;
+        for (let s = e.previousElementSibling; s; s = s.previousElementSibling) if (s.tagName === e.tagName) n += 1;
+        path.unshift(`${e.tagName.toLowerCase()}:${n}`);
+      }
+      return path.join(">");
     };
-    for (const container of containers) pickLinks(container);
+    const listOf = (row: Element) =>
+      [row.parentElement?.parentElement, row.parentElement, row]
+        .map((e, i) => (e ? `${e.tagName}.${i < 2 ? (e.getAttribute("class") ?? "") : ""}` : ""))
+        .join(">");
+    const results: { row: string; list: string; bare: boolean; links: { href: string; name: string; at: string }[] }[] =
+      [];
+    for (const root of containers) {
+      const links = usableLinks(root)
+        .filter((a) => a.href)
+        .map((a) => ({ href: a.href, name: nameOf(a), at: position(a, root) }));
+      const row = norm(root.textContent || "").slice(0, 320);
+      if (row && links.length) results.push({ row, list: listOf(root), bare: false, links });
+    }
     if (!results.length) {
-      for (const a of [...document.querySelectorAll<HTMLAnchorElement>("a[href]")]) {
-        if (skipChrome(a) || !isVisible(a)) continue;
-        const raw = a.getAttribute("href") ?? "";
-        if (!raw || raw.startsWith("#") || raw.toLowerCase().startsWith("javascript:")) continue;
-        const text = norm(a.textContent || a.getAttribute("aria-label") || a.getAttribute("title") || "");
-        if (wantedLow && !text.toLowerCase().includes(wantedLow)) continue;
-        if (!a.href || seen.has(a.href)) continue;
-        seen.add(a.href);
-        results.push({ row: text || a.href, href: a.href, linkText: text });
+      for (const a of usableLinks(document.documentElement)) {
+        if (!a.href) continue;
+        const name = nameOf(a);
+        results.push({ row: name || a.href, list: "", bare: true, links: [{ href: a.href, name, at: "" }] });
       }
     }
     return results;
   };
-  return `(${fn.toString()})(${JSON.stringify(linkText)})`;
+  return `(${fn.toString()})(${JSON.stringify(linkText)}, ${ITEMS}())`;
 }
 
-function detailExtractExpression(wantedFields: string[] | null): string {
-  const fn = (wanted: string[] | null) => {
+/** The address of a link without its query or fragment. A local file's folders are left out. */
+function shownPath(href: string, listUrl: string): string {
+  const url = new URL(href, listUrl);
+  if (url.protocol === "file:") return url.pathname.split("/").at(-1) ?? "";
+  return url.host === new URL(listUrl).host ? url.pathname : `//${url.host}${url.pathname}`;
+}
+
+/** Rows of one shape have links at the same places that lead to the same folders. */
+function rowShape(row: ListRow): string {
+  const folder = (href: string) => {
+    const url = new URL(href);
+    const folders = url.pathname.split("/").slice(0, -1);
+    return `${url.protocol}//${url.host}${folders.map((part) => (/\d/.test(part) ? "#" : part)).join("/")}`;
+  };
+  return JSON.stringify([row.list, row.links.map((link) => [link.at, folder(link.href)])]);
+}
+
+/**
+ * What a link says it does: its name, and the end of its path with the query. Numbers are masked. The query is only
+ * compared here and never sent.
+ */
+function linkTerms(link: RowLink): [string, string] {
+  const mask = (text: string) => text.replace(/\d+/g, "#");
+  const url = new URL(link.href);
+  const query = [...url.searchParams].map(([key, value]) => `${key}=${value}`).sort();
+  return [mask(link.name.toLowerCase()), mask(`${url.pathname.split("/").at(-1)}?${query.join("&")}`)];
+}
+
+/** For each link place of a shape, how often each name and each path ending occurs in the rows seen. */
+interface ShapeRows {
+  rows: number;
+  places: [Map<string, number>, Map<string, number>][];
+}
+
+/**
+ * The term as rows are compared by it, or null for one that names this row alone, such as a title. A term counts when
+ * rows repeat it, when most terms at that place repeat (a column of actions, even one used once), or when the rows are
+ * too few to tell.
+ */
+function shared(term: string, counts: Map<string, number>, rows: number): string | null {
+  const tells = rows <= SMALL_LIST || counts.size * 2 <= rows || (counts.get(term) ?? 0) > 1;
+  return tells ? term : null;
+}
+
+type LinkVerdict = { sure: "yes" | "no" | "unsure"; index: number; terms: [string, string][] };
+
+/**
+ * Picks the link to visit for each row, or null for a row without a detail link. --link-text is the user's own choice;
+ * otherwise Jev is asked, and another row of the same shape takes the answer only when the link it would visit has the
+ * same shared name and path ending (every link, for a row without a detail link). After MAX_LINK_QUESTIONS, a row that
+ * no answer serves takes its first link as unsure. All rows must be passed to `see` before they are picked from.
+ */
+function linkPicker(
+  chooser: LinkChooser | null,
+  linkText: string | null,
+  listUrl: string,
+  recorder: Recorder,
+  attempt: number,
+) {
+  const shapes = new Map<string, ShapeRows>();
+  const verdicts = new Map<string, LinkVerdict[]>();
+  let questions = 0;
+  let overLimit = 0;
+  const see = (row: ListRow) => {
+    if (row.bare || linkText) return;
+    const shape = rowShape(row);
+    const seen = shapes.get(shape) ?? { rows: 0, places: row.links.map(() => [new Map(), new Map()]) };
+    shapes.set(shape, seen as ShapeRows);
+    seen.rows += 1;
+    row.links.forEach((link, i) => {
+      linkTerms(link).forEach((term, part) => {
+        const counts = seen.places[i][part] as Map<string, number>;
+        counts.set(term, (counts.get(term) ?? 0) + 1);
+      });
+    });
+  };
+  const pick = async (row: ListRow): Promise<{ href: string; uncertain: boolean } | null> => {
+    if (row.bare || linkText) return { href: row.links[0].href, uncertain: false };
+    const shape = rowShape(row);
+    const { rows, places } = shapes.get(shape) as ShapeRows;
+    const terms = row.links.map(linkTerms);
+    const alike = (other: [string, string][], i: number) =>
+      places[i].every((counts, part) => shared(terms[i][part], counts, rows) === shared(other[i][part], counts, rows));
+    const known = verdicts.get(shape) ?? [];
+    let verdict = known.find((v) =>
+      v.sure === "no" ? row.links.every((_, i) => alike(v.terms, i)) : alike(v.terms, v.index),
+    );
+    if (!verdict) {
+      if (!chooser) throw new Error("A Jev chooser is required to pick drilldown links without --link-text");
+      if (questions >= MAX_LINK_QUESTIONS) {
+        if (!overLimit) recorder.event("drilldown_link_limit", { attempt, limit: MAX_LINK_QUESTIONS });
+        overLimit += 1;
+        return { href: row.links[0].href, uncertain: true };
+      }
+      questions += 1;
+      const views = row.links.map((link, i) => ({
+        key: String(i + 1),
+        name: link.name.slice(0, LINK_NAME_CHARS),
+        path: shownPath(link.href, listUrl),
+      }));
+      const answer = await chooser.detailLink(row.row, views);
+      for (const call of chooser.calls) recorder.call(call);
+      chooser.calls.length = 0;
+      const sure = answer.noul >= NOUL_YES ? "yes" : answer.noul <= NOUL_NO ? "no" : "unsure";
+      // An unsure row's first link is visited, so that is the link another row must share.
+      const index = sure === "yes" ? views.findIndex((view) => view.key === answer.key) : 0;
+      verdict = { sure, index, terms };
+      verdicts.set(shape, [...known, verdict]);
+      recorder.event("drilldown_link", { attempt, links: views.length, choice: answer.key, noul: answer.noul, sure });
+    }
+    if (verdict.sure === "no") return null;
+    return { href: row.links[verdict.index].href, uncertain: verdict.sure === "unsure" };
+  };
+  return {
+    see,
+    pick,
+    /** Rows that took their first link because no more questions could be asked. */
+    overLimit: () => overLimit,
+  };
+}
+
+function detailExtractExpression(withText: boolean): string {
+  const fn = (wanted: boolean) => {
     const norm = (s: string) => s.replace(/\s+/g, " ").trim();
     const isVisible = (el: Element): boolean => {
       const style = getComputedStyle(el);
@@ -253,29 +474,124 @@ function detailExtractExpression(wantedFields: string[] | null): string {
       if (th && td && tr.children.length === 2) addField(th.textContent || "", td.textContent || "");
     }
 
-    const wantedLow = wanted?.length ? wanted.map((w) => w.toLowerCase()) : null;
-    const fields: Record<string, string> = {};
-    for (const [k, v] of Object.entries(rawFields)) {
-      if (!wantedLow || wantedLow.some((w) => k.toLowerCase().includes(w))) fields[k] = v;
+    // 3. With --fields, also names and values built of divs: two short cells side by side, repeated under one parent.
+    if (wanted) {
+      const CELLS = new Set(["DIV", "SPAN", "P", "B", "STRONG", "EM"]);
+      const isCell = (el: Element) =>
+        CELLS.has(el.tagName) &&
+        el.children.length < 2 &&
+        !el.querySelector("div,p,ul,ol,table,input,select,textarea,button") &&
+        isVisible(el) &&
+        Boolean(norm(el.textContent || ""));
+      const isPair = (el: Element) => {
+        const [name, value] = el.children;
+        return (
+          el.children.length === 2 &&
+          !el.closest("nav,header,footer,[role='navigation']") &&
+          ![...el.childNodes].some((n) => n.nodeType === Node.TEXT_NODE && norm(n.textContent || "")) &&
+          isCell(name) &&
+          isCell(value) &&
+          norm(name.textContent || "").length <= 40
+        );
+      };
+      const pairs = [...document.querySelectorAll("div,li")].filter(isPair);
+      for (const pair of pairs) {
+        if (!pairs.some((other) => other !== pair && other.parentElement === pair.parentElement)) continue;
+        const [name, value] = pair.children as unknown as HTMLElement[];
+        // biome-ignore lint/performance/useDomNodeTextContent: only rendered text, with its line breaks, is wanted.
+        addField(name.innerText, value.innerText);
+      }
     }
 
-    const mainRoot = document.querySelector("main,[role='main'],#anchor-content,.page-content") ?? document.body;
+    const mainRoot =
+      document.querySelector<HTMLElement>("main,[role='main'],#anchor-content,.page-content") ?? document.body;
+    const page = { url: location.href, title: norm(document.title || ""), fields: rawFields };
+    // biome-ignore lint/performance/useDomNodeTextContent: only rendered text, with its line breaks, is wanted.
+    if (wanted) return { ...page, text: mainRoot?.innerText ?? "" };
+    if (Object.keys(rawFields).length || !mainRoot) return page;
+    const clone = mainRoot.cloneNode(true) as Element;
+    for (const junk of clone.querySelectorAll("script,style,noscript,template")) junk.remove();
+    return { ...page, snippet: norm(clone.textContent || "").slice(0, 500) };
+  };
+  return `(${fn.toString()})(${withText})`;
+}
+
+/**
+ * Takes the page's fields that fit the words of --fields. A word that exactly one field name equals, ignoring case, is
+ * that field. Jev is asked about the other words, once per set of field names, with the names only; code copies the
+ * values. For a word without a sure field it also picks the blocks of the page about it.
+ */
+function fieldPicker(judge: FieldJudge, wanted: string[], plan: Plan, recorder: Recorder, attempt: number) {
+  const answers = new Map<string, Map<string, FieldMatch>>();
+  const record = () => {
+    for (const call of judge.calls) recorder.call(call);
+    judge.calls.length = 0;
+  };
+  return async (detail: Detail, listPage: Page): Promise<FieldResult> => {
+    const all = Object.entries(detail.fields);
+    const exact = new Map<string, [string, string]>();
+    for (const word of wanted) {
+      const equal = all.filter(([label]) => label.toLowerCase() === word.toLowerCase());
+      if (equal.length === 1) exact.set(word, equal[0]);
+    }
+    const asked = wanted.filter((word) => !exact.has(word));
+    const observed = all.slice(0, MAX_LABELS);
+    const labels = observed.map(([label], i) => ({ key: String(i + 1), label: label.slice(0, LABEL_CHARS) }));
+    const signature = JSON.stringify([asked, labels]);
+    let matches = answers.get(signature);
+    if (!matches && asked.length && labels.length) {
+      matches = await judge.matchFields(asked, labels);
+      record();
+      answers.set(signature, matches);
+      recorder.event("drilldown_fields", {
+        attempt,
+        labels: labels.length,
+        matches: asked.map((word) => ({ ...matches?.get(word) })),
+      });
+    }
+    const fields: Record<string, string> = {};
+    const found: Record<string, string> = {};
+    const missing: string[] = [];
+    const uncertain: NonNullable<FieldResult["uncertain_fields"]> = [];
+    for (const word of wanted) {
+      const equal = exact.get(word);
+      if (equal) {
+        fields[equal[0]] = equal[1];
+        found[word] = equal[0];
+        continue;
+      }
+      const match = matches?.get(word);
+      if (!match || match.noul <= NOUL_NO) {
+        missing.push(word);
+        continue;
+      }
+      const [label, value] = observed[Number(match.key) - 1];
+      if (match.noul >= NOUL_YES) {
+        fields[label] = value;
+        found[word] = label;
+      } else uncertain.push({ field: word, label, value });
+    }
+    const unsure = [...missing, ...uncertain.map((u) => u.field)];
     let snippet = "";
-    if (mainRoot) {
-      const clone = mainRoot.cloneNode(true) as Element;
-      for (const junk of clone.querySelectorAll("script,style,noscript,template")) junk.remove();
-      snippet = norm(clone.textContent || "").slice(0, 500);
+    const blocks = unsure.length ? textBlocks({ text: detail.text } as Page) : [];
+    if (blocks.length) {
+      // The question's state holds the plan only, so the list page stands for the page.
+      const keys = await judge.selectBlocks(listPage, plan, unsure.join(", "), blocks);
+      record();
+      snippet = blocks
+        .filter((block) => keys.has(block.key))
+        .map((block) => block.text)
+        .join("\n---\n")
+        .slice(0, SNIPPET_CHARS);
     }
     return {
-      url: location.href,
-      title: norm(document.title || ""),
       fields,
-      ...(Object.keys(fields).length === 0 || (wantedLow && Object.keys(fields).length < wantedLow.length)
-        ? { snippet }
-        : {}),
+      ...(Object.keys(found).length ? { field_labels: found } : {}),
+      ...(missing.length ? { missing_fields: missing } : {}),
+      ...(uncertain.length ? { uncertain_fields: uncertain } : {}),
+      ...(snippet ? { snippet } : {}),
     };
   };
-  return `(${fn.toString()})(${JSON.stringify(wantedFields)})`;
 }
 
 /** Collects candidate links across the current list (and optional --more pages), filters via Jev, and visits detail pages read-only. */
@@ -290,24 +606,37 @@ export async function drilldownScan(
   const maxItems = Math.max(1, Math.min(HARD_MAX_ITEMS, options.maxItems ?? DEFAULT_MAX_ITEMS));
   const match = options.match?.trim() || null;
   const linkText = options.linkText?.trim() || null;
-  const fields = options.fields?.length ? options.fields : null;
+  const fields = options.fields?.length ? [...new Set(options.fields)] : null;
+  if (fields && !options.fieldJudge) throw new Error("A Jev chooser is required to match drilldown --fields");
+  const pickFields = fields ? fieldPicker(options.fieldJudge as FieldJudge, fields, plan, recorder, attempt) : null;
 
   let page: Page = await browser.observe();
   const listUrl = String(page.url ?? "");
-  const seenHrefs = new Set<string>();
-  const matchedCandidates: ListLinkCandidate[] = [];
+  const seenRows = new Set<string>();
+  /** Matched rows whose link is not picked yet. */
+  const pending: ListRow[] = [];
+  const links = linkPicker(options.linkChooser ?? null, linkText, listUrl, recorder, attempt);
+  const toVisit: { row: string; href: string; uncertain: boolean }[] = [];
+  const chosen = new Set<string>();
   let totalSeen = 0;
+  let matched = 0;
+  let skipped = 0;
   let pages = 0;
 
   while (true) {
-    const raw = (await browser.evaluate(listLinksExpression(linkText))) as ListLinkCandidate[];
-    const fresh = (Array.isArray(raw) ? raw : []).filter((c) => {
-      if (!c?.href || seenHrefs.has(c.href)) return false;
-      if (!isAllowedDetailUrl(c.href, listUrl, options.allowedDomains)) return false;
-      seenHrefs.add(c.href);
-      return true;
-    });
+    const raw = (await browser.evaluate(listLinksExpression(linkText))) as ListRow[];
+    const fresh: ListRow[] = [];
+    for (const found of Array.isArray(raw) ? raw : []) {
+      const links = (found?.links ?? []).filter((l) => isAllowedDetailUrl(l.href, listUrl, options.allowedDomains));
+      if (!links.length) continue;
+      // With --link-text the first link is the one to visit, so it alone tells rows apart.
+      const key = JSON.stringify(linkText || found.bare ? links[0].href : links.map((l) => l.href));
+      if (seenRows.has(key)) continue;
+      seenRows.add(key);
+      fresh.push({ ...found, links });
+    }
     totalSeen += fresh.length;
+    for (const row of fresh) links.see(row);
 
     if (match) {
       if (!collector) throw new Error("A Jev chooser is required to filter drilldown rows with --match");
@@ -318,21 +647,33 @@ export async function drilldownScan(
         for (const call of collector.calls) recorder.call(call);
         collector.calls.length = 0;
         chunk.forEach((candidate, i) => {
-          if (keys.has(String(start + i + 1))) matchedCandidates.push(candidate);
+          if (!keys.has(String(start + i + 1))) return;
+          matched += 1;
+          pending.push(candidate);
         });
       }
     } else {
-      matchedCandidates.push(...fresh);
+      matched += fresh.length;
+      pending.push(...fresh);
     }
 
-    if (!options.loadMore || matchedCandidates.length >= maxItems || pages >= MAX_PAGES) break;
+    while (pending.length && toVisit.length < maxItems) {
+      const row = pending.shift() as ListRow;
+      const link = await links.pick(row);
+      if (!link) skipped += 1;
+      else if (!chosen.has(link.href)) {
+        chosen.add(link.href);
+        toVisit.push({ row: row.row, ...link });
+      }
+    }
+
+    if (!options.loadMore || toVisit.length >= maxItems || pages >= MAX_PAGES) break;
     const loaded = await options.loadMore(page);
     if (!loaded) break;
     pages += 1;
     page = loaded;
   }
 
-  const toVisit = matchedCandidates.slice(0, maxItems);
   const items: DrilldownItem[] = [];
   if (toVisit.length > 0 && !browser.goto) {
     throw new Error("This browser engine does not support URL navigation for drilldown");
@@ -341,18 +682,16 @@ export async function drilldownScan(
   try {
     for (const candidate of toVisit) {
       await navigate?.(candidate.href);
-      const extracted = (await browser.evaluate(detailExtractExpression(fields))) as {
-        url: string;
-        title: string;
-        fields: Record<string, string>;
-        snippet?: string;
-      };
+      const extracted = (await browser.evaluate(detailExtractExpression(Boolean(fields)))) as Detail;
+      const detail: Detail = { ...extracted, fields: extracted?.fields ?? {} };
       items.push({
         row: candidate.row,
-        url: extracted?.url ?? candidate.href,
-        title: extracted?.title ?? "",
-        fields: extracted?.fields ?? {},
-        ...(extracted?.snippet ? { snippet: extracted.snippet } : {}),
+        url: detail.url ?? candidate.href,
+        title: detail.title ?? "",
+        ...(pickFields
+          ? await pickFields(detail, page)
+          : { fields: detail.fields, ...(detail.snippet ? { snippet: detail.snippet } : {}) }),
+        ...(candidate.uncertain ? { link_uncertain: true as const } : {}),
       });
     }
   } finally {
@@ -365,9 +704,10 @@ export async function drilldownScan(
     list_url: listUrl,
     match,
     seen: totalSeen,
-    matched: matchedCandidates.length,
+    matched,
     visited: items.length,
-    truncated: matchedCandidates.length > toVisit.length,
+    truncated: pending.length > 0,
+    ...(skipped ? { skipped_no_link: skipped } : {}),
     ...(options.loadMore ? { pages } : {}),
     items,
   };
@@ -377,6 +717,8 @@ export async function drilldownScan(
     matched: result.matched,
     visited: result.visited,
     truncated: result.truncated,
+    ...(skipped ? { skipped_no_link: skipped } : {}),
+    ...(links.overLimit() ? { link_limit_rows: links.overLimit() } : {}),
     ...(result.pages !== undefined ? { pages: result.pages } : {}),
   });
   return result;
@@ -387,13 +729,24 @@ export function formatDrilldown(result: DrilldownResult, style: "json" | "table"
   if (style === "json") return JSON.stringify(result, null, 2);
   const keys = [...new Set(result.items.flatMap((item) => Object.keys(item.fields)))];
   const header = [
-    `DRILLDOWN: visited=${result.visited} matched=${result.matched} seen=${result.seen}${result.truncated ? " (truncated)" : ""}`,
+    `DRILLDOWN: visited=${result.visited} matched=${result.matched} seen=${result.seen}${result.skipped_no_link ? ` skipped_no_detail_link=${result.skipped_no_link}` : ""}${result.truncated ? " (truncated)" : ""}`,
+    ...result.items
+      .filter((item) => item.link_uncertain)
+      .map((item) => `UNCERTAIN LINK (first link of the row used): ${item.title || item.row.slice(0, 60)}`),
+    ...result.items.flatMap((item) => {
+      const name = item.title || item.row.slice(0, 60);
+      return [
+        ...(item.missing_fields ? [`MISSING (${name}): ${item.missing_fields.join(", ")}`] : []),
+        ...(item.uncertain_fields ?? []).map((u) => `UNCERTAIN (${name}): ${u.field} may be ${u.label}=${u.value}`),
+      ];
+    }),
   ];
   if (!result.items.length) return `${header[0]}\n(no matching items)`;
-  const cols = keys.length ? ["title", ...keys] : ["title", "snippet"];
+  const lacking = result.items.some((item) => item.snippet && (item.missing_fields || item.uncertain_fields));
+  const cols = keys.length ? ["title", ...keys, ...(lacking ? ["snippet"] : [])] : ["title", "snippet"];
   const cell = (item: DrilldownItem, col: string) => {
     if (col === "title") return item.title || item.row.slice(0, 60);
-    if (col === "snippet") return (item.snippet ?? "").slice(0, 120);
+    if (col === "snippet") return (item.snippet ?? "").replace(/\s+/g, " ").slice(0, 120);
     return item.fields[col] ?? "";
   };
   if (style === "markdown") {

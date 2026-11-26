@@ -16,7 +16,15 @@ import { type Page, type Plan, PolicyError } from "../src/core/types.ts";
 import { collectedLine, comparedLine, describePlan, recentActions, render } from "../src/output.ts";
 import { actionSpace, modelState, valueChoices } from "../src/policies/base.ts";
 import { JevPolicy } from "../src/policies/jev.ts";
-import { buildCollect, buildCompare, buildMore, buildQuestions, compareState } from "../src/policies/jev-questions.ts";
+import {
+  buildCollect,
+  buildCompare,
+  buildDetailLink,
+  buildFieldMatch,
+  buildMore,
+  buildQuestions,
+  compareState,
+} from "../src/policies/jev-questions.ts";
 import * as runbook from "../src/storage/runbook/index.ts";
 import { ROOT } from "./helpers.ts";
 
@@ -176,6 +184,44 @@ test("the collection and what Claude is told after it are as recorded", () => {
   };
   golden(toJson(modelState(page, history, after)), "collect", "model_state_after");
   golden(toJson(buildQuestions(after, targets, controls, valueChoices(after), true)[0]), "collect", "questions_after");
+});
+
+test("the drilldown link request is as recorded", async () => {
+  const links = [
+    { key: "1", name: "出品者 1", path: "/sellers/1" },
+    { key: "2", name: "", path: "/items/2" },
+  ];
+  golden(toJson(buildDetailLink(links.slice(0, 1))), "drilldown", "link_questions_lone");
+  vi.stubEnv("TYPESAFE_API_KEY", "test");
+  vi.stubEnv("TYPESAFE_MODEL", undefined);
+  let body = "";
+  const policy = new JevPolicy({
+    fetch: async (_url, init) => {
+      body = init.body;
+      return { status: 200, json: async () => ({}) };
+    },
+  });
+  await expect(policy.detailLink("商品 1 ¥1,200", links)).rejects.toThrow(PolicyError);
+  golden(body, "drilldown", "link_body");
+});
+
+test("the drilldown fields request is as recorded", async () => {
+  const labels = [
+    { key: "1", label: "価格" },
+    { key: "2", label: "在庫" },
+  ];
+  golden(toJson(buildFieldMatch(["price"], labels.slice(0, 1))), "drilldown", "field_questions_lone");
+  vi.stubEnv("TYPESAFE_API_KEY", "test");
+  vi.stubEnv("TYPESAFE_MODEL", undefined);
+  let body = "";
+  const policy = new JevPolicy({
+    fetch: async (_url, init) => {
+      body = init.body;
+      return { status: 200, json: async () => ({}) };
+    },
+  });
+  await expect(policy.matchFields(["price", "colour"], labels)).rejects.toThrow(PolicyError);
+  golden(body, "drilldown", "field_body");
 });
 
 test("the control for more items and the scans that pressed it are as recorded", () => {

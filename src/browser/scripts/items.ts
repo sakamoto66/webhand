@@ -13,8 +13,8 @@ export const CONTEXTS = `(nodes => {
   return out;
 })`;
 
-// The items of lists and tables, header rows left out, in document order.
-const ITEMS = `(() => {
+// The items of lists and tables, header rows left out, in document order. drilldown finds its rows with it too.
+export const ITEMS = `(() => {
   const ROW='tr,[role="row"]', BLOCK=new Set(['DIV','LI','ARTICLE','SECTION','A','DD']);
   const SKIP='nav,header,footer,aside,[role="navigation"],[role="banner"],[role="contentinfo"],[role="dialog"]';
   const items=new Set(document.querySelectorAll(ROW));

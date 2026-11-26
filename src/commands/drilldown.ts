@@ -12,8 +12,10 @@ import {
   DEFAULT_MAX_ITEMS,
   type DrilldownResult,
   drilldownScan,
+  type FieldJudge,
   formatDrilldown,
   HARD_MAX_ITEMS,
+  type LinkChooser,
 } from "../scans/drilldown.ts";
 import { loadMore, type MoreChooser } from "../scans/more.ts";
 import type * as session from "../storage/session.ts";
@@ -63,6 +65,20 @@ export async function runDrilldown(
           throw new CliExit("This chooser cannot filter drilldown rows with --match");
         })()
     : null;
+  const linkChooser = options.linkText?.trim()
+    ? null
+    : policy && "detailLink" in policy
+      ? (policy as unknown as LinkChooser)
+      : (() => {
+          throw new CliExit("This chooser cannot pick drilldown detail links; use --link-text");
+        })();
+  const fieldJudge = options.fields?.length
+    ? policy && "matchFields" in policy && "selectBlocks" in policy
+      ? (policy as unknown as FieldJudge)
+      : (() => {
+          throw new CliExit("This chooser cannot match drilldown --fields");
+        })()
+    : null;
   const allowedDomains = state.explore?.allow ?? state.allowed_domains ?? null;
   return drilldownScan(
     browser,
@@ -71,7 +87,9 @@ export async function runDrilldown(
     {
       match: options.match,
       linkText: options.linkText,
+      linkChooser,
       fields: options.fields,
+      fieldJudge,
       maxItems: options.maxItems,
       allowedDomains,
       loadMore: moreFn,
@@ -96,7 +114,7 @@ async function commandDrilldown(args: Args): Promise<number> {
     : null;
   const outPath = args.out ? resolveOutPath(String(args.out)) : null;
   const state = requireSession();
-  const needsPolicy = Boolean(args.match || args.more);
+  const needsPolicy = Boolean(args.match || args.more || fields || !args.link_text?.toString().trim());
   const policy = needsPolicy ? deps.policy() : null;
   const browser = await attach(state, null, browserView(state));
   const recorder = new Recorder(state.log);
@@ -137,7 +155,7 @@ export const drilldownCommand: CommandDef = {
   name: "drilldown",
   session: "required",
   spec: () => ({
-    help: "Read-only list-to-detail scan: filter rows with Jev, visit matched detail URLs, and return structured fields",
+    help: "Read-only list-to-detail scan: filter rows and pick detail links with Jev, visit them, and return structured fields",
     options: [
       idOption(),
       {
@@ -150,13 +168,13 @@ export const drilldownCommand: CommandDef = {
         name: "link-text",
         type: "string",
         metavar: "TEXT",
-        help: "Prefer detail links whose text contains this substring (such as Edit or View)",
+        help: "Visit the first link of each row whose text contains this substring (such as Edit); Jev picks otherwise",
       },
       {
         name: "fields",
         type: "string",
         metavar: "A,B",
-        help: "Keep only detail fields matching these comma-separated labels (such as Title,Rating)",
+        help: "Keep only these comma-separated detail fields (such as Title,Rating); Jev matches them to the page's field names",
       },
       {
         name: "max-items",
