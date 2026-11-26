@@ -161,6 +161,7 @@ test("a small request goes to Jev whole", async () => {
     elements: 10,
   });
   expect(policy.calls[0].dropped_elements).toBeUndefined();
+  expect(policy.calls[0].dropped_breakdown).toBeUndefined();
 });
 
 test("over 255 choices, the farthest elements beyond the viewport are left out", async () => {
@@ -173,6 +174,12 @@ test("over 255 choices, the farthest elements beyond the viewport are left out",
   expect(labels.slice(0, 6)).toEqual(["Item 1", "Item 2", "Item 3", "Item 4", "Item 5", "Item 6"]);
   expect(labels).not.toContain("Item 405");
   expect(policy.calls[0].dropped_elements).toBe(405 - labels.length);
+  expect(policy.calls[0].dropped_breakdown).toEqual({
+    in_view: 0,
+    offscreen: 405 - labels.length,
+    by_operation: { CLICK: 405 - labels.length },
+    by_stage: { choice_limit: 405 - labels.length, token_budget: 0 },
+  });
   // The answer is read against the page Jev was asked about.
   expect(decision.action?.label).toBe("Item 2");
 });
@@ -191,6 +198,33 @@ test("over the token budget, elements in view are left out from the end", async 
   expect(labels[0]).toMatch(/^商品1 /);
   expect(labels.length).toBeLessThan(200);
   expect(clickChoices(sent[0].body)).toContain("NOT_VISIBLE");
+  expect(policy.calls[0].dropped_breakdown).toEqual({
+    in_view: 200 - labels.length,
+    offscreen: 0,
+    by_operation: { CLICK: 200 - labels.length },
+    by_stage: { choice_limit: 0, token_budget: 200 - labels.length },
+  });
+});
+
+test("the breakdown of left-out elements counts both stages, in view and beyond, and holds no page content", async () => {
+  const { policy, sent } = jevPolicy(clickTwo);
+  const page = bigPage(200, 100, (i) => `商品${i} ${"説明".repeat(150)}`);
+  // Element 1 can be typed in and clicked: an element counts once in the total and once under each operation.
+  page.actions.push({ id: "f300", kind: "fill", node: 300, role: "textbox", label: "Last", value: "" });
+  await policy.choose(page, PLAN, []);
+  // biome-ignore lint/suspicious/noExplicitAny: a request body as JSON.
+  const asked = (sent[0].body as any).state.elements.length;
+  const call = policy.calls[0];
+  const dropped = 300 - asked;
+  expect(call.dropped_elements).toBe(dropped);
+  expect(call.dropped_breakdown).toEqual({
+    in_view: dropped - 100,
+    offscreen: 100,
+    by_operation: { CLICK: dropped, TYPE_TEXT: 1 },
+    // 300 click choices and NOT_VISIBLE are 46 over the limit of 255; the budget takes the rest.
+    by_stage: { choice_limit: 46, token_budget: dropped - 46 },
+  });
+  expect(JSON.stringify(call)).not.toMatch(/商品|説明|Last/);
 });
 
 test("tokens are estimated at about 3 ASCII characters a token and 1.5 tokens for each other character", () => {
@@ -452,6 +486,12 @@ test("when select choices exceed 255, fitChoose drops the largest select without
   expect(labels).toEqual(["Street", "State", "City", "Save Order Address"]);
   expect(Object.keys(body.questions.select_target.criteria)).toHaveLength(61);
   expect(policy.calls[0].dropped_elements).toBe(1);
+  expect(policy.calls[0].dropped_breakdown).toEqual({
+    in_view: 1,
+    offscreen: 0,
+    by_operation: { SELECT: 1 },
+    by_stage: { choice_limit: 1, token_budget: 0 },
+  });
 });
 
 test("HOVER and duplicate-element context propagate through actionSpace, render, modelState, questions, and readonly", () => {

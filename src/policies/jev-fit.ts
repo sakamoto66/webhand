@@ -1,7 +1,7 @@
 /** Token-budget and per-question choice-limit fitting for Jev requests. */
 
 import { toJson } from "../core/format.ts";
-import type { Action, Page } from "../core/types.ts";
+import type { Action, DroppedBreakdown, Page } from "../core/types.ts";
 import { OPERATIONS } from "./prompts.ts";
 
 // Jev refuses a request over its token limit (HTTP 400 max_tokens_exceeded) and a question with more than 255
@@ -64,6 +64,27 @@ function overChoiceLimit(questions: Record<string, unknown>): { op: string; exce
   return over;
 }
 
+function breakdown(
+  left: Set<unknown>,
+  nodes: Map<unknown, { offscreen: boolean; opCounts: Map<string, number> }>,
+  overLimit: number,
+): DroppedBreakdown {
+  let offscreen = 0;
+  const byOperation: Record<string, number> = {};
+  for (const node of left) {
+    const info = nodes.get(node);
+    if (!info) continue;
+    if (info.offscreen) offscreen++;
+    for (const op of info.opCounts.keys()) byOperation[op] = (byOperation[op] ?? 0) + 1;
+  }
+  return {
+    in_view: left.size - offscreen,
+    offscreen,
+    by_operation: byOperation,
+    by_stage: { choice_limit: overLimit, token_budget: left.size - overLimit },
+  };
+}
+
 const pixels = (action: Action): number => Number(/(\d+)px/.exec(String(action.at ?? ""))?.[1] ?? 0);
 
 /**
@@ -75,7 +96,7 @@ export function fitChoose<T extends { body: unknown; questions: Record<string, u
   page: Page,
   build: (page: Page) => T,
   budget: number,
-): T & { page: Page; dropped: number } {
+): T & { page: Page; dropped: number; breakdown?: DroppedBreakdown } {
   let built = build(page);
   if (fits(built.body, built.questions, budget)) return { ...built, page, dropped: 0 };
   const nodes = new Map<
@@ -115,9 +136,16 @@ export function fitChoose<T extends { body: unknown; questions: Record<string, u
       removed += info.opCounts.get(op) ?? 0;
     }
   }
+  const overLimit = left.size;
+  const result = () => ({
+    ...built,
+    page: asked,
+    dropped: left.size,
+    ...(left.size ? { breakdown: breakdown(left, nodes, overLimit) } : {}),
+  });
   if (left.size) {
     rebuild();
-    if (fits(built.body, built.questions, budget)) return { ...built, page: asked, dropped: left.size };
+    if (fits(built.body, built.questions, budget)) return result();
   }
   const remaining = [...nodes]
     .filter(([node]) => !left.has(node))
@@ -130,5 +158,5 @@ export function fitChoose<T extends { body: unknown; questions: Record<string, u
     rebuild();
     if (fits(built.body, built.questions, budget)) break;
   }
-  return { ...built, page: asked, dropped: left.size };
+  return result();
 }

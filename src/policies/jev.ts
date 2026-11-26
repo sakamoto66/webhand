@@ -313,7 +313,9 @@ export class JevPolicy implements Policy {
     let result: Json;
     const refused: NonNullable<ModelCall["refused"]> = [];
     for (let tries = 1; ; tries++) {
-      const extra: Partial<ModelCall> = fitted.dropped ? { dropped_elements: fitted.dropped } : {};
+      const extra: Partial<ModelCall> = fitted.dropped
+        ? { dropped_elements: fitted.dropped, dropped_breakdown: fitted.breakdown }
+        : {};
       if (this.budget !== TOKEN_BUDGET) extra.token_budget = this.budget;
       if (refused.length) extra.refused = refused;
       extra.request = requestSize(fitted);
