@@ -132,6 +132,11 @@ function detailExtractExpression(wantedFields: string[] | null): string {
       const rect = el.getBoundingClientRect();
       return rect.width > 0 && rect.height > 0;
     };
+    const textWithoutControls = (label: Element): string => {
+      const clone = label.cloneNode(true) as Element;
+      for (const ctrl of clone.querySelectorAll("input,select,textarea")) ctrl.remove();
+      return norm(clone.textContent || "");
+    };
     const labelFor = (el: HTMLElement): string => {
       const aria = el.getAttribute("aria-label");
       if (aria) return norm(aria);
@@ -141,9 +146,7 @@ function detailExtractExpression(wantedFields: string[] | null): string {
       }
       const parentLabel = el.closest("label");
       if (parentLabel) {
-        const clone = parentLabel.cloneNode(true) as HTMLElement;
-        for (const ctrl of clone.querySelectorAll("input,select,textarea")) ctrl.remove();
-        const t = norm(clone.textContent || "");
+        const t = textWithoutControls(parentLabel);
         if (t) return t;
       }
       const field = el.closest(".field,.admin__field,tr,fieldset");
@@ -176,19 +179,23 @@ function detailExtractExpression(wantedFields: string[] | null): string {
           if (!el.checked) continue;
           const fieldContainer = el.closest(".admin__field,.field,tr");
           const fieldHead = fieldContainer?.querySelector(":scope > label, :scope > .admin__field-label, label, th");
+          // A label that wraps a radio or checkbox names that option, not the field.
+          const headNamesOption = fieldHead?.matches('label:has(input[type="radio"],input[type="checkbox"])');
           const groupLabel =
             norm(
-              (fieldHead && !fieldHead.contains(el) ? fieldHead.textContent : "") ||
+              (fieldHead && !headNamesOption && !fieldHead.contains(el) ? fieldHead.textContent : "") ||
                 el.closest("fieldset")?.querySelector("legend")?.textContent ||
                 el.name ||
                 "Choice",
             ) || "Choice";
-          const lbl = el.id ? document.querySelector(`label[for="${CSS.escape(el.id)}"]`) : null;
-          const lblText = norm(lbl?.textContent || "");
-          const lblTitle = norm(lbl?.getAttribute("title") || lbl?.getAttribute("aria-label") || "");
+          const forLabel = el.id ? document.querySelector(`label[for="${CSS.escape(el.id)}"]`) : null;
+          const wrapper = [...(el.labels ?? [])].find((l) => l !== forLabel && l.contains(el));
+          const labels = [forLabel, wrapper].filter((l) => l != null);
           const elAttr = norm(el.getAttribute("aria-label") || el.getAttribute("title") || "");
           // A label with a letter or digit of any script names the option; a symbol-only one (a star) does not.
           const meaningful = (s: string) => /[\p{L}\p{N}]/u.test(s);
+          const lblTexts = labels.map(textWithoutControls);
+          const lblTitles = labels.map((l) => norm(l.getAttribute("title") || l.getAttribute("aria-label") || ""));
           let groupPos = "";
           if (type === "radio" && el.name) {
             const group = [
@@ -200,12 +207,12 @@ function detailExtractExpression(wantedFields: string[] | null): string {
             }
           }
           const optLabel =
-            (meaningful(lblText) ? lblText : "") ||
-            (meaningful(lblTitle) ? lblTitle : "") ||
+            lblTexts.find(meaningful) ||
+            lblTitles.find(meaningful) ||
             (meaningful(elAttr) ? elAttr : "") ||
             groupPos ||
             norm(el.value || "") ||
-            lblText ||
+            lblTexts.find(Boolean) ||
             "checked";
           addField(groupLabel, optLabel);
           continue;
