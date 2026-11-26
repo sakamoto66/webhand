@@ -619,6 +619,33 @@ test("v2: ESCALATE stops with a diagnosis, and answer continues the same attempt
   expect(JSON.stringify(answer)).not.toContain("cookie"); // Claude's words are not logged, only their length.
 });
 
+test.each([
+  ["sign_in", "a password field"],
+  ["check", "a bot check or CAPTCHA widget"],
+  ["dialog", "an open dialog"],
+])("v2: GOAL_REPORTED on a page marked %s names the sign without claiming that it blocks", async (kind, sign) => {
+  await begin("--flow", "v2");
+  const state = session.load() as session.State;
+  state.page = { ...state.page, status: { kind, unseen: { frames: 0, canvases: 0, objects: 0 } } };
+  session.save(state);
+  vi.spyOn(Browser.prototype, "fresh").mockResolvedValue(true); // Keep the marked page: no new observation.
+  ScriptedJev.moves = [["DONE", null, null]];
+  const { out } = await cli("run");
+  expect(out).toContain("WHY: Jev thinks the goal is met and asks Claude to check the page");
+  expect(out).toContain(`The page has ${sign}; check whether it blocks the goal`);
+});
+
+test("v2: GOAL_REPORTED on an error page still says it is an error page", async () => {
+  await begin("--flow", "v2");
+  const state = session.load() as session.State;
+  state.page = { ...state.page, status: { kind: "error", unseen: { frames: 0, canvases: 0, objects: 0 } } };
+  session.save(state);
+  vi.spyOn(Browser.prototype, "fresh").mockResolvedValue(true);
+  ScriptedJev.moves = [["DONE", null, null]];
+  const { out } = await cli("run");
+  expect(out).toContain("WHY: the page is an error page");
+});
+
 test("answer is for v2 only", async () => {
   await begin("--flow", "v1");
   ScriptedJev.moves = [["BLOCKED", null, null]];

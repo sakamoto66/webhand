@@ -36,6 +36,13 @@ const OUTCOME_NEXT_HINTS: Record<string, string> = {
   [agent.JEV_FAILED]: "Nothing was executed. Run again, replan, or act",
 };
 
+/** The same kinds after GOAL_REPORTED: what was found, since it comes from signs only and may not block the goal. */
+const PAGE_STATUS_SIGNS: Record<string, string> = {
+  check: "a bot check or CAPTCHA widget",
+  sign_in: "a password field",
+  dialog: "an open dialog",
+};
+
 /** v2: parts of the page webhand cannot see into, said plainly so that Claude looks for another way. */
 function unseenHint(page: Page): string {
   if (!agent.unseenParts(page)) return "";
@@ -66,6 +73,9 @@ function diagnoseStuck(state: session.State): string {
 /** Why the run came back, from the log of this attempt only. No page text. */
 function diagnose(state: session.State, outcome: string): string {
   const pageKind = (state.page?.status as { kind?: string } | undefined)?.kind;
+  if (outcome === agent.GOAL_REPORTED && pageKind && pageKind in PAGE_STATUS_SIGNS) {
+    return `${OUTCOME_DIAGNOSIS[outcome]}. The page has ${PAGE_STATUS_SIGNS[pageKind]}; check whether it blocks the goal`;
+  }
   if (pageKind && pageKind in PAGE_STATUS_DIAGNOSIS) return PAGE_STATUS_DIAGNOSIS[pageKind];
   if (outcome === agent.STUCK) return diagnoseStuck(state);
   if (outcome in OUTCOME_DIAGNOSIS) return OUTCOME_DIAGNOSIS[outcome];
