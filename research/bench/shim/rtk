@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+"""Stands in front of rtk in evaluation sessions (launch.sh puts this folder first in PATH).
+
+The person's PreToolUse hook runs `rtk hook claude` for Bash and Read. For Read this prints nothing and exits 0, so
+rtk takes no part in the call. Everything else, the Bash hook and any other rtk command, runs the real rtk (the next
+one in PATH) with the same arguments, standard input, output, and exit code.
+"""
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+
+def real_rtk() -> str:
+    me = Path(__file__).resolve()
+    for folder in os.environ.get("PATH", "").split(os.pathsep):
+        path = Path(folder or ".") / "rtk"
+        if path.is_file() and os.access(path, os.X_OK) and path.resolve() != me:
+            return str(path)
+    print("rtk: no rtk in PATH behind the evaluation shim", file=sys.stderr)
+    sys.exit(127)
+
+
+def main() -> None:
+    args = sys.argv[1:]
+    if args[:2] != ["hook", "claude"]:
+        os.execv(real_rtk(), ["rtk", *args])
+    data = sys.stdin.buffer.read()
+    try:
+        if json.loads(data).get("tool_name") == "Read":
+            return
+    except (ValueError, AttributeError):
+        pass  # Not for this script to judge: rtk gets it as it is.
+    sys.exit(subprocess.run([real_rtk(), *args], input=data, check=False).returncode)
+
+
+if __name__ == "__main__":
+    main()

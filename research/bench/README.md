@@ -22,6 +22,7 @@
 | `scripts/` | 準備、監視、確認、収集、採点、集計 |
 | `run_all.sh`、`worker.sh`、`next.sh` | 評価セッションの起動 |
 | `diagnose.sh`、`run_analysis.sh`、`analysis_status.sh` | 2つの回の診断 |
+| `shim/rtk` | 評価セッションの `PATH` の先頭に置く rtk の差し替え（下の「rtk」） |
 | `eval-settings.json`、`eval-settings-lean.json` | 評価セッションの設定のひな形（`BENCH_PROFILE` で選ぶ。`@CODE@` はこのフォルダー） |
 | `analysis/` | 分析セッションのプロンプトとテンプレート（手順は `ANALYSIS.md`） |
 | `picks/picks-<シード>.txt` | 選んだタスクの ID |
@@ -142,6 +143,15 @@ B="uv run --project ${WEBHAND_BENCH:-$HOME/webhand-bench}/benchmark python $R/sc
 - `WebFetch`・`WebSearch`: 遅延読み込みの一覧には出ましたが、呼び出しがありませんでした。
 - 自動回答のフックと、ビープ音のフック: 発火しませんでした。
 - 時間: 試走は手で閉じたため、比較には使えません。
+
+### rtk
+
+rtk を入れた端末では、利用者の設定の `rtk hook claude`（Bash と Read の `PreToolUse`）が評価セッションにも効きます。2026-11-26 以降の準備では、次のようにします。`~/.claude` と rtk の設定は変えません。
+
+- `launch.sh` が `shim/` を `PATH` の先頭に置きます。差し替えは、`rtk hook claude` の `tool_name` が `Read` のときだけ、何も出力せず終了コード 0 で終わります。Bash のフックとほかの呼び出しは、`PATH` の次の `rtk` に引数と標準入力をそのまま渡すので、Bash の書き換えは残ります。rtk のない端末では置きません。有無は `meta.json` の `rtk_shim` に残ります。
+- `eval-settings*.json` は、ファイルを別のモデルに渡す `rtk bulk-read` と `rtk code-write` を `permissions.deny` で拒否します。フルパスで呼ぶ場合や、`sh -c` の中で呼ぶ場合までは防げません。
+
+それより前の回は rtk をそのまま使ったので、条件が異なります。
 
 ## まとめて回す
 

@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 import shlex
+import shutil
 import subprocess
 from datetime import UTC, datetime
 
@@ -67,11 +68,15 @@ if PROFILE not in ("full", "lean"):
 SETTINGS = {"full": "eval-settings.json", "lean": "eval-settings-lean.json"}
 LEAN_TOOLS = "Bash,Read,Write,Edit,AskUserQuestion,Skill,ToolSearch,WebFetch,WebSearch,Monitor,TaskStop"
 
+# From 2026-11-26: evaluation sessions put research/bench/shim first in PATH, when rtk is installed, so the person's
+# `rtk hook claude` does nothing for Read (the Bash hook still runs). eval-settings*.json also denies rtk's commands
+# that hand work to another model. Rounds before then ran rtk as it is.
+
 LAUNCH = """#!/bin/sh
 # One BU Bench evaluation session. Do not guide the agent: see PROTOCOL in the README.
 set -eu
 cd {work}
-{profile_env}export WEBHAND_HOME={home} WEBHAND_SCREENSHOTS=1 WEBHAND_FLOW={flow} WEBHAND_KNOWLEDGE_USE={use}{cli}{engine}
+{profile_env}{rtk_env}export WEBHAND_HOME={home} WEBHAND_SCREENSHOTS=1 WEBHAND_FLOW={flow} WEBHAND_KNOWLEDGE_USE={use}{cli}{engine}
 {knowledge}python3 {trust} "$PWD" || true  # A failure only means the trust prompt appears.
 date -u +%Y-%m-%dT%H:%M:%SZ > started_at
 exec claude --strict-mcp-config {tools}--model {model} {plugin_dir}--settings {settings} "$(cat prompt.txt)"
@@ -163,7 +168,9 @@ def main() -> None:
     write_json(settings, eval_settings())
     launch = work / "launch.sh"
     lean = PROFILE == "lean"
-    launch.write_text(LAUNCH.format(profile_env="export CLAUDE_CODE_DISABLE_AUTO_MEMORY=1\n" if lean else "", tools=f"--tools {shlex.quote(LEAN_TOOLS)} " if lean else "", work=shlex.quote(str(work)), home=shlex.quote(str(home)), plugin_dir=f"--plugin-dir {shlex.quote(SKILL_REPO)} " if SKILL_REPO else "", model=shlex.quote(MODEL), settings=shlex.quote(str(settings)), trust=shlex.quote(str(CODE / "scripts" / "trust.py")), flow=FLOW, use=KNOWLEDGE_USE, knowledge=knowledge_copy(work) + runbooks_copy(work), cli=f" WEBHAND_CLI_REPO={shlex.quote(CLI_REPO)}" if CLI_REPO else "", engine=f' WEBHAND_ENGINE={shlex.quote(ENGINE)} PATH="$HOME/.local/share/obscura:$PATH"' if ENGINE else ""))
+    rtk_shim = shutil.which("rtk") is not None
+    rtk_env = f'export PATH={shlex.quote(str(CODE / "shim"))}:"$PATH"\n' if rtk_shim else ""
+    launch.write_text(LAUNCH.format(rtk_env=rtk_env, profile_env="export CLAUDE_CODE_DISABLE_AUTO_MEMORY=1\n" if lean else "", tools=f"--tools {shlex.quote(LEAN_TOOLS)} " if lean else "", work=shlex.quote(str(work)), home=shlex.quote(str(home)), plugin_dir=f"--plugin-dir {shlex.quote(SKILL_REPO)} " if SKILL_REPO else "", model=shlex.quote(MODEL), settings=shlex.quote(str(settings)), trust=shlex.quote(str(CODE / "scripts" / "trust.py")), flow=FLOW, use=KNOWLEDGE_USE, knowledge=knowledge_copy(work) + runbooks_copy(work), cli=f" WEBHAND_CLI_REPO={shlex.quote(CLI_REPO)}" if CLI_REPO else "", engine=f' WEBHAND_ENGINE={shlex.quote(ENGINE)} PATH="$HOME/.local/share/obscura:$PATH"' if ENGINE else ""))
     launch.chmod(0o755)
     write_json(
         work / "meta.json",
@@ -176,6 +183,7 @@ def main() -> None:
             "round": ROUND or None,
             "model": MODEL,
             "profile": PROFILE,
+            "rtk_shim": rtk_shim,
             "flow": FLOW,
             "engine": ENGINE or None,
             "knowledge_from": KNOWLEDGE_FROM or None,
