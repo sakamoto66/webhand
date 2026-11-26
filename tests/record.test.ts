@@ -103,6 +103,63 @@ test("secrets never reach the record", async () => {
   ]);
 });
 
+// Each field carries one name, in one of the places the recorder looks at.
+const SECRET_NAMES: [string, string][] = [
+  ...["api_key", "api-key", "apiKey", "APIKEY", "user[api][key]", "private_key", "private-key", "privateKey"].map(
+    (name): [string, string] => ["name", name],
+  ),
+  ...["credential", "userCredentials", "security_answer", "securityAnswer", "security-question-answer"].map(
+    (name): [string, string] => ["id", name],
+  ),
+  ...["API key", "api.key", "Private Key", "Security answer", "Recovery phrase", "recovery_phrase"].map(
+    (name): [string, string] => ["aria-label", name],
+  ),
+  ...[
+    "recovery-phrase",
+    "recoveryPhrase",
+    "秘密の質問",
+    "秘密の質問の答え",
+    "ワンタイムコード",
+    "ワンタイム・コード",
+  ].map((name): [string, string] => ["placeholder", name]),
+  ...["確認コード", "確認 コード", "セキュリティコード", "セキュリティーコード", "セキュリティ　コード"].map(
+    (name): [string, string] => ["label", name],
+  ),
+  ...["口座番号", "マイナンバー"].map((name): [string, string] => ["label", name]),
+  // Words that were already masked stay masked.
+  ...["passwd", "user_pwd", "pw", "client_secret", "token", "otp", "cvv", "cvc", "card_no", "ssn", "pin"].map(
+    (name): [string, string] => ["name", name],
+  ),
+  ...["パスワード", "暗証番号", "認証コード", "カード番号"].map((name): [string, string] => ["label", name]),
+];
+const PLAIN_NAMES = ["keyboard", "api_version", "private_note", "answer", "recovery_email", "確認事項", "商品コード"];
+
+test("fields with secret names are masked, however the name is separated", async () => {
+  const fields = [...SECRET_NAMES, ...PLAIN_NAMES.map((name): [string, string] => ["name", name])];
+  const inputs = fields.map(([where, name], i) =>
+    where === "label" ? `<label>${name} <input data-n="${i}"></label>` : `<input data-n="${i}" ${where}="${name}">`,
+  );
+  writeFileSync(join(dir, "form.html"), `<title>Names</title>${inputs.join("<br>")}<br><button>End</button>`);
+  await play([
+    async (page) => {
+      for (const i of fields.keys()) {
+        await page.locator(`[data-n="${i}"]`).click();
+        await page.keyboard.type(`value-${i}.`);
+      }
+      await page.getByRole("button").click();
+    },
+  ]);
+  const values = actions()
+    .steps.filter((s) => s.operation === "fill")
+    .map((s) => s.value);
+  const seen = fields.map(([where, name], i) => [where, name, values[i]]);
+  expect(seen).toEqual(
+    fields.map(([where, name], i) => [where, name, i < SECRET_NAMES.length ? "<redacted>" : `value-${i}.`]),
+  );
+  const text = readFileSync(log, "utf8");
+  for (const i of SECRET_NAMES.keys()) expect(text).not.toContain(`value-${i}.`);
+});
+
 test("secrets in a GET form URL are masked", async () => {
   await play(MOVES);
   const pages = actions().events.filter((e) => e.type === "page" && e.title === "Done");

@@ -3,7 +3,14 @@
   window.__browserLabRecorder = true;
   const read = () => __SNAPSHOT__;
   const inFrame = window !== window.top;
-  const secretWords = /pass|pwd|\bpw\b|secret|token|otp|cvv|cvc|card|ssn|\bpin\b|パスワード|暗証|認証コード|カード/i;
+  // Words that mark a field or region name as secret. A match only ever masks more, never less.
+  // English words may be joined or separated in any way: api_key, api-key, apiKey, user[api][key].
+  const secretWords = new RegExp([
+    /pass|pwd|\bpw\b|secret|token|otp|cvv|cvc|card|ssn|\bpin\b|パスワード|暗証|認証コード|カード/,
+    /api[\s_.:\/[\]-]*key|private[\s_.:\/[\]-]*key|credential|recovery[\s_.:\/[\]-]*phrase/,
+    /security[\s_.:\/[\]-]*(question[\s_.:\/[\]-]*)?answer/,
+    /秘密の質問|ワンタイム[\s・･_-]*コード|確認[\s・･_-]*コード|セキュリティー?[\s・･_-]*コード|口座番号|マイナンバー/,
+  ].map(pattern => pattern.source).join('|'), 'i');
   const secretAutocomplete = /(^|\s)(current-password|new-password|one-time-code|cc-[a-z-]+)(\s|$)/;
   const everPassword = new WeakSet();
   const secret = (e, label) => e.type === 'password' || everPassword.has(e) ||
