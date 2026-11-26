@@ -38,6 +38,17 @@ export interface Verdict {
   evidence: unknown;
 }
 
+/** What was left out of a request, as element counts only: never labels or page content. */
+export interface DroppedBreakdown {
+  /** in_view + offscreen is the number of elements left out */
+  in_view: number;
+  offscreen: number;
+  /** Elements left out per operation they offered; one that offered several counts under each */
+  by_operation: Record<string, number>;
+  /** The pass that left them out: first the per-question choice limit, then the token budget */
+  by_stage: { choice_limit: number; token_budget: number };
+}
+
 export interface ModelCall {
   provider: string;
   model: string;
@@ -47,6 +58,8 @@ export interface ModelCall {
   output_tokens: number | null;
   /** Elements left out so the request fits Jev's limits, when any were */
   dropped_elements?: number;
+  /** Counts of those elements, when any were left out */
+  dropped_breakdown?: DroppedBreakdown;
   /** The lowered token budget the request was fitted to, after Jev refused one over its limit */
   token_budget?: number;
   /** What the request held, counts only: estimated tokens, characters, choices over all questions, and elements asked about */
