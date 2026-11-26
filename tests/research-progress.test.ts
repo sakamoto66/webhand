@@ -1,9 +1,11 @@
 /** research/progress.ts on fake sessions and logs: no browser, no Jev. */
 
-import { appendFileSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { clip, type Deps, describe as describeEvent, findLogs, findSessions, progress } from "../research/progress.ts";
+import type { Deps } from "../research/progress/events.ts";
+import { clip, describe as describeEvent, findLogs, findSessions } from "../research/progress/records.ts";
+import { progress } from "../research/progress.ts";
 import { tmpPath } from "./helpers.ts";
 
 const line = (event: Record<string, unknown>) => `${JSON.stringify(event)}\n`;
@@ -116,7 +118,7 @@ describe("progress", () => {
       { id: "a1" },
     );
     const { io, text } = capture();
-    expect(await progress(["--dir", root, "--once"], io, clock())).toBe(0);
+    expect(await progress(["--dir", root, "--once", "--events"], io, clock())).toBe(0);
     const out = text();
     expect(out).toContain("hotel_filter --id a1");
     expect(out).toContain("start  task=hotel_filter max_attempts=3 flow=v2 session=new");
@@ -191,7 +193,7 @@ describe("progress", () => {
     const { root, log } = home([START, { type: "run_end", status: "blocked", verified: false, attempts: 2 }]);
     rmSync(join(root, "state"), { recursive: true });
     const { io, text } = capture();
-    expect(await progress(["--dir", root, "--once"], io, clock())).toBe(0);
+    expect(await progress(["--dir", root, "--once", "--events"], io, clock())).toBe(0);
     expect(text()).toContain(`Last run log: ${log}`);
     expect(text()).toContain("END    status=blocked verified=false attempts=2");
   });
@@ -215,5 +217,189 @@ describe("progress", () => {
     const { io, text } = capture();
     expect(await progress(["--nope"], io, clock())).toBe(2);
     expect(text()).toContain("usage:");
+  });
+});
+
+describe("progress board", () => {
+  const NOW = Date.parse("2026-11-27T11:00:00.000Z");
+  const ago = (minutes: number) => NOW - minutes * 60_000;
+
+  interface Fake {
+    task: string;
+    started: number;
+    events?: Record<string, unknown>[];
+    end?: Record<string, unknown>;
+    quiet?: number;
+    session?: { id: string; lockPid?: number; browserPid?: number };
+    score?: Record<string, unknown>;
+  }
+
+  /** Runs under one WEBHAND_HOME-like folder; WebArena runs in OUT_DIR/ID/webhand.jsonl as research/webarena.ts writes. */
+  function runs(fakes: Fake[]) {
+    const root = tmpPath();
+    mkdirSync(join(root, "state"), { recursive: true });
+    fakes.forEach((fake, i) => {
+      const id = fake.task.startsWith("webarena_") ? fake.task.slice("webarena_".length) : null;
+      const log = id
+        ? join(root, "runs", "webarena", `out${i}`, id, "webhand.jsonl")
+        : join(root, "runs", `stamp${i}`, `${fake.task}.jsonl`);
+      mkdirSync(dirname(log), { recursive: true });
+      const start = {
+        type: "run_start",
+        task: fake.task,
+        goal: "secret goal text",
+        max_attempts: 3,
+        started_at: new Date(fake.started).toISOString(),
+      };
+      writeFileSync(log, [start, ...(fake.events ?? []), ...(fake.end ? [fake.end] : [])].map(line).join(""));
+      const quiet = (fake.quiet ?? 0) * 60_000;
+      utimesSync(log, new Date(NOW - quiet), new Date(NOW - quiet));
+      if (fake.score) writeFileSync(join(dirname(log), "eval_result.json"), JSON.stringify(fake.score));
+      if (fake.session) {
+        const stem = `session-${fake.session.id}`;
+        writeFileSync(
+          join(root, "state", `${stem}.json`),
+          JSON.stringify({
+            task: fake.task,
+            log,
+            started: fake.started / 1000,
+            max_attempts: 3,
+            plan: { attempt: 1, values: [{ label: "pw", value: "hunter2-secret" }] },
+            ...(fake.session.browserPid ? { pid: fake.session.browserPid } : {}),
+          }),
+        );
+        if (fake.session.lockPid) writeFileSync(join(root, "state", `${stem}.lock`), String(fake.session.lockPid));
+      }
+    });
+    return root;
+  }
+
+  const end = (status: string, outcome: string, verified: boolean | null, minutes: number) => ({
+    type: "run_end",
+    status,
+    verified,
+    attempts: 1,
+    attempt_outcomes: [{ attempt: 1, outcome }],
+    elapsed_ms: minutes * 60_000,
+    evidence: { expected: "Secret Expected Answer" },
+  });
+  const step = { type: "step", step: 1, attempt: 1, decided_by: "jev", operation: "CLICK", action: "Search" };
+  const fixed: Deps = { now: () => NOW, sleep: async () => {} };
+
+  async function board(root: string, ...args: string[]) {
+    const { io, text } = capture();
+    expect(
+      await progress(["--dir", root, "--once", "--since", new Date(ago(60)).toISOString(), ...args], io, fixed),
+    ).toBe(0);
+    return text();
+  }
+
+  // 5 + 5 planned; 3 research runs and 3 WebArena runs so far, one of each still open.
+  const mixed = () =>
+    runs([
+      { task: "old_task", started: ago(120), end: end("done", "GOAL_REPORTED", true, 1), quiet: 119 },
+      { task: "hotel_filter", started: ago(50), end: end("done", "GOAL_REPORTED", true, 2), quiet: 48 },
+      { task: "qty_stepper", started: ago(45), end: end("blocked", "STUCK", false, 3), quiet: 42 },
+      {
+        task: "webarena_94",
+        started: ago(40),
+        end: end("done", "GOAL_REPORTED", null, 1),
+        quiet: 39,
+        score: { score: 1, status: "success", evaluators_results: "EXPECTED 42.00" },
+      },
+      {
+        task: "webarena_157",
+        started: ago(35),
+        end: end("done", "GOAL_REPORTED", null, 1),
+        quiet: 34,
+        score: { score: 0, status: "failure", evaluators_results: "EXPECTED 9.99" },
+      },
+      { task: "cookie_wall", started: ago(20), events: [step], quiet: 1, session: { id: "a", lockPid: process.pid } },
+      { task: "webarena_118", started: ago(15), events: [step], quiet: 9, session: { id: "b" } },
+    ]);
+
+  it("counts each skill against the plan, with results, kinds, ETA, and open runs", async () => {
+    const out = await board(mixed(), "--research", "5", "--webarena", "5");
+    expect(out).toContain("Plan 10 (--research 5 --webarena 5): done 4, running 2, not started 4");
+    // 4 done in the 50 minutes since the first counted run: 6 left at 12m30s each.
+    expect(out).toContain("(in ~1h15m; 12m30s per run from 4 done)");
+    expect(out).toMatch(/webhand-research +plan 5, done 2, not started 2, running 1 +verify\(\): OK 1, NG 1/);
+    expect(out).toMatch(/webarena-research +plan 5, done 2, not started 2, running 1 +score: OK 1, NG 1, unscored 0/);
+    expect(out).toContain("Not OK or unscored, by kind: blocked/STUCK 1 · done/GOAL_REPORTED score 0 1");
+    expect(out).toMatch(/cookie_wall --id a .* moving: a webhand command runs/);
+    expect(out).toMatch(/webarena_118 --id b .* STALLED\? no event for 9m00s and no webhand command running/);
+    expect(out).toContain('last: step 1 (attempt 1): CLICK "Search" [jev]');
+    expect(out).not.toContain("old_task"); // Started before --since.
+    for (const secret of ["Secret Expected", "EXPECTED", "hunter2", "secret goal"]) expect(out).not.toContain(secret);
+  });
+
+  it("shows no totals or ETA without a plan", async () => {
+    const out = await board(mixed());
+    expect(out).toContain("Plan: unknown");
+    expect(out).not.toMatch(/ETA \d/);
+    expect(out).toMatch(/webhand-research +runs 3, running 1/);
+  });
+
+  it("fills a task list in start order: re-runs and other tasks take no slot", async () => {
+    const root = runs([
+      { task: "qty_stepper", started: ago(50), end: end("blocked", "STUCK", false, 3), quiet: 47 },
+      { task: "qty_stepper", started: ago(40), end: end("done", "GOAL_REPORTED", true, 3), quiet: 37 },
+      { task: "terms_scroll", started: ago(30), end: end("done", "GOAL_REPORTED", false, 3), quiet: 27 },
+      { task: "webarena_94", started: ago(20), quiet: 10 },
+    ]);
+    const out = await board(root, "--tasks", "qty_stepper,qty_stepper,hotel_filter,94");
+    expect(out).toContain("Plan 4 (--tasks 4): done 3, running 0, not started 1");
+    expect(out).toContain("Not started: hotel_filter");
+    expect(out).toMatch(/webhand-research .* verify\(\): OK 1, NG 2 +\(1 not taking a plan slot\)/);
+    expect(out).toContain("done/GOAL_REPORTED (verify NG) 1");
+    expect(out).toMatch(/terms_scroll +NG done\/GOAL_REPORTED \(verify NG\).*\(not in plan\)/);
+    // No run_end, no session, quiet: interrupted, and counted as done.
+    expect(out).toMatch(/webarena_94 +INTERRUPTED unscored interrupted \(no run_end\)/);
+  });
+
+  it("tells a command that runs without events from one that moves, and a gone browser", async () => {
+    const dead = 2 ** 22 + 12345;
+    const root = runs([
+      { task: "hotel_filter", started: ago(30), events: [step], quiet: 7, session: { id: "a", lockPid: process.pid } },
+      { task: "guest_add", started: ago(10), events: [step], quiet: 1, session: { id: "b", browserPid: dead } },
+    ]);
+    const out = await board(root, "--stall", "5");
+    expect(out).toContain(`STALLED? a webhand command runs (pid ${process.pid}) but no event for 7m00s`);
+    expect(out).toContain("STALLED? the browser is gone");
+  });
+
+  it("counts a run already open when it starts, however old", async () => {
+    const root = runs([{ task: "hotel_filter", started: ago(300), events: [step], session: { id: "a" } }]);
+    const { io, text } = capture();
+    expect(await progress(["--dir", root, "--once", "--total", "2"], io, fixed)).toBe(0);
+    expect(text()).toContain("Plan 2 (--total 2): done 0, running 1, not started 1");
+    expect(text()).toContain("when this started; --since to change");
+  });
+
+  it("writes a new snapshot off a terminal only when something changed", async () => {
+    const root = mixed();
+    let now = NOW;
+    let ticks = 0;
+    const { io, text } = capture();
+    const deps: Deps = {
+      now: () => now,
+      sleep: async () => {
+        now += 1000;
+        if (++ticks === 3)
+          appendFileSync(
+            join(root, "runs", "stamp5", "cookie_wall.jsonl"),
+            line(end("done", "GOAL_REPORTED", true, 20)),
+          );
+        if (ticks === 5) throw new Error("stop");
+      },
+    };
+    await expect(progress(["--dir", root, "--since", "2h"], io, deps)).rejects.toThrow("stop");
+    expect(text().match(/webhand research progress/g)).toHaveLength(2);
+  });
+
+  it("rejects a task list together with counts, and a bad --since", async () => {
+    const { io } = capture();
+    expect(await progress(["--tasks", "a", "--total", "2"], io, fixed)).toBe(2);
+    expect(await progress(["--since", "yesterday"], io, fixed)).toBe(2);
   });
 });
