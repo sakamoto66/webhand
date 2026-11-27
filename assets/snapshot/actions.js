@@ -83,6 +83,16 @@
       element.getAttribute("aria-haspopup") === "true" ||
       hasHiddenSubmenu(element));
 
+  // The format a text field asks for (such as DD/MM/YYYY). The accessible name hides a placeholder behind a label.
+  const formatHints = (element, label) => {
+    const hints = {};
+    for (const key of ["placeholder", "pattern"]) {
+      const text = el.squash(element.getAttribute(key), C.FORMAT_HINT_LIMIT);
+      if (text && text !== label) hints[key] = text;
+    }
+    return hints;
+  };
+
   // A fill for editable fields (plus a click to open them), otherwise a click (plus hover on submenu triggers).
   const otherActions = (element, role, base) => {
     if (el.isFileInput(element)) return [{ ...base, kind: "upload" }];
@@ -91,8 +101,9 @@
     if ("value" in element) value = String(element.value);
     // biome-ignore lint/performance/useDomNodeTextContent: rendered text (excludes hidden CSS) is required for editable/combobox values.
     else if (element.isContentEditable || role === "combobox") value = element.innerText.trim();
-    const actions = [{ ...base, kind: editable ? "fill" : "click", value }];
-    if (editable) actions.push({ ...base, kind: "click", value, label: `Open ${base.label}` });
+    const hinted = editable ? { ...base, ...formatHints(element, base.label) } : base;
+    const actions = [{ ...hinted, kind: editable ? "fill" : "click", value }];
+    if (editable) actions.push({ ...hinted, kind: "click", value, label: `Open ${base.label}` });
     else if (isHoverTrigger(element, role)) actions.push({ ...base, kind: "hover", value: "" });
     return actions;
   };

@@ -38,6 +38,9 @@ export function render(page: Page, options: RenderOptions = {}): string {
       }
       // Claude sees every option with its own line (capped in compact report handoffs).
       const details = element.value ? [`value=${quote(element.value)}`] : [];
+      for (const key of ["placeholder", "pattern"]) {
+        if (element[key]) details.push(`${key}=${quote(element[key])}`);
+      }
       for (const key of ["checked", "selected", "expanded"]) {
         if (key in element) details.push(`${key}=${show(element[key])}`);
       }
