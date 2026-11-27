@@ -122,6 +122,16 @@ node research/batch.ts --webarena 0,11,423 --serial 423 --model claude-sonnet-5-
 - `runs/webarena/round1/<task_id>/webhand.jsonl`（webhand 実行ログ）
 - `runs/webarena/round1/<task_id>/eval_result.json`（採点後）
 
+## HTML レポート
+
+`WEBHAND_SCREENSHOTS=1` で実行したラウンドは、画面付きの HTML レポートにできます（一括実行では自動で作成）。`DIR/index.html` とタスクごとのページ（`DIR/<ID>/<ID>.html`）に、タスク内容、採点と状態、計画、各ステップと画面、各ファイル（`eval_result.json` を含む）へのリンクが並びます。
+
+```bash
+node research/webarena.ts html --output-dir runs/webarena/round1
+```
+
+どのステップまで想定どおりだったかは自動では判定しません。ログを調べた結果を `DIR/notes.json`（`{"491": {"ok_until": 9, "summary": "…", "detail": "…"}}`）に書いて再実行すると、一覧とステップの色分けに反映されます。`eval_result.json` からは score と status だけを読みます。画面には入力値が写り、HAR には Cookie が含まれるため、レポートは共有しないでください。
+
 ## 6. 一括オフライン採点と集計レポート
 
 ```bash
