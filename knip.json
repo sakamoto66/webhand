@@ -9,6 +9,7 @@
     "research/engines.ts",
     "research/drilldown-probe.ts",
     "research/progress.ts",
+    "research/auto-answer.ts",
     "research/shared.ts",
     "tasks/*.ts",
     "scripts/*.ts",

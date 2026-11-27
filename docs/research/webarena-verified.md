@@ -109,6 +109,12 @@ node research/webarena.ts finish \
   --eval
 ```
 
+複数タスクの実行には [herdr](https://herdr.dev) が必要です（起動した状態で実行します。なければ起動時に停止します。1 件の実行には不要です）。1 件ごとの新しいセッションを herdr で並列に実行します（進捗パネル付き、既定 3 並列）。研究用スキルに複数の ID やサイトを指定すると、これが使われます。サイトのデータを変えるタスクは `--serial` に指定し、他がすべて終わってから 1 件ずつ実行します。
+
+```bash
+node research/batch.ts --webarena 0,11,423 --serial 423 --model claude-sonnet-5-5 --out runs/webarena/round1
+```
+
 出力ディレクトリには実行メタデータ（`run_meta.json`）と、タスクごとに以下が生成されます。
 
 - `runs/webarena/round1/<task_id>/network.har`（権限 `0600`）
