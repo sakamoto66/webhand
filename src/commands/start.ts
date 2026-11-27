@@ -361,7 +361,7 @@ function printStarted(args: Args, target: StartTarget, plan: Plan, state: sessio
   }
   if (state.explore) {
     print(
-      `EXPLORING: requests to hosts other than ${state.explore.allow.join(", ")} are refused. At most ${state.explore.max_total} actions in all. Anomalies are candidates, not verdicts: after each run or act, webhand findings`,
+      `EXPLORING: requests to hosts other than ${state.explore.allow.join(", ")} are refused while a webhand command is running; not between commands, nor for WebSocket connections or redirects followed by a worker an earlier command started. At most ${state.explore.max_total} actions in all. Anomalies are candidates, not verdicts: after each run or act, webhand findings`,
     );
   }
   if (state.allowed_domains?.length) {
