@@ -48,6 +48,8 @@ flowchart LR
 | `JEV_FAILED` | Jev の応答が使えない（何も実行していない） | もう一度 `run`、`replan`、または `act` |
 | `UNCERTAIN` | 操作が実行されたかどうか不明 | 繰り返さず、`finish --status error` |
 
+flow v2 では、ページが変わらないまま `WAIT` が10回続いた場合も、試行は `STUCK` で終わります。
+
 確信度は記録しますが、Jev を止める条件には使いません。
 
 ## セッション

@@ -42,6 +42,18 @@ export function looping(history: HistoryEntry[], attempt = 1): boolean {
   );
 }
 
+/**
+ * v2: this many waits in a row on an unchanged page end the attempt. A page still loading is waited for, but stuck()
+ * leaves waits out, so without a limit they go on until the budget. In past run logs a page rarely changed after
+ * ten or more such waits.
+ */
+export const MAX_UNCHANGED_WAITS = 10;
+
+export function waitedOut(history: HistoryEntry[], attempt = 1): boolean {
+  const recent = sinceAnswer(history, attempt).slice(-MAX_UNCHANGED_WAITS);
+  return recent.length === MAX_UNCHANGED_WAITS && recent.every((h) => h.kind === "wait" && h.page_changed === false);
+}
+
 /** How many frames, canvases, and plugin objects the page has: parts webhand cannot see into. */
 export function unseenParts(page: Page): number {
   const unseen = (page.status?.unseen ?? {}) as Record<string, number>;
@@ -80,6 +92,9 @@ export function stopReason(
   if (stuck(history, attempt)) return [STUCK, "three actions without a page change"];
   if (plan.flow === "v2") {
     if (looping(history, attempt)) return [STUCK, "scrolled up and down three times with nothing else done"];
+    if (waitedOut(history, attempt)) {
+      return [STUCK, `waited ${MAX_UNCHANGED_WAITS} times in a row without a page change`];
+    }
     if (missingInUnseen(history, page, attempt)) {
       return [STUCK, "the needed element was not offered twice, and the page has parts webhand cannot see"];
     }
