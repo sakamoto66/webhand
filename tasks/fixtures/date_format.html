@@ -6,10 +6,10 @@
   <div id="result" role="status"></div>
   <h1>Schedule a delivery</h1>
   <p>Order of 1 × Notebook, A5.</p>
-  <p><label>Delivery date <input id="when" type="text" aria-label="Delivery date"></label></p>
+  <p><label>Delivery date <input id="when" type="text" aria-label="Delivery date" placeholder="DD/MM/YYYY"></label></p>
   <button type="button" id="schedule">Schedule delivery</button>
 <script>
-  // The field reads numbers as day/month/year, and says nothing about it. Other shapes are rejected.
+  // The field reads numbers as day/month/year, as its placeholder says. Other shapes are rejected.
   document.getElementById("schedule").addEventListener("click", () => {
     const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(document.getElementById("when").value.trim());
     const result = document.getElementById("result");
