@@ -98,6 +98,8 @@ export interface CatalogMatchResult {
   services: MatchedService[];
   procedures: MatchedProcedure[];
   strongMatch: boolean;
+  /** A listed service without any runbook scored high enough: its facts are what there is to plan from. */
+  factsMatch: boolean;
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -194,22 +196,27 @@ export async function matchCatalog(
   let evaluatedServices = 0;
   let stage1Services: MatchedService[] = [];
 
+  const scoreServices = async (scored: CatalogEntry[]): Promise<MatchedService[]> => {
+    const items: NoulItem[] = scored.map((entry, i) => ({ key: `s_${i}`, instructions: serviceInstructions(entry) }));
+    const res = await scoreBatched(scorer, state, items, batchSize, concurrency);
+    calls += res.calls;
+    return scored.map((entry, i) => ({ entry, score: res.scores.get(`s_${i}`) ?? 0 }));
+  };
+
   if (entries.length > serviceStageThreshold) {
     stages = 2;
     evaluatedServices = entries.length;
-    const serviceItems: NoulItem[] = entries.map((entry, i) => ({
-      key: `s_${i}`,
-      instructions: serviceInstructions(entry),
-    }));
-    const res = await scoreBatched(scorer, state, serviceItems, batchSize, concurrency);
-    calls += res.calls;
-    const rankedServices: MatchedService[] = entries
-      .map((entry, i) => ({ entry, score: res.scores.get(`s_${i}`) ?? 0 }))
-      .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.entry.service.localeCompare(b.entry.service)));
+    const rankedServices = (await scoreServices(entries)).sort((a, b) =>
+      b.score !== a.score ? b.score - a.score : a.entry.service.localeCompare(b.entry.service),
+    );
 
     const kept = rankedServices.filter((s, i) => i < SERVICE_TOP || (s.score >= SERVICE_MIN_SCORE && i < SERVICE_MAX));
     stage1Services = kept;
     candidateEntries = kept.map((s) => s.entry);
+  } else {
+    // A service without a runbook has no procedure to be found through, so it is scored itself.
+    const bare = entries.filter((entry) => entry.info && !entry.procedures.length);
+    stage1Services = (await scoreServices(bare)).filter((s) => s.score >= minScore);
   }
 
   const candidatePairs: { entry: CatalogEntry; procedure: CatalogEntry["procedures"][number] }[] = [];
@@ -253,6 +260,8 @@ export async function matchCatalog(
 
   const strongMatch = procedures.length > 0 && procedures[0].score >= minScore;
 
+  const factsMatch = services.some((s) => !s.entry.procedures.length && s.score >= minScore);
+
   return {
     query,
     stages,
@@ -264,5 +273,6 @@ export async function matchCatalog(
     services,
     procedures,
     strongMatch,
+    factsMatch,
   };
 }

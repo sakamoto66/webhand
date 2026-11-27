@@ -282,3 +282,28 @@ test("catalog CLI supports deterministic --service / --runbook and Jev --match",
   expect(lowRes.code).toBe(OK);
   expect(lowRes.out).toContain("NO STRONG MATCH");
 });
+
+test("matchCatalog lists a relevant service that has no runbook, with few services", async () => {
+  const entries = [
+    makeEntry("travel", [{ stem: "cancel", goal: "Cancel hotel booking" }]),
+    makeEntry("checkout", []),
+    makeEntry("unrelated", []),
+  ];
+  const scorer: NoulScorer = {
+    async scoreNoul(_state, items) {
+      return new Map(
+        items.map((item) => {
+          const inst = item.instructions as Record<string, unknown>;
+          return [item.key, inst.service === "checkout" ? 0.9 : 0.05];
+        }),
+      );
+    },
+  };
+
+  const result = await matchCatalog(scorer, entries, "place the order");
+  expect(result.stages).toBe(1);
+  expect(result.strongMatch).toBe(false);
+  expect(result.factsMatch).toBe(true);
+  expect(result.services.map((s) => s.entry.service)).toContain("checkout");
+  expect(result.services.map((s) => s.entry.service)).not.toContain("unrelated");
+});

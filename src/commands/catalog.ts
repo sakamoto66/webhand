@@ -127,11 +127,17 @@ async function commandCatalog(args: Args): Promise<number> {
       print(
         `MATCH ${quote(matchQuery)} (${result.stages}-stage Jev noul, ${result.calls} call${result.calls === 1 ? "" : "s"}, ${result.evaluatedProcedures}/${result.totalProcedures} procedures)`,
       );
+      const below = `(best score < ${minScore.toFixed(2)})`;
+      const useFacts = "use the facts of the matched services without a runbook";
       if (!result.procedures.length) {
-        print("NO PROCEDURES IN MATCHED SERVICES.");
+        print(`NO PROCEDURES IN MATCHED SERVICES${result.factsMatch ? `; ${useFacts}` : ""}.`);
       } else {
         if (!result.strongMatch) {
-          print(`NO STRONG MATCH (best score < ${minScore.toFixed(2)}); plan from scratch or broaden --match.`);
+          print(
+            result.factsMatch
+              ? `NO STRONG RUNBOOK MATCH ${below}; ${useFacts}.`
+              : `NO STRONG MATCH ${below}; plan from scratch or broaden --match.`,
+          );
         }
         for (const item of result.procedures) {
           printProcedure(item.procedure, item.score);
