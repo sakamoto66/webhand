@@ -8,6 +8,7 @@ import { UsageError } from "../../src/args.ts";
 import { type IO, main } from "../../src/cli.ts";
 import { CliExit, type Hooks, OK } from "../../src/commands/context.ts";
 import { stamp } from "../../src/core/format.ts";
+import * as workspace from "../../src/core/workspace.ts";
 import * as session from "../../src/storage/session.ts";
 import { preAuthenticate } from "./auth.ts";
 import { inspectSiteConfigs, loadConfig, resolveAutoLoginTargets } from "./config.ts";
@@ -297,7 +298,7 @@ async function commandStart(args: string[], io: IO): Promise<number> {
   const { config, path: configPath } = loadConfig(values.config);
   const datasetPath = resolveDatasetPath(config, values.dataset);
   const task = loadTaskPublic(datasetPath, taskId, config);
-  const outDir = resolve(values["out-dir"] ?? config.output_dir ?? join("runs", "webarena", stamp()));
+  const outDir = resolve(values["out-dir"] ?? config.output_dir ?? join(workspace.home(), "runs", "webarena", stamp()));
   const taskDir = join(outDir, String(taskId));
   mkdirSync(taskDir, { recursive: true });
   updateRunMeta(outDir, datasetPath, task.sites);

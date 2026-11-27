@@ -16,6 +16,7 @@ import { planText } from "../policies/base.ts";
 import * as auth from "../storage/auth.ts";
 import * as batch from "../storage/batch.ts";
 import * as runbook from "../storage/runbook/index.ts";
+import { autoPrune } from "../storage/runs.ts";
 import * as session from "../storage/session.ts";
 import { CliExit, deps, getContext, named, OK, print } from "./context.ts";
 import {
@@ -32,6 +33,7 @@ import {
   viewOptions,
 } from "./options.ts";
 import { commandRun } from "./run.ts";
+import { openLogs } from "./runs.ts";
 import { attach, browserView, defaultLog, FLOWS, mergeValues, parseFiles, parseSteps, parseValues } from "./shared.ts";
 import type { CommandDef } from "./types.ts";
 
@@ -406,6 +408,8 @@ export async function startSession(args: Args): Promise<{
 
 async function commandStart(args: Args): Promise<number> {
   const { target, planned, state, skipped } = await startSession(args);
+  const pruned = autoPrune(openLogs());
+  if (pruned) print(pruned);
   printStarted(args, target, planned.plan, state, skipped);
   if (args.run) return commandRun({ ...args, value: [], file: [], human_done: false });
   return OK;

@@ -20,6 +20,7 @@ import { queryCommand } from "./query.ts";
 import { recordCommand } from "./record.ts";
 import { replanCommand } from "./replan.ts";
 import { runCommand } from "./run.ts";
+import { runsCommand } from "./runs.ts";
 import { startCommand } from "./start.ts";
 import type { CommandDef } from "./types.ts";
 
@@ -43,6 +44,7 @@ const DEFINITIONS: CommandDef[] = [
   authCommand,
   batchCommand,
   memoryCommand,
+  runsCommand,
   profileCommand,
 ];
 

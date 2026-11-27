@@ -46,9 +46,10 @@ export class Recorder {
   private fd: number | null;
 
   constructor(path: string) {
-    mkdirSync(dirname(path), { recursive: true });
+    // Logs hold page text: a new folder and log are the person's alone.
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     this.path = path;
-    this.fd = openSync(path, "a");
+    this.fd = openSync(path, "a", 0o600);
   }
 
   event(type: string, fields: Record<string, unknown> = {}): void {
@@ -63,8 +64,8 @@ export class Recorder {
   screenshot(step: number, attempt: number, after: ScreenshotAfter, png: Buffer, url: unknown): void {
     const name = basename(this.path, ".jsonl");
     const file = join(`${name}-screenshots`, `step-${String(step).padStart(4, "0")}-attempt-${attempt}.png`);
-    mkdirSync(join(dirname(this.path), `${name}-screenshots`), { recursive: true });
-    writeFileSync(join(dirname(this.path), file), png);
+    mkdirSync(join(dirname(this.path), `${name}-screenshots`), { recursive: true, mode: 0o700 });
+    writeFileSync(join(dirname(this.path), file), png, { mode: 0o600 });
     this.event("screenshot", { step, attempt, after, file, url: safeUrl(url) });
   }
 
