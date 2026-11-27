@@ -7,7 +7,7 @@ import * as agent from "../agent/index.ts";
 import { Browser, type ViewChoice } from "../browser/index.ts";
 import { stamp } from "../core/format.ts";
 import { isDir } from "../core/fs.ts";
-import { Recorder } from "../core/metrics.ts";
+import { logOnce, Recorder } from "../core/metrics.ts";
 import { PolicyError, type Value } from "../core/types.ts";
 import * as workspace from "../core/workspace.ts";
 import { chooseChrome as pickChrome } from "../engines/chrome.ts";
@@ -40,10 +40,23 @@ export function requireSession(): session.State {
   return state;
 }
 
-/** Connects to the session's browser via its engine's attach implementation. Opens url when given. */
-export async function attach(state: session.State, url: string | null, view?: ViewChoice | null): Promise<Driver> {
+/**
+ * Connects to the session's browser via its engine's attach implementation. Opens url when given. Tabs closed to make
+ * the connection are said on stderr, so no command's output changes, and counted in the run log.
+ */
+export async function attach(
+  state: session.State,
+  url: string | null,
+  view?: ViewChoice | null,
+  log: string = state.log,
+): Promise<Driver> {
   const engineId = state.engine ?? (state.cdp ? "browser-run" : state.socket ? "lightpanda" : "chrome");
-  return await engineFor(engineId).attach(state, url, view);
+  return await engineFor(engineId).attach(state, url, view, (count) => {
+    const tabs = count === 1 ? "1 tab" : `${count} tabs`;
+    getContext().err(`NOTE: closed ${tabs} that never loaded, to reconnect to the browser. Nothing was repeated.\n`);
+    // An unloaded tab has no URL or title to log.
+    logOnce(log, "stuck_tabs_closed", { count });
+  });
 }
 
 export async function openPage(

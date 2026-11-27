@@ -13,6 +13,7 @@ import { type Action, type Page, StalePage } from "../core/types.ts";
 import type { Finding } from "../explore.ts";
 import type { StorageState } from "../storage/auth.ts";
 import { dispatchAction } from "./actions/index.ts";
+import { connectLocal } from "./connect.ts";
 import { DownloadTracker } from "./downloads.ts";
 import { ExploreWatcher } from "./explore-watcher.ts";
 import { FrameRegistry, frameOf } from "./frames.ts";
@@ -48,6 +49,8 @@ export interface OpenOptions {
   headless?: boolean;
   /** Attach to the session Chrome on this port instead of launching a throwaway one. */
   port?: number | null;
+  /** With port: close tabs that never loaded when they time the connection out, say how many, and connect once more. */
+  onStuckTabsClosed?: (count: number) => void;
   /** Attach to a Chrome on another host (Browser Run) by its CDP URL, with the headers it asks for. Instead of port. */
   endpoint?: { url: string; headers: Record<string, string> } | null;
   /** Claude's choice of regions to focus on or skip when observing. */
@@ -100,7 +103,7 @@ export class Browser {
       if (port !== null || endpoint !== null) {
         instance.browser = endpoint
           ? await chromium.connectOverCDP(endpoint.url, { headers: endpoint.headers })
-          : await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+          : await connectLocal(port as number, options.onStuckTabsClosed);
         instance.context = instance.browser.contexts()[0] ?? (await instance.browser.newContext());
         await instance.tabs.findPlaceholder(instance.context);
         if (!options.explore && options.allowedDomains?.length) {

@@ -33,8 +33,16 @@ export interface Engine {
   capabilities: EngineCapabilities;
   start(options: StartOptions): Promise<State>;
   stop(state: State): Promise<void>;
-  /** Connects to an already started session browser of this engine. */
-  attach(state: State, url: string | null, view?: ViewChoice | null): Promise<Driver>;
+  /**
+   * Connects to an already started session browser of this engine. A local Chrome that cannot be connected to because
+   * of tabs that never loaded closes them and calls onStuckTabsClosed.
+   */
+  attach(
+    state: State,
+    url: string | null,
+    view?: ViewChoice | null,
+    onStuckTabsClosed?: (count: number) => void,
+  ): Promise<Driver>;
   /** Printed by `start`. */
   notes?: { start?: string; auth?: string };
   /** An engine held by a daemon (see ipc/daemon.ts): its own command line, and whether the page needs snapshot compat. */

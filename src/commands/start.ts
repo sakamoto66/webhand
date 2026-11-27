@@ -280,10 +280,10 @@ async function openStartPage(
   const opening = { ...chromeState, allowed_domains: state.allowed_domains, explore: state.explore };
   try {
     if (login) {
-      browser = await attach(opening, null, browserView(state));
+      browser = await attach(opening, null, browserView(state), state.log);
       skipped = await browser.restore(login.state, state.start_url);
     } else {
-      browser = await attach(opening, state.start_url, browserView(state));
+      browser = await attach(opening, state.start_url, browserView(state), state.log);
     }
     state.page = await browser.observe();
     recorder.event("run_start", {
