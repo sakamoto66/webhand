@@ -168,7 +168,7 @@ If the CLI is not installed globally, read `webhand` in the table below as `npx 
 | `webhand doctor [--chrome ...] [--json]` | Person / Agent | Read-only environment check: Node.js (>= 22), `TYPESAFE_API_KEY` (never printed), Chrome/WSL, headless shell, and workspace health |
 | `webhand start --goal G --url U --step S ... [--runbook NAME --param K=V \| --batch ID [--row N]] [--service S] [--value L=V ...] [--file L=PATH ...] [--download-dir DIR] [--har PATH] [--read-only] [--explore --allow-domain H --max-total-actions N] --session ...` | Agent | Records the plan and opens the start URL in the chosen browser engine |
 | `webhand run [--value L=V] [--human-done]` | Jev | Operates the page toward the GOAL until it stops and hands control back |
-| `webhand answer --note N [--value L=V] [--file L=PATH] [--url URL]` | Agent | Answers Jev in the same attempt (flow v2 only): keeps history and budget; respects `allowed_domains` on `--url` |
+| `webhand answer --note N [--value L=V] [--file L=PATH] [--url URL]` | Agent | Answers Jev in the same attempt (flow v2 only) and runs it again, so no `run` follows: keeps history and budget; respects `allowed_domains` on `--url` |
 | `webhand replan --reason R [--step ...] [--value ...] [--service S] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | Agent | Revises the plan and starts the next attempt; respects `allowed_domains` on `--url`; `--service` adds service information to a session started without one |
 | `webhand act OP [TARGET]` | Agent | Performs a single action in Jev's place (`CLICK`, `TYPE_TEXT`, `SELECT`, `UPLOAD_FILE`, `SCROLL_DOWN`, `SCROLL_UP`, `SCROLL_TO`, `WAIT`, `TAB_n`) |
 | `webhand observe [--read KIND ...]` | Agent | Prints the current page observation without acting |
