@@ -41,5 +41,5 @@ allowed-tools: Read(skills/webhand/SKILL.md), Bash(node research/webarena.ts:*),
    node research/batch.ts --webarena ID,ID,... --serial ID,ID --model claude-sonnet-5-5 --out DIR
    ```
 
-   Use another `--model` or `--parallel N` only when the user asks. `DIR` is a new folder outside the repository or ignored by git (such as `runs/webarena/NAME`); the same `DIR` again runs only the tasks without a line in `DIR/results.jsonl`. It stops on uncommitted or untracked files. Dataset and config paths come from the environment (`WEBARENA_DATASET`, `WEBARENA_CONFIG`), which it passes to every session.
+   Use another `--model` or `--parallel N` only when the user asks. `DIR` is a new folder outside the repository or ignored by git (such as `runs/webarena/NAME`); the same `DIR` again runs only the tasks without a line in `DIR/results.jsonl`. It stops on uncommitted or untracked files. Dataset and config paths come from the environment (`WEBARENA_DATASET`, `WEBARENA_CONFIG`), which it passes to every session. When the user asks for screenshots, prefix the command with `WEBHAND_SCREENSHOTS=1`.
 5. Report the output's summary table, the runs that did not reach `run_end` or that blocked (`DIR/results.jsonl`), and `DIR`. A permission prompt or a question in text gets no answer: tell the user which pane waits.
