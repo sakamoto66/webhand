@@ -55,7 +55,7 @@
 | 研究スキルの起動 | 起動文 `/webhand-research NAME (session: new)`。`.claude/skills/` は `.agents/skills/` へのシンボリックリンク | 試走 |
 | 実行ごとの状態の分離（ログ、サイト記憶、ユーザー手順書） | `WEBHAND_HOME` を `DIR/homes/` の実行専用フォルダにする | コード |
 | セッションの特定とトークン | `--session-id` に UUID。`$CLAUDE_CONFIG_DIR`（既定 `~/.claude`）の `projects/*/ID.jsonl` と `ID/subagents/` の usage を message ID ごとに 1 回数える | 試走（値を記録） |
-| 起動・状態・終了 | herdr の `workspace create` と `pane split`（リポジトリを cwd）、`pane run`、`pane get` の `agent_status`、`pane close`（自分のペインだけ）。終了はログの `run_end`、上限 20 分 | 試走（hook なしで `working`・`blocked` を検出） |
+| 起動・状態・終了 | herdr の `tab create`（起動元のワークスペース）と `pane split`（リポジトリを cwd）、`pane run`、`pane get` の `agent_status`、`pane close`（自分のペインだけ）。終了はログの `run_end`、上限 20 分 | 試走（hook なしで `working`・`blocked` を検出） |
 | 版の取得 | `claude --version`、`process.version` | 試走 |
 | 認証と Jev のキー | 端末のログインと、ペインの `TYPESAFE_API_KEY` を使う | 試走 |
 

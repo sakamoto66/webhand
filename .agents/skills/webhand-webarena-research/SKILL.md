@@ -30,7 +30,7 @@ allowed-tools: Read(skills/webhand/SKILL.md), Bash(node research/webarena.ts:*),
 
 ## More than one task
 
-`research/batch.ts` runs each task in its own new Claude Code session, three at a time in a herdr workspace with a `research/progress.ts` pane, then runs `eval` and `report`. Do not start webhand sessions yourself.
+`research/batch.ts` runs each task in its own new Claude Code session, three at a time in a new herdr tab with a `research/progress.ts` pane, then runs `eval` and `report`. Do not start webhand sessions yourself.
 
 1. Run `doctor` and `list` (above) to check the environment and get the IDs and intents.
 2. Choose `--serial`: every task whose intent could change data on a site (create, update, delete, cancel, approve, set, send, and the like), and every one you are unsure about. Judge from the public intent only. These run one at a time after all the others, because tasks on a site share its container.

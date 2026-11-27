@@ -1,6 +1,6 @@
 /**
- * Runs research tasks (tasks/ or WebArena-Verified), each in a new interactive Claude Code session, in a herdr
- * workspace with --parallel panes and a research/progress.ts pane, and appends one line per run to DIR/results.jsonl.
+ * Runs research tasks (tasks/ or WebArena-Verified), each in a new interactive Claude Code session, in a new herdr
+ * tab with --parallel panes and a research/progress.ts pane, and appends one line per run to DIR/results.jsonl.
  * Not shipped. Run from the repository root:
  * `node research/batch.ts (--tasks A,B | --webarena 0,11) --model MODEL --out DIR [--repeat N] [--parallel N]
  * [--serial A,B] [--full]`
@@ -218,10 +218,15 @@ async function runTask(job: Job, home: string, pane: string, options: Options, d
 
 const paneId = (reply: string, key: "pane" | "root_pane"): string => JSON.parse(reply).result[key].pane_id;
 
-/** A herdr workspace: the progress board in its first pane, and one shell pane per parallel run. */
+/**
+ * A new herdr tab in the workspace the batch is started from (else herdr's current one): the progress board in its
+ * first pane, and one shell pane per parallel run.
+ */
 function openPanes(count: number, board: string[], out: string, deps: Deps) {
   const cwd = ["--cwd", process.cwd(), "--no-focus"];
-  const root = paneId(deps.herdr(["workspace", "create", "--label", `batch-${basename(out)}`, ...cwd]), "root_pane");
+  const here = process.env.HERDR_WORKSPACE_ID;
+  const tab = ["tab", "create", ...(here ? ["--workspace", here] : []), "--label", `batch-${basename(out)}`, ...cwd];
+  const root = paneId(deps.herdr(tab), "root_pane");
   const split = (from: string, direction: string) =>
     paneId(deps.herdr(["pane", "split", from, "--direction", direction, ...cwd]), "pane");
   const slots = [split(root, "down")];

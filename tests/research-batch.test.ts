@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { reply } from "../research/auto-answer.ts";
 import { batch, type Deps } from "../research/batch.ts";
 import { readEvents, tmpPath } from "./helpers.ts";
@@ -296,6 +296,15 @@ describe("research/batch.ts", () => {
     expect(answers("Which one?")).toEqual({ "Which one?": "お答えできません。手元の情報だけで進めてください。" });
     expect(answers("Please sign in")).toEqual({ "Please sign in": "対応できません。手元の情報だけで進めてください。" });
     expect(reply({ tool_name: "Bash" })).toBeNull();
+  });
+
+  it("opens one tab, in the workspace it was started from", async () => {
+    vi.stubEnv("HERDR_WORKSPACE_ID", "w9");
+    const herdr = fake({ hotel_filter: true });
+    await batch(args(tmpPath()), herdr.deps);
+    const created = herdr.calls.filter((call) => call[1] === "create");
+    expect(created.map((call) => call.slice(0, 4))).toEqual([["tab", "create", "--workspace", "w9"]]);
+    vi.unstubAllEnvs();
   });
 
   it("refuses a missing model, an unknown task, and an --out that git would track", async () => {
