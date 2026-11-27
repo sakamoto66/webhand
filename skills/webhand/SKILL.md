@@ -2,12 +2,12 @@
 name: webhand
 description: Do something on a web page through the webhand CLI. The agent plans the goal from known services and runbooks, asks for missing information, lets Jev operate the browser toward the goal, and replans when an attempt falls short. Use when asked to do something on a web page with webhand.
 argument-hint: "what you want done"
-allowed-tools: Bash(webhand:*), Bash(npx -y webhand@0.7:*), AskUserQuestion
+allowed-tools: Bash(webhand:*), Bash(npx -y webhand@0.8:*), AskUserQuestion
 ---
 
 # webhand
 
-You plan and judge; Jev operates the browser toward your goal. Use only the `webhand` command: run `webhand --version`, and if that fails, use `npx -y webhand@0.7` in its place for every command below (same arguments). It needs Node.js 22 or later and Google Chrome. If `start` says `TYPESAFE_API_KEY` is not set, tell the user to set it as an environment variable (for example `export TYPESAFE_API_KEY=...` in their shell profile) and restart your coding agent, then stop. Run one command at a time per session. To work on two pages at once, start each with its own `--id NAME` and pass that same `--id` to every command of that session (`run`, `replan`, `act`, `observe`, `finish`); `catalog` lists the open sessions. Without `--id`, there is one session. Do not read project files, take screenshots, or write scripts.
+You plan and judge; Jev operates the browser toward your goal. Use only the `webhand` command: run `webhand --version`, and if that fails, use `npx -y webhand@0.8` in its place for every command below (same arguments). It needs Node.js 22 or later and Google Chrome. If `start` says `TYPESAFE_API_KEY` is not set, tell the user to set it as an environment variable (for example `export TYPESAFE_API_KEY=...` in their shell profile) and restart your coding agent, then stop. Run one command at a time per session. To work on two pages at once, start each with its own `--id NAME` and pass that same `--id` to every command of that session (`run`, `replan`, `act`, `observe`, `finish`); `catalog` lists the open sessions. Without `--id`, there is one session. Do not read project files, take screenshots, or write scripts.
 
 | Role | Owns |
 | --- | --- |
