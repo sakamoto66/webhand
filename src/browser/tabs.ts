@@ -7,8 +7,8 @@ import { type Action, type Page, StalePage } from "../core/types.ts";
 import { home as sessionHome, tabPath } from "../storage/session.ts";
 
 const MAX_TAB_TITLE = 60;
-/** The longest an observation waits for a new tab that is not listed yet. */
-const NEW_TAB_WAIT_MS = 5000;
+/** The longest an observation waits for a new tab that is not listed yet. Tests that only need such a tab shorten it. */
+export const newTabLimit = { ms: 5000 };
 
 /** A tab's title as the model sees it: one line, clipped. Page text, so never instructions. */
 function tabTitle(title: string): string {
@@ -75,11 +75,11 @@ export class TabManager {
   }
 
   /**
-   * Waits, up to NEW_TAB_WAIT_MS, for new tabs to be listed and to have their documents, so that they are offered
+   * Waits, up to newTabLimit, for new tabs to be listed and to have their documents, so that they are offered
    * with their titles. A tab still unlisted then (no answer, a 204) is given up. True when there was one to wait for.
    */
   async awaitNewTabs(context: BrowserContext): Promise<boolean> {
-    const deadline = performance.now() + NEW_TAB_WAIT_MS;
+    const deadline = performance.now() + newTabLimit.ms;
     let pending = await this.unlistedTabs(context);
     if (pending.length === 0) return false;
     const awaited = new Set<string>();

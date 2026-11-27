@@ -2,8 +2,11 @@
 
 import { type Browser, chromium, errors } from "playwright-core";
 
-/** How long one connection attempt may take, which is also how long a tab may take to load before it can be closed. Tests shorten it. */
-export const connectLimit = { ms: 30_000 };
+/**
+ * How long the first connection attempt may take, which is also how long a tab may take to load before it can be
+ * closed, and how long the attempt made after closing may take. Tests shorten them.
+ */
+export const connectLimit = { ms: 30_000, retryMs: 30_000 };
 const ENDPOINT_MS = 5000;
 
 /**
@@ -28,14 +31,14 @@ async function closeUnloadedTabs(base: string): Promise<number> {
  */
 export async function connectLocal(port: number, onClosed?: (count: number) => void): Promise<Browser> {
   const base = `http://127.0.0.1:${port}`;
-  const connect = () => chromium.connectOverCDP(base, { timeout: connectLimit.ms });
+  const connect = (timeout: number) => chromium.connectOverCDP(base, { timeout });
   try {
-    return await connect();
+    return await connect(connectLimit.ms);
   } catch (error) {
     if (!onClosed || !(error instanceof errors.TimeoutError)) throw error;
     const closed = await closeUnloadedTabs(base).catch(() => 0);
     if (closed === 0) throw error;
     onClosed(closed);
-    return await connect();
+    return await connect(connectLimit.retryMs);
   }
 }

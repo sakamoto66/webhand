@@ -5,15 +5,23 @@ import type { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "vitest";
 import { connectLimit } from "../src/browser/connect.ts";
 import { Browser } from "../src/browser/index.ts";
+import { newTabLimit } from "../src/browser/tabs.ts";
 import { main } from "../src/cli.ts";
 import { OK } from "../src/commands/context.ts";
 import * as session from "../src/storage/session.ts";
 import { cli, readEvents } from "./helpers.ts";
 import { isolate, ScriptedJev } from "./jev.ts";
 
-/** Long enough to connect to a healthy browser on a loaded machine, short enough for a test. */
-const LIMIT_MS = 8000;
-const usual = connectLimit.ms;
+/**
+ * For a connection that a stuck tab is to time out: it ends the same way however short, so it is short. Every other
+ * connection, the one made after closing included, keeps the product's own limit.
+ */
+const BLOCKED_MS = 2000;
+/** Long enough that only a blocked connection runs into it, on a loaded machine too. */
+const UNTOLD_MS = 8000;
+/** A stuck tab only has to be opened here; tests/browser/new-tab.test.ts covers the wait for it. */
+const STUCK_WAIT_MS = 500;
+const usual = { connect: connectLimit.ms, newTab: newTabLimit.ms };
 let server: Server;
 let base: string;
 let presses = 0;
@@ -46,12 +54,12 @@ afterAll(() => {
 
 beforeEach(() => {
   ({ log, cleanup } = isolate());
-  connectLimit.ms = LIMIT_MS;
   presses = 0;
 });
 
 afterEach(async () => {
-  connectLimit.ms = usual;
+  connectLimit.ms = usual.connect;
+  newTabLimit.ms = usual.newTab;
   await cleanup();
 });
 
@@ -78,6 +86,23 @@ async function press(name: string) {
   return webhand("act", "CLICK", target as string);
 }
 
+/** Opens a tab that never loads, then leaves the next connection to run into it. */
+async function openStuck(kind: "empty" | "silent") {
+  const { out } = await cli("observe");
+  const target = out.match(new RegExp(`\\[(\\d+)\\] link "Open ${kind}"`))?.[1] as string;
+  newTabLimit.ms = STUCK_WAIT_MS;
+  expect((await webhand("act", "CLICK", target)).code).toBe(OK);
+  newTabLimit.ms = usual.newTab;
+  connectLimit.ms = BLOCKED_MS;
+}
+
+/** One command that has to connect again; those after it have the product's limit. */
+async function reconnecting(...argv: string[]) {
+  const result = await webhand(...argv);
+  connectLimit.ms = usual.connect;
+  return result;
+}
+
 async function begin(): Promise<void> {
   const { code } = await cli("start", "--url", `${base}/`, "--goal", "probe", "--chrome", "linux");
   expect(code).toBe(OK);
@@ -92,11 +117,9 @@ async function tabUrls(): Promise<string[]> {
 test.each(["empty", "silent"])("after a tab that never loads (%s), the next command connects again", async (kind) => {
   await begin();
   await press("Open other");
-  const { out } = await cli("observe");
-  const target = out.match(new RegExp(`\\[(\\d+)\\] link "Open ${kind}"`))?.[1] as string;
-  expect((await webhand("act", "CLICK", target)).code).toBe(OK);
+  await openStuck(kind as "empty" | "silent");
 
-  const next = await webhand("observe");
+  const next = await reconnecting("observe");
   expect(next.code).toBe(OK);
   expect(next.err).toBe("NOTE: closed 1 tab that never loaded, to reconnect to the browser. Nothing was repeated.\n");
   expect(next.out).not.toContain("never loaded");
@@ -113,9 +136,9 @@ test("an action that is the first command after a stuck tab runs exactly once", 
   await begin();
   const { out } = await cli("observe");
   const button = out.match(/\[(\d+)\] button "Press"/)?.[1] as string;
-  await press("Open silent");
+  await openStuck("silent");
 
-  const acted = await webhand("act", "CLICK", button);
+  const acted = await reconnecting("act", "CLICK", button);
   expect(acted.code).toBe(OK);
   expect(acted.err).toContain("closed 1 tab that never loaded");
   expect(acted.out).toContain('"Pressed"');
@@ -124,12 +147,12 @@ test("an action that is the first command after a stuck tab runs exactly once", 
 
 test("run connects again before Jev's first action", async () => {
   await begin();
-  await press("Open silent");
+  await openStuck("silent");
   ScriptedJev.moves = [
     ["CLICK", "Press", null],
     ["DONE", null, null],
   ];
-  const ran = await webhand("run");
+  const ran = await reconnecting("run");
   expect(ran.code).toBe(OK);
   expect(ran.err).toContain("closed 1 tab that never loaded");
   expect(ran.out).toContain("OUTCOME GOAL_REPORTED");
@@ -140,11 +163,12 @@ test("a saved profile connects again, finishes, and starts again", async () => {
   // Only Chrome keeps a saved profile.
   const start = ["start", "--url", `${base}/`, "--goal", "probe", "--chrome", "linux", "--engine", "chrome"];
   expect((await cli(...start, "--session", "profile:stuck")).code).toBe(OK);
-  await press("Open silent");
-  const next = await webhand("observe");
+  await openStuck("silent");
+  const next = await reconnecting("observe");
   expect(next.code).toBe(OK);
   expect(next.err).toContain("closed 1 tab that never loaded");
-  await press("Open silent");
+  await openStuck("silent");
+  connectLimit.ms = usual.connect;
   expect((await cli("finish", "--status", "done")).code).toBe(OK);
   const again = await webhand(...start, "--session", "profile:stuck");
   expect(again.code).toBe(OK);
@@ -153,7 +177,8 @@ test("a saved profile connects again, finishes, and starts again", async () => {
 
 test("without being asked to, a connection closes no tab", async () => {
   await begin();
-  await press("Open silent");
+  await openStuck("silent");
+  connectLimit.ms = UNTOLD_MS;
   const port = session.load()?.port as number;
   await expect(Browser.open(null, { port })).rejects.toThrow(/Timeout/);
   expect(await tabUrls()).toHaveLength(2);
