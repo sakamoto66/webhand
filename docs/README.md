@@ -2,7 +2,7 @@
 
 Documentation map for **webhand** — organized by audience so you can jump straight to what you need.
 
-> **Current user documentation** lives in [`README.md`](../README.md), [`usage.md`](usage.md), [`reference.md`](reference.md), and [`examples/runbooks/`](../examples/runbooks/README.md).
+> **Current user documentation** lives in [`README.md`](../README.md), [`usage.md`](usage.md), [`reference.md`](reference.md), and [`examples/services/`](../examples/services/README.md).
 > Files under [`design/`](design/) and [`research/`](research/) are architectural design records and historical experiment/evaluation notes (mostly in Japanese); for current capabilities and CLI options, always refer to the user docs and reference.
 
 ---
@@ -14,7 +14,7 @@ Documentation map for **webhand** — organized by audience so you can jump stra
 | [README](../README.md) | [README.ja.md](../README.ja.md) | 5-minute overview, live demo GIF, 6 skills at a glance, quick start, safety |
 | [Usage guide](usage.md) | [利用ガイド](usage.ja.md) | Task-oriented practical workflows: skills, CSV/JSON batch runs, sessions & logins, teaching runbooks, troubleshooting |
 | [Reference](reference.md) | [リファレンス](reference.ja.md) | Complete specification: all 18 CLI commands, exit codes (`0–9`), environment variables, TOML schemas (`allowed_domains`, runbooks, checks), engines, logs |
-| [Starter runbooks](../examples/runbooks/README.md) | [スターター手順書](../examples/runbooks/README.md) | Copy-and-adapt `service.toml`, `draft` runbooks, and a sample CSV for batch runs |
+| [Starter runbooks](../examples/services/README.md) | [スターター手順書](../examples/services/README.md) | Copy-and-adapt `service.toml`, `draft` runbooks, and a sample CSV for batch runs |
 
 ---
 

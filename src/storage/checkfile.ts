@@ -1,6 +1,6 @@
 /**
  * Saved checks: acceptance criteria written down before they run, so a regression repeats the same expectations.
- * They live in the project's .webhand/checks and the user's ~/.webhand/checks (a project file wins). Webhand reads
+ * They live in services/<service>/checks/ of the project's .webhand and of the user's ~/.webhand (a project file wins). Webhand reads
  * them and never rewrites them: a failing run does not change what a check expects.
  */
 
@@ -12,10 +12,12 @@ import { quote } from "../core/format.ts";
 import { isDir, isFile } from "../core/fs.ts";
 import type { Scope } from "../core/workspace.ts";
 import {
+  CHECKS_DIR,
   extractPlaceholders,
   findScopedFile,
   PARAM,
   readTomlFile,
+  SERVICES_DIR,
   STATUSES,
   scopedFolders,
   type TomlDoc,
@@ -24,7 +26,6 @@ import {
 
 const NAME = new RegExp(`^${WORD}/${WORD}$`, "u");
 const ENVS = new Set(["test", "read-only"]);
-const SUBDIR = "checks";
 
 export interface SavedCheck {
   id: string;
@@ -145,7 +146,8 @@ function read(file: string, name: string, scope: Scope): CheckFile {
 /** The check file for service/name: the project's if it has one, else the user's. */
 export function load(name: string): CheckFile {
   if (!NAME.test(name)) throw new CheckFileError(`Invalid check name: ${quote(name)} (expected service/name)`);
-  const found = findScopedFile(SUBDIR, `${name}.toml`);
+  const [service, stem] = name.split("/");
+  const found = findScopedFile(SERVICES_DIR, join(service, CHECKS_DIR, `${stem}.toml`));
   if (!found) throw new CheckFileError(`No saved check ${quote(name)}`);
   return read(found.file, name, found.scope);
 }
@@ -160,10 +162,10 @@ export interface Listed {
 /** Every saved check of both scopes. A broken file is listed with its error, never skipped. */
 export function catalog(): Listed[] {
   const names = new Set<string>();
-  for (const { dir } of scopedFolders(SUBDIR)) {
+  for (const { dir } of scopedFolders(SERVICES_DIR)) {
     if (!existsSync(dir)) continue;
     for (const service of readdirSync(dir)) {
-      const folder = join(dir, service);
+      const folder = join(dir, service, CHECKS_DIR);
       if (!isDir(folder)) continue;
       for (const entry of readdirSync(folder)) {
         if (entry.endsWith(".toml") && isFile(join(folder, entry))) names.add(`${service}/${entry.slice(0, -5)}`);

@@ -53,7 +53,7 @@ webhand provides **6 purpose-built skills** so every job has the right safety po
 
 - **Brain and hands are separated.** Your coding agent owns the GOAL, plan, input values, final verification, and replanning. **Jev** only picks the next click or entry from observed page elements and the values your agent explicitly listed — never free-form selectors, coordinates, scripts, or invented text.
 - **Built for real-world safety.** Changing actions are never blindly retried (if an outcome is uncertain, webhand stops). Passwords, 2FA, and CAPTCHAs are entered directly by you in Chrome — never passed through the agent. Everyday Chrome profiles are never touched.
-- **Remembers how your services work — and shares it via Git.** Teach a service once from a recorded walkthrough, its source code, or an earlier run. Runbooks live in `.webhand/runbooks/` (project-shared via Git) or `~/.webhand/runbooks/` (personal), and start as `draft` until you approve them.
+- **Remembers how your services work — and shares it via Git.** Teach a service once from a recorded walkthrough, its source code, or an earlier run. Runbooks live in `.webhand/services/` (project-shared via Git) or `~/.webhand/services/` (personal), and start as `draft` until you approve them.
 - **Works on new sites too.** Even without a runbook, webhand plans from your request and remembers site experience locally as you go.
 
 ### Good fit vs. not designed for
@@ -190,7 +190,7 @@ Chrome is the only engine supporting visible windows and saved profiles. Obscura
 | Document | Contents |
 | --- | --- |
 | [Usage guide](docs/usage.md) | Task-oriented workflows for all 6 skills, batch runs, sessions, and troubleshooting |
-| [Starter runbooks](examples/runbooks/README.md) | Copy-and-adapt `service.toml`, runbook templates (`allowed_domains`, `[person]` sign-in), and a sample CSV for batch runs |
+| [Starter runbooks](examples/services/README.md) | Copy-and-adapt `service.toml`, runbook templates (`allowed_domains`, `[person]` sign-in), and a sample CSV for batch runs |
 | [Reference](docs/reference.md) | Complete CLI spec (all 18 commands, exit codes, env vars), TOML schemas, engines, and logs |
 | [All docs](docs/README.md) | Full documentation index including design records (`docs/design/`) and research notes (`docs/research/`) |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | For contributors: modular layout, rules, tests, release steps |

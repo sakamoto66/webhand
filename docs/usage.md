@@ -82,7 +82,7 @@ How the safe batch workflow runs:
 - **Decompose & confirm**: The agent turns natural-language criteria into observable checks (`Given / Steps / Expected`) and confirms whether the target is a test or production environment (production allows read-only checks only).
 - **Independent judgment**: Jev performs the operation; the agent checks the page using `webhand check` and reports `PASS`, `FAIL`, or `INCONCLUSIVE` with quoted on-page evidence — never loosening expectations after seeing the page.
 - **PR-ready summary**: Ask the agent for a PR/Issue-ready Markdown block if you want to paste results into GitHub (it never posts automatically).
-- **Regression reuse**: Save checks as `.webhand/checks/<service>/<name>.toml` (`draft` → you approve → `approved`) and re-run them with `/webhand-regress` to see `NEW FAIL`, `STILL FAILING`, and `RECOVERED`.
+- **Regression reuse**: Save checks as `.webhand/services/<service>/checks/<name>.toml` (`draft` → you approve → `approved`) and re-run them with `/webhand-regress` to see `NEW FAIL`, `STILL FAILING`, and `RECOVERED`.
 
 ---
 
@@ -116,7 +116,7 @@ Three ways to teach:
 /webhand-teach ~/.webhand/runs/<timestamp>/adhoc.jsonl             # from an earlier run log
 ```
 
-- **Starter templates**: Copy and adapt an example from [`examples/runbooks/`](../examples/runbooks/README.md) (`hotel-planisphere/` or `internal-form/`) into `.webhand/runbooks/` (project-shared via Git) or `~/.webhand/runbooks/` (personal).
+- **Starter templates**: Copy and adapt an example from [`examples/services/`](../examples/services/README.md) (`hotel-planisphere/` or `internal-form/`) into `.webhand/services/` (project-shared via Git) or `~/.webhand/services/` (personal).
 - **Domain boundary**: Add `allowed_domains = ["app.example.com"]` to `service.toml` so normal runs refuse navigations, redirects, and new tabs outside your service's hosts.
 - **Human-readable SOP**: Ask `/webhand-teach` to also produce a Markdown guide from the approved runbook when your team wants human documentation alongside the TOML.
 - **Never store secrets**: Keep passwords, tokens, and personal data out of runbooks; pass changing inputs via `params` and mark login steps as `[person]`.

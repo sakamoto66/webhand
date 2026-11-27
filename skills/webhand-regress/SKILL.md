@@ -1,6 +1,6 @@
 ---
 name: webhand-regress
-description: Re-run saved acceptance checks (.webhand/checks) against a real web page through the webhand CLI and report what newly broke since the last run. The expectations are fixed in the check file and compared by `webhand check --saved`; Jev only operates. Use when asked to re-check, regress or re-verify saved checks.
+description: Re-run saved acceptance checks (.webhand/services/<service>/checks) against a real web page through the webhand CLI and report what newly broke since the last run. The expectations are fixed in the check file and compared by `webhand check --saved`; Jev only operates. Use when asked to re-check, regress or re-verify saved checks.
 argument-hint: "the saved check name (service/name), parameters, and the URL or environment"
 allowed-tools: Bash(webhand:*), Bash(npx -y webhand@0.7:*), AskUserQuestion
 ---

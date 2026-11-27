@@ -25,7 +25,7 @@
 - `draft` の手順書を通常実行に使わない。`approved` にするのはユーザーの承認後のみ。
 - 資格情報は人が Chrome に直接入力する。ホストエージェントは受け取らず、CLI にも渡さない。
 - `.env`、`runs/`、`state/`（保存プロファイルを含む）はコミットしない。テストから有料 API を呼ばない。
-- 手順書とサービス情報は、プロジェクト（`.webhand/runbooks`）とユーザー（`~/.webhand/runbooks`）に置く。ログイン状態と実行記録はユーザー側にだけ置く。Jev の API キーは環境変数（`TYPESAFE_API_KEY`）からだけ読み、`.env` などのファイルから読まない。
+- 手順書とサービス情報は、プロジェクト（`.webhand/services/<service>/`）とユーザー（`~/.webhand/services/<service>/`）に置く。サービス情報は `service.toml`、手順書は `runbooks/`、保存した確認は `checks/` に分け、`webhand-teach` は `checks/` を書き換えない。ログイン状態と実行記録はユーザー側にだけ置く。Jev の API キーは環境変数（`TYPESAFE_API_KEY`）からだけ読み、`.env` などのファイルから読まない。
 - `tasks/`（独立検証）と `research/`（`--task` 付きの CLI ラッパー、smoke）は研究用リポジトリにだけ置き、npm の配布物に含めない。配布する CLI とスキルに `--task` を戻さない。研究の実行は `/webhand-research NAME` で行う。
 
 ## チェック

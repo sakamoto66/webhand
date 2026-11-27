@@ -82,7 +82,7 @@ Claude Code では `/webhand` のようにスラッシュコマンドで呼び�
 - **条件の分解と環境確認**: 自然言語の条件を「前提・操作・期待」に分解して合意を取り、テスト環境か本番環境かを確認します（本番では読み取り専用の確認のみ許可）。
 - **独立した判定**: Jev は操作のみを行い、エージェントが `webhand check` を使って画面引用つきで `PASS` / `FAIL` / `INCONCLUSIVE` を判定します。結果を見て期待値を緩めることはありません。
 - **PR / Issue 用サマリ**: 頼めば GitHub の PR や Issue にそのまま貼れる Markdown ブロックに整形します（自動投稿はしません）。
-- **回帰チェック**: 確認内容を `.webhand/checks/<service>/<name>.toml`（`draft` → 承認 → `approved`）として保存しておけば、`/webhand-regress` で前回との差分（`NEW FAIL` / `STILL FAILING` / `RECOVERED`）を検出できます。
+- **回帰チェック**: 確認内容を `.webhand/services/<service>/checks/<name>.toml`（`draft` → 承認 → `approved`）として保存しておけば、`/webhand-regress` で前回との差分（`NEW FAIL` / `STILL FAILING` / `RECOVERED`）を検出できます。
 
 ---
 
@@ -117,7 +117,7 @@ flowchart LR
 /webhand-teach ~/.webhand/runs/<timestamp>/adhoc.jsonl             # 過去の実行ログから覚える
 ```
 
-- **スターターテンプレート活用**: [`examples/runbooks/`](../examples/runbooks/README.md)（`hotel-planisphere/`・`internal-form/`）を `.webhand/runbooks/`（Git でチーム共有）または `~/.webhand/runbooks/`（個人用）にコピーしてすぐ試せます。
+- **スターターテンプレート活用**: [`examples/services/`](../examples/services/README.md)（`hotel-planisphere/`・`internal-form/`）を `.webhand/services/`（Git でチーム共有）または `~/.webhand/services/`（個人用）にコピーしてすぐ試せます。
 - **ドメイン境界の保護**: `service.toml` に `allowed_domains = ["app.example.com"]` を書いておくと、通常実行でも許可外ドメインへの移動・リダイレクト・新規タブ遷移を自動遮断します。
 - **人間向けマニュアル生成**: チーム共有用に人間向けの操作手順書（Markdown）もほしい場合は、`/webhand-teach` にあわせて依頼できます。
 - **秘密情報は書かない**: パスワード・トークン・個人情報は手順書に書かず、変わる値は `params`、ログインは `[person]` ステップにします。

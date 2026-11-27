@@ -6,6 +6,7 @@ import { expect, test } from "vitest";
 import { lastRuns } from "../src/commands/checklast.ts";
 import * as workspace from "../src/core/workspace.ts";
 import * as checkfile from "../src/storage/checkfile.ts";
+import * as runbook from "../src/storage/runbook/index.ts";
 import { cli, cliExit } from "./helpers.ts";
 
 const FILE = `
@@ -35,9 +36,10 @@ depends_on = ["C1"]
 `;
 
 function save(name: string, text: string): string {
-  const file = join(workspace.home(), "checks", `${name}.toml`);
+  const [service, stem] = name.split("/");
+  const file = join(workspace.home(), "services", service, "checks", `${stem}.toml`);
   mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, text.replace('name = "order"', `name = "${name.split("/")[1]}"`));
+  writeFileSync(file, text.replace('name = "order"', `name = "${stem}"`));
   return file;
 }
 
@@ -69,6 +71,12 @@ test("an undeclared parameter, a missing status and a bad expectation are refuse
 test("fill needs every value", () => {
   expect(checkfile.fill("a {x} b", { x: "1" })).toBe("a 1 b");
   expect(() => checkfile.fill("a {x}", {})).toThrow(/No value for \{x\}/);
+});
+
+test("a folder holding only saved checks is not listed as a service", () => {
+  save("linen/order", FILE);
+  expect(runbook.catalog().map((entry) => entry.service)).not.toContain("linen");
+  expect(checkfile.catalog().map((entry) => entry.name)).toContain("linen/order");
 });
 
 test("the catalog lists a broken file with its reason", () => {

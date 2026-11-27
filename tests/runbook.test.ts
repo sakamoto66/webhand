@@ -96,7 +96,7 @@ test.each(["../secret", "a/b/c", "", "a b"])("name %j stays inside the runbook f
 });
 
 test("Japanese names are names", () => {
-  expect(runbook.path("予約/検索", "user")).toBe(join(runbook.root("user"), "予約", "検索.toml"));
+  expect(runbook.path("予約/検索", "user")).toBe(join(runbook.root("user"), "予約", "runbooks", "検索.toml"));
 });
 
 const HOTEL = ["--param", "city=Lisbon", "--param", "category=Design", "--param", "stay=Casa Flora"];
@@ -163,10 +163,10 @@ test("steps from Claude replace the runbook steps", async () => {
 });
 
 test("human steps need a visible window", async () => {
-  userBook("demo", HUMAN);
-  expect(await cliExit("start", "--runbook", "demo", "--param", "section=A", "--param", "url=about:blank")).toMatch(
-    /--headed/,
-  );
+  userBook("demo/login", HUMAN);
+  expect(
+    await cliExit("start", "--runbook", "demo/login", "--param", "section=A", "--param", "url=about:blank"),
+  ).toMatch(/--headed/);
   expect(session.load()).toBeNull();
 });
 
@@ -174,11 +174,11 @@ test("person steps are marked in Jev state", async () => {
   deps.startChrome = (options) => session.startChrome({ ...options, headed: false });
   const page = join(tmpPath(), "page.html");
   writeFileSync(page, "<h1>Home</h1><button>Reports</button>");
-  userBook("demo", HUMAN);
+  userBook("demo/login", HUMAN);
   await cli(
     "start",
     "--runbook",
-    "demo",
+    "demo/login",
     "--headed",
     "--chrome",
     "linux",
@@ -219,7 +219,7 @@ function userFile(relative: string, text: string): void {
 test("service information and catalog", async () => {
   await elsewhere(() => {
     userFile("demo/service.toml", SERVICE);
-    userFile("demo/login.toml", HUMAN);
+    userFile("demo/runbooks/login.toml", HUMAN);
     const info = runbook.loadService("demo");
     expect(info?.login).toEqual({ required: true, url: "https://demo.test/login" });
     expect(info?.facts).toEqual(["Reports live under the top menu"]);
@@ -231,8 +231,9 @@ test("service information and catalog", async () => {
   });
 });
 
-test("service is not a procedure name", () => {
-  expect(() => runbook.path("hotel/service")).toThrow(runbook.RunbookError);
+test("a runbook name needs its service, and its file sits in the service's runbooks folder", () => {
+  expect(() => runbook.path("hotel")).toThrow(/expected service\/name/);
+  expect(runbook.path("hotel/service", "user")).toBe(join(runbook.root("user"), "hotel", "runbooks", "service.toml"));
 });
 
 const REGION_SERVICE = `${SERVICE}
@@ -285,11 +286,12 @@ test("a later layer of region choices wins", () => {
 
 test("a project runbook wins over a user runbook of the same name, and both are listed", async () => {
   const project = realpathSync(tmpPath());
-  mkdirSync(join(project, ".webhand", "runbooks", "demo"), { recursive: true });
+  const projectRunbooks = join(project, ".webhand", "services", "demo", "runbooks");
+  mkdirSync(projectRunbooks, { recursive: true });
   await inDirectory(project, () => {
-    writeFileSync(join(project, ".webhand", "runbooks", "demo", "login.toml"), HUMAN.replace("Open {section}", "P"));
-    userFile("demo/login.toml", HUMAN.replace("Open {section}", "U"));
-    userFile("demo/other.toml", HUMAN);
+    writeFileSync(join(projectRunbooks, "login.toml"), HUMAN.replace("Open {section}", "P"));
+    userFile("demo/runbooks/login.toml", HUMAN.replace("Open {section}", "U"));
+    userFile("demo/runbooks/other.toml", HUMAN);
     userFile("demo/service.toml", SERVICE);
     expect(runbook.load("demo/login", values()).goal).toBe("P");
     expect(runbook.load("demo/login", values()).scope).toBe("project");
@@ -307,17 +309,17 @@ test("a relative start_url in the user scope is a file next to the user folder",
   await elsewhere(() => {
     const home = process.env.WEBHAND_HOME as string;
     writeFileSync(join(dirname(home), "page.html"), "<h1>x</h1>");
-    userFile("demo/login.toml", HUMAN);
+    userFile("demo/runbooks/login.toml", HUMAN);
     const loaded = runbook.load("demo/login", { section: "A", url: "page.html" });
     expect(loaded.start_url).toBe(pathToFileURL(join(dirname(home), "page.html")).href);
   });
 });
 
-test("catalog prints both runbook folders and the scope of each procedure", async () => {
+test("catalog prints both service folders and the scope of each procedure", async () => {
   const { out } = await cli("catalog", "--chrome", "linux");
   const lines = out.split("\n");
-  expect(lines[0]).toBe(`RUNBOOKS (project) ${join(process.cwd(), ".webhand", "runbooks")}`);
-  expect(lines[1]).toBe(`RUNBOOKS (user) ${runbook.root("user")}`);
+  expect(lines[0]).toBe(`SERVICES (project) ${join(process.cwd(), ".webhand", "services")}`);
+  expect(lines[1]).toBe(`SERVICES (user) ${runbook.root("user")}`);
   expect(out).toContain("SERVICE hotel (project)");
   expect(out).toContain("PROCEDURE hotel/filter [draft] (project):");
 });

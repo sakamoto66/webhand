@@ -1,5 +1,5 @@
 # Template for an authenticated internal admin or request portal.
-# Replace example.internal with your own hostname before copying to .webhand/runbooks/.
+# Replace example.internal with your own hostname before copying to .webhand/services/.
 service = "internal-form"
 description = "Internal request portal: sign in directly in Chrome, fill out a standard request form, and submit."
 base_url = "https://portal.example.internal/"

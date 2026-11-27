@@ -1,15 +1,22 @@
-/** Service information (runbooks/<service>/service.toml). */
+/** Service information (services/<service>/service.toml). */
 
 import { join } from "node:path";
 import { ExploreError, RunbookError } from "../../core/errors.ts";
 import { quote, show } from "../../core/format.ts";
 import { type Scope, scopeRoot } from "../../core/workspace.ts";
 import { parseHostList } from "../../explore.ts";
-import { findScopedFile, getField, isBlank, readTomlFile, type TomlDoc, WORD } from "../toml.ts";
+import {
+  findScopedFile,
+  getField,
+  isBlank,
+  readTomlFile,
+  SERVICE_FILE,
+  SERVICES_DIR,
+  type TomlDoc,
+  WORD,
+} from "../toml.ts";
 import { patterns, type View } from "./view.ts";
 
-export const RUNBOOK_SUBDIR = "runbooks";
-export const SERVICE_FILE = "service"; // runbooks/<service>/service.toml holds the service information.
 const SERVICE_NAME = new RegExp(`^${WORD}$`, "u");
 const DEFAULTS = new Set(["focus", "skip"]); // A region's default in service.toml. Without one, it is observed as usual.
 
@@ -30,9 +37,9 @@ export interface ServiceInfo {
   scope: Scope;
 }
 
-/** The runbook folder of a scope, whether or not it exists. */
+/** The services folder of a scope, whether or not it exists. */
 export function root(scope: Scope = "project"): string {
-  return join(scopeRoot(scope), RUNBOOK_SUBDIR);
+  return join(scopeRoot(scope), SERVICES_DIR);
 }
 
 function checkService(service: string): string {
@@ -42,7 +49,7 @@ function checkService(service: string): string {
 
 /** Where a service's information of a scope is written. */
 export function servicePath(service: string, scope: Scope = "project"): string {
-  return join(root(scope), checkService(service), `${SERVICE_FILE}.toml`);
+  return join(root(scope), checkService(service), SERVICE_FILE);
 }
 
 function regions(file: string, page: TomlDoc): Region[] {
@@ -88,7 +95,7 @@ function parseServiceDomains(file: string, raw: unknown): string[] {
 
 /** Service information for the agent's plan and Jev's state. null when none is saved. */
 export function loadService(service: string): ServiceInfo | null {
-  const found = findScopedFile(RUNBOOK_SUBDIR, join(checkService(service), `${SERVICE_FILE}.toml`));
+  const found = findScopedFile(SERVICES_DIR, join(checkService(service), SERVICE_FILE));
   if (!found) return null;
   const { file, scope } = found;
   const { data } = readTomlFile(file, (msg) => new RunbookError(msg));
