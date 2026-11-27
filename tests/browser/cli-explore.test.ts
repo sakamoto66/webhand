@@ -1,8 +1,8 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, expect, test } from "vitest";
-import { cli, cliExit, readEvents } from "./helpers.ts";
-import { isolate, ScriptedJev } from "./jev.ts";
+import { cli, cliExit, readEvents } from "../helpers.ts";
+import { isolate, ScriptedJev } from "../jev.ts";
 
 let log: string;
 let cleanup: () => Promise<void>;
@@ -104,8 +104,8 @@ test("the session-wide action limit stops further runs", async () => {
   await cli("finish", "--status", "abandoned");
 });
 
-import { executed } from "../src/agent/index.ts";
-import * as session from "../src/storage/session.ts";
+import { executed } from "../../src/agent/index.ts";
+import * as session from "../../src/storage/session.ts";
 
 function session_actions(): number {
   return executed(session.load()?.history ?? []).length;

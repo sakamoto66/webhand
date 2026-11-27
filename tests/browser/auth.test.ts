@@ -7,12 +7,12 @@ import type { AddressInfo } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { UsageError } from "../src/args.ts";
-import { parse } from "../src/cli.ts";
-import { shellProbe } from "../src/engines/headless-shell.ts";
-import * as auth from "../src/storage/auth.ts";
-import * as session from "../src/storage/session.ts";
-import { cli, cliExit } from "./helpers.ts";
+import { UsageError } from "../../src/args.ts";
+import { parse } from "../../src/cli.ts";
+import { shellProbe } from "../../src/engines/headless-shell.ts";
+import * as auth from "../../src/storage/auth.ts";
+import * as session from "../../src/storage/session.ts";
+import { cli, cliExit } from "../helpers.ts";
 
 const OBSCURA = process.env.WEBHAND_OBSCURA ?? join(homedir(), ".local", "share", "obscura", "obscura");
 if (existsSync(OBSCURA)) process.env.WEBHAND_OBSCURA = OBSCURA;

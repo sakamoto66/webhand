@@ -9,15 +9,15 @@ import { homedir } from "node:os";
 import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { loadTask } from "../research/tasks.ts";
-import { Budget, runAgent } from "../src/agent/index.ts";
-import { Browser } from "../src/browser/index.ts";
-import { Recorder } from "../src/core/metrics.ts";
-import { type Action, StalePage } from "../src/core/types.ts";
-import { type Driver, RemoteBrowser } from "../src/ipc/remote.ts";
-import { ScriptedPolicy } from "../src/policies/scripted.ts";
-import * as session from "../src/storage/session.ts";
-import { cli, cliExit, ROOT, tmpPath } from "./helpers.ts";
+import { loadTask } from "../../research/tasks.ts";
+import { Budget, runAgent } from "../../src/agent/index.ts";
+import { Browser } from "../../src/browser/index.ts";
+import { Recorder } from "../../src/core/metrics.ts";
+import { type Action, StalePage } from "../../src/core/types.ts";
+import { type Driver, RemoteBrowser } from "../../src/ipc/remote.ts";
+import { ScriptedPolicy } from "../../src/policies/scripted.ts";
+import * as session from "../../src/storage/session.ts";
+import { cli, cliExit, ROOT, tmpPath } from "../helpers.ts";
 
 // Obscura's release archive is unpacked by hand; its guard against loopback addresses is lifted for the local fixtures.
 const OBSCURA = process.env.WEBHAND_OBSCURA ?? join(homedir(), ".local", "share", "obscura", "obscura");

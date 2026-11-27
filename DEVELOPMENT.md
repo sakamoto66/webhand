@@ -37,6 +37,7 @@ For all user-facing environment variables (`TYPESAFE_API_KEY`, `TYPESAFE_MODEL`,
 
 | Variable | Purpose |
 | --- | --- |
+| `TYPESAFE_API_KEY`, `CLOUDFLARE_API_TOKEN` | Cleared to `""` by `vitest.config.ts` so tokens in the parent shell never leak into tests (tests checking token handling stub them explicitly) |
 | `WEBHAND_LOG` | Log file path override (used by tests) |
 | `WEBHAND_SCREENSHOTS` | `1` captures PNGs at start, after each action, and after `replan --restart` into `<log>-screenshots/` (off by default; stdout and Jev input are unchanged) |
 | `WEBHAND_SETTLE_QUIET_MS` | Per-observation quiet window in ms (`vitest.config.ts` sets `40`; product default is `150`) |
@@ -80,7 +81,7 @@ hooks/               Claude Code `hooks.json` and shared `ask-allow-control.mjs`
 .webhand/services/   this repository's own runbooks
 research/            research-only entry points (`webhand.ts`, `tasks.ts`, `batch.ts`, `smoke.ts`, `progress.ts`, `webarena/`); not shipped
 tasks/               research tasks with independent `verify()` and local HTML fixtures; not shipped
-tests/               vitest suites, golden records (`tests/golden/`), test doubles (`tests/jev.ts`)
+tests/               vitest unit tests (`tests/*.test.ts`), browser tests (`tests/browser/`), golden records (`tests/golden/`), test doubles (`tests/jev.ts`)
 scripts/             CI & packaging helpers (`check-package.ts`, `coverage-summary.ts`)
 docs/                documentation map (`README.md`), user docs (`usage*.md`, `reference*.md`),
                      media (`media/`), design records (`design/`), and research notes (`research/`)
@@ -128,16 +129,18 @@ npm run lint             # Biome (format + lint)
 npm run typecheck        # tsc --noEmit
 npm run knip             # unused files, exports, dependencies
 npm run check            # all three above
-npm test                 # vitest; uses Linux Chrome, no paid APIs
-npm run test:coverage    # coverage/index.html (thresholds: 70% across lines/stmts/funcs/branches)
+npm run test:unit        # vitest `unit` project (`tests/*.test.ts`, no Chrome)
+npm run test:browser     # vitest `browser` project (`tests/browser/**/*.test.ts`, real Chrome)
+npm test                 # vitest (`unit` + `browser`; uses Linux Chrome, no paid APIs)
+npm run test:coverage    # coverage/index.html (combined `unit` + `browser`, thresholds: 70% across lines/stmts/funcs/branches)
 npm run build && npm run check:package   # verify exact npm tarball contents
 npm run smoke -- --task hotel_filter     # model-free run of a task's SCRIPT
 ```
 
-- The husky pre-commit hook and GitHub Actions run `npm run check` and `npm test`. Never bypass them with `--no-verify`.
+- The husky pre-commit hook runs `npm run check` and `npm run test:unit`; GitHub Actions (`check.yml`) and `release.yml` run both `unit` and `browser` projects (`npm test` / `npm run test:coverage`). Never bypass them with `--no-verify`.
 - Test files run in parallel (`fileParallelism: true`, up to 6 workers locally / 3 on CI in `vitest.config.ts`). Keep each test file focused on one theme and fast so workers stay balanced.
 - `vitest.config.ts` sets `WEBHAND_SETTLE_QUIET_MS=40` so fixture observation waits stay short (product default is `150` ms). A test that exercises real settling stubs `WEBHAND_SETTLE_QUIET_MS=150` itself.
-- Coverage thresholds are 70% for lines, statements, functions, and branches (`vitest.config.ts`). Below that, CI fails.
+- Coverage thresholds are 70% combined across `unit` and `browser` for lines, statements, functions, and branches (`vitest.config.ts`). Below that, CI fails.
 
 ### Code style
 
@@ -148,7 +151,8 @@ npm run smoke -- --task hotel_filter     # model-free run of a task's SCRIPT
 
 ## Tests
 
-- `tests/setup.ts` gives every test its own `WEBHAND_HOME`, pins `WEBHAND_ENGINE=chrome`, and replaces `deps.policy` with a function that throws, so tests never call Jev or read your `~/.webhand`.
+- `vitest.config.ts` splits suites into two projects (`unit`: `tests/*.test.ts` without launching a browser; `browser`: `tests/browser/**/*.test.ts` with real Chrome), both inheriting root `setupFiles`, `pool`, `env`, and timeouts via `extends: true`.
+- Jev calls are structurally blocked in tests: (1) `vitest.config.ts` clears `TYPESAFE_API_KEY` and `CLOUDFLARE_API_TOKEN` to `""`, (2) `new JevPolicy()` rejects construction under `VITEST` without an explicit `fetch` stub before creating an `Agent` or calling `undiciFetch`, and (3) `tests/setup.ts` replaces `deps.policy` with a throwing stub at module load as well as in `beforeEach` / `afterEach` (and gives every test its own `WEBHAND_HOME` and `WEBHAND_ENGINE=chrome`).
 - `tests/jev.ts` provides `ScriptedJev` and `isolate()`. Set `ScriptedJev.moves` to `[operation, element label, value label]` triples to script Jev's choices, then inspect `ScriptedJev.plans` / `states`.
 - `tests/helpers.ts` provides `cli(...)`, `cliExit(...)`, `research(...)` / `researchExit(...)`, `readEvents(log)`, `tmpPath()`, and `inDirectory(dir, fn)`.
 - Browser tests run real Linux Chrome in parallel across files (`fileParallelism: true`) with a 60 s timeout. Always call `cleanup()` from `isolate()` so Chrome processes do not leak.
@@ -163,7 +167,7 @@ npm run smoke -- --task hotel_filter     # model-free run of a task's SCRIPT
 
 ## Adding things
 
-- **A CLI command or option**: define its `CommandDef` under `src/commands/` and register it in `src/commands/index.ts`, cover it with unit tests under `tests/`, and update `docs/reference.md`, `docs/reference.ja.md`, `docs/usage.md`, `docs/usage.ja.md`, and any relevant skill under `skills/`.
+- **A CLI command or option**: define its `CommandDef` under `src/commands/` and register it in `src/commands/index.ts`, cover it with unit tests under `tests/` (or browser tests under `tests/browser/` when real Chrome is required), and update `docs/reference.md`, `docs/reference.ja.md`, `docs/usage.md`, `docs/usage.ja.md`, and any relevant skill under `skills/`.
 - **A research task**: add `tasks/<name>.ts` exporting `GOAL`, `startUrl(root)`, async `verify(browser)` returning `{ success, evidence }`, and `SCRIPT` (for `npm run smoke`). Keep fixtures local under `tasks/fixtures/`. Tasks run through Node's type stripping (Node 22.18+). Run a task with `/webhand-research NAME` (`.agents/skills/webhand-research`, symlinked from `.claude/skills/webhand-research`). Neither `tasks/` nor `research/` is shipped to npm.
 - **Running tasks in a batch**: `node research/batch.ts (--tasks A,B | --webarena 0,11) --model MODEL --out DIR [--repeat N] [--parallel N] [--serial A,B] [--full]` from the repository root, with herdr running. It opens a new tab in the current herdr workspace with a `research/progress.ts` pane and `--parallel` (default 3) run panes. Each run is a new interactive `claude` session, started with `/webhand-research NAME (session: new)` or `/webhand-webarena-research ID (session: new) …` and its own `WEBHAND_HOME` under DIR. The caller's `WEBHAND_SCREENSHOTS` is passed to each session (images go to `<log>-screenshots/` beside the run log). `--serial` tasks (those that change a site's data) run one at a time after all the others. AskUserQuestion gets a fixed sentence (`research/auto-answer.ts`, counted in a row's `auto_answers`); permission prompts and questions in text get no answer. Both research skills use it when more than one task is named. `--webarena` takes no `--repeat`, passes `WEBARENA_DATASET` and `WEBARENA_CONFIG` to the panes, denies reading the dataset, config and other run records, and ends with `eval` and `report`. A run without `run_end` after 20 minutes is recorded and not retried. One line per run goes to `DIR/results.jsonl` (success of a `tasks/` run is `verified` only; a WebArena row's `verified` is null and its score is a separate measure); rerunning skips runs that have a line. It stops on uncommitted or untracked files, and when a line in DIR or the next run is on another commit. By default the session is lean (fewer tools, no bundled skills); `--full` keeps both. Everything else is the same: `--setting-sources project` (no user or local settings, hooks, plugins, skills or synced skills), `claudeMdExcludes` for `~/.claude/**`, `--permission-mode auto`, `--strict-mcp-config`, and auto memory off. Managed settings, the login, and `CLAUDE.md` / `AGENTS.md` files in other folders above the repository still apply. Each line also records `claude_version` and `batch_node_version` (the batch process's Node). DIR must be outside the repository or ignored by git. Premises and open items for other agents: [batch verification](docs/research/batch-verification.md) (Japanese).
 - **Watching runs**: `node research/progress.ts [--tasks LIST | --research N --webarena N | --total N] [--since WHEN] [--dir DIR]...` from another terminal shows a board of the `/webhand-research` and `/webhand-webarena-research` runs started since it started (or `--since`): per skill, planned, done, running and not started, `verify()` results (OK only when `verified` is true) and WebArena scores (from `eval_result.json`'s score only) counted apart, the kinds of the runs that were not OK, each open run and whether it moves or looks stalled, and an ETA when a plan is given. A run with no `run_end` and no session is counted as interrupted; re-runs take no plan slot. `--events` or `--log FILE` prints one line per event instead. It reads only the session state, its lock, the run logs, and that score. With no `--dir` it looks in `$WEBHAND_HOME`, `~/.webhand`, and the checkout. It does not print page text, values, verify()'s evidence, or expected answers.
@@ -183,7 +187,7 @@ node scripts/release.ts X.Y.Z --dry-run   # only reads: shows where the release 
 node scripts/release.ts X.Y.Z
 ```
 
-Run it in a clean checkout with the dependencies installed (the release commit runs the pre-commit check and tests) and `gh` logged in with write access. It:
+Run it in a clean checkout with the dependencies installed (the release commit runs the pre-commit check and unit tests; CI runs all checks including full `unit` and `browser` tests) and `gh` logged in with write access. It:
 
 1. Creates `release/X.Y.Z` from `origin/main`, runs `npm version X.Y.Z --no-git-tag-version`, commits, pushes, and opens a pull request.
 2. Waits for every check (`check`, `package`, `test`, and `verify-tasks`, including the ones the ruleset does not require), asks once, and merges the checked head.

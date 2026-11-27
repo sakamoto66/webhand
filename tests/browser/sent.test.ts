@@ -3,8 +3,8 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, expect, test } from "vitest";
-import { Browser } from "../src/browser/index.ts";
-import type { Action } from "../src/core/types.ts";
+import { Browser } from "../../src/browser/index.ts";
+import type { Action } from "../../src/core/types.ts";
 
 let server: Server | undefined;
 let browser: Browser | undefined;

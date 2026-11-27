@@ -42,6 +42,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # Runs both the `unit` and `browser` Vitest projects and checks combined 70% coverage thresholds.
       # The github-actions reporter writes the test results to $GITHUB_STEP_SUMMARY.
       - run: npx vitest run --coverage --reporter=default --reporter=github-actions
       - if: always()

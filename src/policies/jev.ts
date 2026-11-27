@@ -113,6 +113,9 @@ export class JevPolicy implements Policy {
       this.fetchJson = options.fetch;
       this.agent = null;
     } else {
+      if (process.env.VITEST) {
+        throw new PolicyError("Refusing to create a live JevPolicy under Vitest without an explicit fetch stub.");
+      }
       // HTTP/2 when the server offers it; HTTP/1.1 otherwise.
       const agent = new Agent({ allowH2: true });
       this.agent = agent;

@@ -51,6 +51,7 @@ jobs:
           '
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "$TAG is not on main"; exit 1; }
       - run: npm ci
+      # Runs both the `unit` and `browser` Vitest projects.
       - run: npm test
       # prepublishOnly runs npm run check, the build, and npm run check:package.
       - run: npm publish

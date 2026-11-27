@@ -9,18 +9,18 @@ import {
   loadConfig,
   renderTaskUrl,
   resolveAutoLoginTargets,
-} from "../research/webarena/config.ts";
-import { listTasksPublic, loadTaskPublic } from "../research/webarena/dataset.ts";
-import { summarizeRunDir } from "../research/webarena/report.ts";
-import { validateAgentResponse } from "../research/webarena/response.ts";
-import { WebArenaError } from "../research/webarena/sites.ts";
-import { run as runWebArena } from "../research/webarena.ts";
-import { CliExit } from "../src/commands/context.ts";
-import type { HarDocument } from "../src/har/index.ts";
-import { stopHarRecorder } from "../src/har/session.ts";
-import * as session from "../src/storage/session.ts";
-import { tmpPath } from "./helpers.ts";
-import { isolate, ScriptedJev } from "./jev.ts";
+} from "../../research/webarena/config.ts";
+import { listTasksPublic, loadTaskPublic } from "../../research/webarena/dataset.ts";
+import { summarizeRunDir } from "../../research/webarena/report.ts";
+import { validateAgentResponse } from "../../research/webarena/response.ts";
+import { WebArenaError } from "../../research/webarena/sites.ts";
+import { run as runWebArena } from "../../research/webarena.ts";
+import { CliExit } from "../../src/commands/context.ts";
+import type { HarDocument } from "../../src/har/index.ts";
+import { stopHarRecorder } from "../../src/har/session.ts";
+import * as session from "../../src/storage/session.ts";
+import { tmpPath } from "../helpers.ts";
+import { isolate, ScriptedJev } from "../jev.ts";
 
 let workDir: string;
 

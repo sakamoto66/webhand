@@ -4,11 +4,11 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, expect, test } from "vitest";
-import { type ReadOnly, refusal } from "../src/agent/readonly.ts";
-import { Browser } from "../src/browser/index.ts";
-import type { Page } from "../src/core/types.ts";
-import { build, expression, format, type Kind, type Raw } from "../src/extract/index.ts";
-import { tmpPath } from "./helpers.ts";
+import { type ReadOnly, refusal } from "../../src/agent/readonly.ts";
+import { Browser } from "../../src/browser/index.ts";
+import type { Page } from "../../src/core/types.ts";
+import { build, expression, format, type Kind, type Raw } from "../../src/extract/index.ts";
+import { tmpPath } from "../helpers.ts";
 
 let browser: Browser | null = null;
 afterEach(async () => {

@@ -5,12 +5,12 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Page as PlaywrightPage } from "playwright-core";
 import { afterEach, beforeEach, expect, test } from "vitest";
-import { Browser } from "../src/browser/index.ts";
-import { parse } from "../src/cli.ts";
-import { Recorder } from "../src/core/metrics.ts";
-import * as demo from "../src/record.ts";
-import * as session from "../src/storage/session.ts";
-import { readEvents, tmpPath } from "./helpers.ts";
+import { Browser } from "../../src/browser/index.ts";
+import { parse } from "../../src/cli.ts";
+import { Recorder } from "../../src/core/metrics.ts";
+import * as demo from "../../src/record.ts";
+import * as session from "../../src/storage/session.ts";
+import { readEvents, tmpPath } from "../helpers.ts";
 
 const SECRET = "hunter2-do-not-keep";
 const FORM = `<title>Sign in</title><h1>Sign in</h1>

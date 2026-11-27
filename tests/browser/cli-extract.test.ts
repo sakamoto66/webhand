@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "vitest";
-import { cli, cliExit, readEvents, research, researchExit } from "./helpers.ts";
-import { isolate } from "./jev.ts";
+import { cli, cliExit, readEvents, research, researchExit } from "../helpers.ts";
+import { isolate } from "../jev.ts";
 
 let log: string;
 let cleanup: () => Promise<void>;

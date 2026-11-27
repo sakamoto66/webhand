@@ -5,16 +5,16 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { Browser } from "../src/browser/index.ts";
-import { CliExit } from "../src/commands/context.ts";
-import { parseFiles } from "../src/commands/shared.ts";
-import { toJson } from "../src/core/format.ts";
-import { type Action, type Page, PolicyError, StalePage } from "../src/core/types.ts";
-import { describePlan, recentActions } from "../src/output.ts";
-import { actionSpace, fileChoices, modelState } from "../src/policies/base.ts";
-import { JevPolicy } from "../src/policies/jev.ts";
-import { buildQuestions } from "../src/policies/jev-questions.ts";
-import { tmpPath } from "./helpers.ts";
+import { Browser } from "../../src/browser/index.ts";
+import { CliExit } from "../../src/commands/context.ts";
+import { parseFiles } from "../../src/commands/shared.ts";
+import { toJson } from "../../src/core/format.ts";
+import { type Action, type Page, PolicyError, StalePage } from "../../src/core/types.ts";
+import { describePlan, recentActions } from "../../src/output.ts";
+import { actionSpace, fileChoices, modelState } from "../../src/policies/base.ts";
+import { JevPolicy } from "../../src/policies/jev.ts";
+import { buildQuestions } from "../../src/policies/jev-questions.ts";
+import { tmpPath } from "../helpers.ts";
 
 const PAGE = `<!doctype html><title>t</title>
 <label>Resume <input type="file" id="cv"></label>

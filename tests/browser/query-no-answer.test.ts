@@ -4,11 +4,11 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { deps, FAILED, OK } from "../src/commands/context.ts";
-import { Decision, type Policy } from "../src/core/types.ts";
-import * as session from "../src/storage/session.ts";
-import { cli, readEvents, tmpPath } from "./helpers.ts";
-import { isolate } from "./jev.ts";
+import { deps, FAILED, OK } from "../../src/commands/context.ts";
+import { Decision, type Policy } from "../../src/core/types.ts";
+import * as session from "../../src/storage/session.ts";
+import { cli, readEvents, tmpPath } from "../helpers.ts";
+import { isolate } from "../jev.ts";
 
 /** Jev that reports DONE at once and finds no block that answers the question. */
 function noMatchJev(asked: number[]): Policy {
