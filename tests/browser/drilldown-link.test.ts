@@ -4,12 +4,12 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { deps, FAILED, OK } from "../src/commands/context.ts";
-import { PolicyError } from "../src/core/types.ts";
-import { JevPolicy } from "../src/policies/jev.ts";
-import type { LinkView } from "../src/scans/drilldown.ts";
-import { cli, readEvents, tmpPath } from "./helpers.ts";
-import { isolate, ScriptedJev } from "./jev.ts";
+import { deps, FAILED, OK } from "../../src/commands/context.ts";
+import { PolicyError } from "../../src/core/types.ts";
+import { JevPolicy } from "../../src/policies/jev.ts";
+import type { LinkView } from "../../src/scans/drilldown.ts";
+import { cli, readEvents, tmpPath } from "../helpers.ts";
+import { isolate, ScriptedJev } from "../jev.ts";
 
 /** Picks the link whose path starts with "item", with a fixed probability that such a link exists. */
 class LinkJev extends ScriptedJev {

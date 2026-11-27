@@ -37,6 +37,7 @@ Codex CLI では、このディレクトリをローカルマーケットプレ�
 
 | 変数 | 用途 |
 | --- | --- |
+| `TYPESAFE_API_KEY`, `CLOUDFLARE_API_TOKEN` | `vitest.config.ts` で空文字 `""` に固定し、親シェルのトークンがテストへ漏れるのを防ぐ（トークン処理を検証するテストは明示的にスタブする） |
 | `WEBHAND_LOG` | ログファイル出力先の上書き（テスト用） |
 | `WEBHAND_SCREENSHOTS` | `1` にすると開始時・各操作後・`replan --restart` 後に `<log>-screenshots/` へ PNG を保存（既定オフ。stdout や Jev 入力は不変） |
 | `WEBHAND_SETTLE_QUIET_MS` | 観測ごとの静定待ち時間（ms）。`vitest.config.ts` は `40`、製品の既定は `150` |
@@ -80,7 +81,7 @@ hooks/               Claude Code の `hooks.json` と共通スクリプト `ask-
 .webhand/services/   このリポジトリ自身の手順書
 research/            研究専用エントリポイント（`webhand.ts`, `tasks.ts`, `batch.ts`, `smoke.ts`, `progress.ts`, `webarena/`）。配布外
 tasks/               独立検証 `verify()` つき研究タスクとローカル HTML フィクスチャ。配布外
-tests/               vitest テストスイート、golden 基準出力（`tests/golden/`）、テストダブル（`tests/jev.ts`）
+tests/               vitest 単体テスト（`tests/*.test.ts`）、ブラウザテスト（`tests/browser/`）、golden 基準出力（`tests/golden/`）、テストダブル（`tests/jev.ts`）
 scripts/             CI・パッケージ検証スクリプト（`check-package.ts`, `coverage-summary.ts`）
 docs/                案内図（`README.md`）、ユーザー文書（`usage*.md`, `reference*.md`）、
                      メディア（`media/`）、設計記録（`design/`）、研究記録（`research/`）
@@ -128,16 +129,18 @@ npm run lint             # Biome（フォーマット＋リント）
 npm run typecheck        # tsc --noEmit
 npm run knip             # 未使用ファイル・export・依存関係の検出
 npm run check            # 上の 3 つを一括実行
-npm test                 # vitest（Linux Chrome 使用、有料 API 呼び出しなし）
-npm run test:coverage    # coverage/index.html（合格ライン: 各 70%）
+npm run test:unit        # vitest `unit` プロジェクト（`tests/*.test.ts`、Chrome なし）
+npm run test:browser     # vitest `browser` プロジェクト（`tests/browser/**/*.test.ts`、実 Chrome 使用）
+npm test                 # vitest（`unit` + `browser`、Linux Chrome 使用、有料 API 呼び出しなし）
+npm run test:coverage    # coverage/index.html（`unit` + `browser` 合算の合格ライン: 各 70%）
 npm run build && npm run check:package   # npm 配布物の内容検証
 npm run smoke -- --task hotel_filter     # モデルなしの SCRIPT スモーク実行
 ```
 
-- husky の pre-commit フックと GitHub Actions で `npm run check` と `npm test` が必ず走ります。`--no-verify` で回避しないでください。
+- husky の pre-commit フックでは `npm run check` と `npm run test:unit` が走り、GitHub Actions（`check.yml`）と `release.yml` では `unit` と `browser` の両プロジェクト（`npm test` / `npm run test:coverage`）が必ず走ります。`--no-verify` で回避しないでください。
 - テストファイルは並列実行されます（`vitest.config.ts` で `fileParallelism: true`、ローカル最大 6 ワーカー / CI 最大 3 ワーカー）。各テストファイルは 1 テーマに絞り、ワーカー間で偏らないようにしてください。
 - `vitest.config.ts` は `WEBHAND_SETTLE_QUIET_MS=40` を設定してフィクスチャの静定待ちを短縮しています（製品の既定は `150` ms）。静定挙動そのものを検証するテストでは自分で `WEBHAND_SETTLE_QUIET_MS=150` を指定してください。
-- カバレッジの合格ラインは lines・statements・functions・branches とも 70%（`vitest.config.ts`）で、下回ると CI が失敗します。
+- カバレッジの合格ラインは `unit` と `browser` の合算で lines・statements・functions・branches とも 70%（`vitest.config.ts`）で、下回ると CI が失敗します。
 
 ### コードスタイル
 
@@ -148,7 +151,8 @@ npm run smoke -- --task hotel_filter     # モデルなしの SCRIPT スモー�
 
 ## テスト
 
-- `tests/setup.ts` が各テストへ専用の `WEBHAND_HOME` を割り当て、`WEBHAND_ENGINE=chrome` に固定し、`deps.policy` を例外送出関数に差し替えるため、テストから Jev を呼んだり個人の `~/.webhand` を読んだりしません。
+- `vitest.config.ts` はテストを 2 つのプロジェクトに分離しています（`unit`: ブラウザを起動しない `tests/*.test.ts`、`browser`: 実 Chrome を使う `tests/browser/**/*.test.ts`）。両方とも `extends: true` でルートの `setupFiles`・`pool`・`env`・タイムアウトを継承します。
+- テストからの Jev 呼び出しは 3 層で構造的に遮断しています: (1) `vitest.config.ts` が `TYPESAFE_API_KEY` と `CLOUDFLARE_API_TOKEN` を `""` に固定、(2) `new JevPolicy()` が `VITEST` 下で明示的な `fetch` スタブなしの作成を `Agent` 生成・`undiciFetch` 到達前に拒否、(3) `tests/setup.ts` がモジュール読み込み時および `beforeEach` / `afterEach` で `deps.policy` を例外送出関数に差し替え（あわせて各テストへ専用の `WEBHAND_HOME` と `WEBHAND_ENGINE=chrome` を設定）。
 - `tests/jev.ts` は `ScriptedJev` と `isolate()` を提供します。`ScriptedJev.moves` に `[操作, 要素ラベル, 値ラベル]` を設定し、`ScriptedJev.plans` / `states` で Jev に渡った内容を検証します。
 - `tests/helpers.ts` は `cli(...)`、`cliExit(...)`、`research(...)` / `researchExit(...)`、`readEvents(log)`、`tmpPath()`、`inDirectory(dir, fn)` を提供します。
 - ブラウザテストは実際の Linux Chrome を並列（`fileParallelism: true`、タイムアウト 60 秒）で動かします。Chrome がリークしないよう、必ず `isolate()` の `cleanup()` を呼んでください。
@@ -163,7 +167,7 @@ npm run smoke -- --task hotel_filter     # モデルなしの SCRIPT スモー�
 
 ## 追加するとき
 
-- **CLI コマンド・オプション**: `src/commands/` に `CommandDef` を定義して `src/commands/index.ts` に登録し、`tests/` にテストを追加したうえで、`docs/reference.md`・`docs/reference.ja.md`・`docs/usage.md`・`docs/usage.ja.md` と対応する `skills/` を更新します。
+- **CLI コマンド・オプション**: `src/commands/` に `CommandDef` を定義して `src/commands/index.ts` に登録し、`tests/`（実 Chrome が必要な場合は `tests/browser/`）にテストを追加したうえで、`docs/reference.md`・`docs/reference.ja.md`・`docs/usage.md`・`docs/usage.ja.md` と対応する `skills/` を更新します。
 - **研究タスク**: `tasks/<name>.ts` を作り、`GOAL`・`startUrl(root)`・`{ success, evidence }` を返す `verify(browser)`・`SCRIPT`（`npm run smoke` 用）を export します。フィクスチャは `tasks/fixtures/` へ置き、Node 22.18+ の型ストリッピングで動く構文のみ使います。実行は `/webhand-research NAME`（`.agents/skills/webhand-research`、`.claude/skills/` へシンボリックリンク）。`tasks/` と `research/` は npm 配布物に含めません。
 - **タスクの一括実行**: herdr を起動した状態で、リポジトリのルートから `node research/batch.ts (--tasks A,B | --webarena 0,11) --model MODEL --out DIR [--repeat N] [--parallel N] [--serial A,B] [--full]`。起動元の herdr ワークスペースに新しいタブを作り、進捗パネル（`research/progress.ts`）と実行用パネル（`--parallel`、既定 3）を開き、実行ごとに新しい対話の `claude` を起動します（起動文は `/webhand-research NAME (session: new)` か `/webhand-webarena-research ID (session: new) …`、`WEBHAND_HOME` は DIR 下の実行専用）。呼び出し側の `WEBHAND_SCREENSHOTS` は各セッションに渡します（画面は実行ログの横の `<log>-screenshots/` に保存）。`--serial` のタスクは他がすべて終わってから 1 件ずつ実行します（サイトのデータを変えるタスク）。AskUserQuestion には固定文を自動回答し（`research/auto-answer.ts`、行の `auto_answers` に件数）、権限確認と文章での質問には回答しません。2 つの研究スキルは、複数タスクを指定するとこれを使います。`--webarena` は `--repeat` を指定できず、`WEBARENA_DATASET`・`WEBARENA_CONFIG` をペインに渡し、データセット・設定・他の実行記録の読み取りを拒否し、最後に `eval` と `report` を実行します。20 分で `run_end` がない実行は記録して次へ進み、再試行しません。結果は `DIR/results.jsonl` に 1 実行 1 行（`tasks/` の成功は `verified` のみ。WebArena の行の `verified` は null で、得点は別の指標です）。再実行すると行のある実行は飛ばします。未コミット変更・未追跡ファイルがある場合と、DIR の行や次の実行の commit が違う場合は停止します。既定は軽量構成（ツールを限定し、同梱スキルを無効化）、`--full` はその 2 つを残します。ほかは同じです: `--setting-sources project`（ユーザーとローカルの設定・hooks・プラグイン・スキル・同期スキルを読まない）、`~/.claude/**` の `claudeMdExcludes`、`--permission-mode auto`、`--strict-mcp-config`、auto memory 無効。管理設定、ログイン、リポジトリより上のほかのフォルダの `CLAUDE.md` / `AGENTS.md` は適用されます。各行には `claude_version` と `batch_node_version`（batch プロセスの Node）も記録します。DIR はリポジトリ外か git の無視対象にします。前提と他のエージェント向けの未確認項目は[一括検証の前提](docs/research/batch-verification.md)を参照してください。
 - **実行の進捗を見る**: 別の端末で `node research/progress.ts [--tasks LIST | --research N --webarena N | --total N] [--since WHEN] [--dir DIR]...` を実行すると、起動後（または `--since` 以降）に始まった `/webhand-research` と `/webhand-webarena-research` のランを一覧で表示する。スキルごとの予定・完了・実行中・未開始、`verify()` の結果（`verified` が true のときだけ OK）と WebArena の得点（`eval_result.json` の score だけ）を別に数え、OK でなかったランの種別、実行中のランごとに動いているか止まっていそうか、予定を渡したときは完了予定時刻を出す。`run_end` もセッションもないランは中断として数え、再実行は予定の枠を使わない。`--events` か `--log FILE` ではイベントを1行ずつ表示する。読むのはセッション状態とそのロック、実行ログ、その得点だけ。`--dir` を省くと `$WEBHAND_HOME`、`~/.webhand`、checkout を探す。ページ本文、値、verify() の evidence、正解は表示しない。
@@ -183,7 +187,7 @@ node scripts/release.ts X.Y.Z --dry-run   # 読み取りのみ：今の段階と
 node scripts/release.ts X.Y.Z
 ```
 
-作業ツリーが clean で依存をインストール済みのチェックアウトで、書き込み権限のある `gh` にログインして実行します（リリースの commit で pre-commit の check とテストが走ります）。スクリプトは次を行います。
+作業ツリーが clean で依存をインストール済みのチェックアウトで、書き込み権限のある `gh` にログインして実行します（リリースの commit で pre-commit の check と unit テストが走り、CI で `unit`・`browser` 両方を含む全チェックを実行します）。スクリプトは次を行います。
 
 1. `origin/main` から `release/X.Y.Z` を作り、`npm version X.Y.Z --no-git-tag-version`、commit、push して pull request を作ります。
 2. すべてのチェック（ruleset で必須でないものを含む `check`・`package`・`test`・`verify-tasks`）の完了を待ち、1回だけ確認してから、検査した head をマージします。

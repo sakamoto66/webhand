@@ -575,3 +575,18 @@ test("render supports compact handoff modes: omitting elements, omitting offscre
   expect(full).toContain("Far row");
   expect(full).toContain("  [4:15] Country 15");
 });
+
+test("Vitest clears TYPESAFE_API_KEY by default and restores it to empty after unstubAllEnvs", () => {
+  expect(process.env.TYPESAFE_API_KEY).toBe("");
+  vi.stubEnv("TYPESAFE_API_KEY", "temporary-test-key");
+  expect(process.env.TYPESAFE_API_KEY).toBe("temporary-test-key");
+  vi.unstubAllEnvs();
+  expect(process.env.TYPESAFE_API_KEY).toBe("");
+  expect(() => new JevPolicy()).toThrow(PolicyError);
+});
+
+test("JevPolicy rejects construction under Vitest without an explicit fetch stub even if TYPESAFE_API_KEY is stubbed", () => {
+  vi.stubEnv("TYPESAFE_API_KEY", "stubbed-test-key");
+  expect(() => new JevPolicy()).toThrow(PolicyError);
+  expect(() => new JevPolicy()).toThrow(/Vitest.*fetch/i);
+});

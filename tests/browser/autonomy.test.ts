@@ -11,9 +11,9 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { type Actor, Budget, runAgent } from "../src/agent/index.ts";
-import { deps, OK } from "../src/commands/context.ts";
-import { Recorder } from "../src/core/metrics.ts";
+import { type Actor, Budget, runAgent } from "../../src/agent/index.ts";
+import { deps, OK } from "../../src/commands/context.ts";
+import { Recorder } from "../../src/core/metrics.ts";
 import {
   type ClaimVerdict,
   Decision,
@@ -23,13 +23,13 @@ import {
   type Page,
   type Plan,
   type Policy,
-} from "../src/core/types.ts";
-import { describePlan } from "../src/output.ts";
-import { type Fetch, JevPolicy } from "../src/policies/jev.ts";
-import { formatDrilldown, isAllowedDetailUrl, type LabelView, textBlocks } from "../src/scans/drilldown.ts";
-import * as session from "../src/storage/session.ts";
-import { cli, readEvents, tmpPath } from "./helpers.ts";
-import { exactFields, isolate } from "./jev.ts";
+} from "../../src/core/types.ts";
+import { describePlan } from "../../src/output.ts";
+import { type Fetch, JevPolicy } from "../../src/policies/jev.ts";
+import { formatDrilldown, isAllowedDetailUrl, type LabelView, textBlocks } from "../../src/scans/drilldown.ts";
+import * as session from "../../src/storage/session.ts";
+import { cli, readEvents, tmpPath } from "../helpers.ts";
+import { exactFields, isolate } from "../jev.ts";
 
 // biome-ignore lint/suspicious/noExplicitAny: mock Jev response helper.
 function choiceResp(answers: Record<string, { choice: string; confidence?: number; keys: string[] }>): any {

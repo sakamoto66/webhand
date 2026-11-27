@@ -3,12 +3,12 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { FAILED, OK } from "../src/commands/context.ts";
-import { attach } from "../src/commands/shared.ts";
-import { shellProbe } from "../src/engines/headless-shell.ts";
-import * as session from "../src/storage/session.ts";
-import { cli, readEvents } from "./helpers.ts";
-import { isolate } from "./jev.ts";
+import { FAILED, OK } from "../../src/commands/context.ts";
+import { attach } from "../../src/commands/shared.ts";
+import { shellProbe } from "../../src/engines/headless-shell.ts";
+import * as session from "../../src/storage/session.ts";
+import { cli, readEvents } from "../helpers.ts";
+import { isolate } from "../jev.ts";
 
 let log: string;
 let cleanup: () => Promise<void>;

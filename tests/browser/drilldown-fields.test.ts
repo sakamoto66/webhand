@@ -4,12 +4,12 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { deps, FAILED, OK } from "../src/commands/context.ts";
-import { type Page, type Plan, PolicyError } from "../src/core/types.ts";
-import { JevPolicy } from "../src/policies/jev.ts";
-import type { FieldMatch, LabelView } from "../src/scans/drilldown.ts";
-import { cli, tmpPath } from "./helpers.ts";
-import { isolate, ScriptedJev } from "./jev.ts";
+import { deps, FAILED, OK } from "../../src/commands/context.ts";
+import { type Page, type Plan, PolicyError } from "../../src/core/types.ts";
+import { JevPolicy } from "../../src/policies/jev.ts";
+import type { FieldMatch, LabelView } from "../../src/scans/drilldown.ts";
+import { cli, tmpPath } from "../helpers.ts";
+import { isolate, ScriptedJev } from "../jev.ts";
 
 const MEANS: Record<string, string> = { price: "価格", Total: "合計金額", stock: "在庫" };
 

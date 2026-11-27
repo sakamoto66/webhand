@@ -7,12 +7,12 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { runAgent } from "../src/agent/index.ts";
-import { REPEATED_CLICK } from "../src/agent/outcomes.ts";
-import { Browser } from "../src/browser/index.ts";
-import { Recorder } from "../src/core/metrics.ts";
-import { type Action, Decision, type Page, type Policy } from "../src/core/types.ts";
-import { readEvents, tmpPath } from "./helpers.ts";
+import { runAgent } from "../../src/agent/index.ts";
+import { REPEATED_CLICK } from "../../src/agent/outcomes.ts";
+import { Browser } from "../../src/browser/index.ts";
+import { Recorder } from "../../src/core/metrics.ts";
+import { type Action, Decision, type Page, type Policy } from "../../src/core/types.ts";
+import { readEvents, tmpPath } from "../helpers.ts";
 
 let server: Server | undefined;
 let browser: Browser | undefined;

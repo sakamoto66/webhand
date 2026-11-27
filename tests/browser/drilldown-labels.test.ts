@@ -4,9 +4,9 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { OK } from "../src/commands/context.ts";
-import { cli, tmpPath } from "./helpers.ts";
-import { isolate } from "./jev.ts";
+import { OK } from "../../src/commands/context.ts";
+import { cli, tmpPath } from "../helpers.ts";
+import { isolate } from "../jev.ts";
 
 describe("real Chrome CLI: drilldown option labels", () => {
   let cleanup: () => Promise<void>;

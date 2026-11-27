@@ -3,14 +3,14 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "vitest";
-import { connectLimit } from "../src/browser/connect.ts";
-import { Browser } from "../src/browser/index.ts";
-import { newTabLimit } from "../src/browser/tabs.ts";
-import { main } from "../src/cli.ts";
-import { OK } from "../src/commands/context.ts";
-import * as session from "../src/storage/session.ts";
-import { cli, readEvents } from "./helpers.ts";
-import { isolate, ScriptedJev } from "./jev.ts";
+import { connectLimit } from "../../src/browser/connect.ts";
+import { Browser } from "../../src/browser/index.ts";
+import { newTabLimit } from "../../src/browser/tabs.ts";
+import { main } from "../../src/cli.ts";
+import { OK } from "../../src/commands/context.ts";
+import * as session from "../../src/storage/session.ts";
+import { cli, readEvents } from "../helpers.ts";
+import { isolate, ScriptedJev } from "../jev.ts";
 
 /**
  * For a connection that a stuck tab is to time out: it ends the same way however short, so it is short. Every other

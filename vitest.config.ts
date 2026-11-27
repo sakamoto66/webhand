@@ -6,16 +6,37 @@ const maxWorkers = Math.max(1, Math.min(process.env.CI ? 3 : 6, availableParalle
 
 export default defineConfig({
   test: {
-    include: ["tests/**/*.test.ts"],
     setupFiles: ["tests/setup.ts"],
     pool: "forks",
     fileParallelism: true,
     maxWorkers,
     // Fixtures settle fast; the tests of settling itself set the real 150 ms back. A browser may start slowly when
     // the machine runs several suites (the default is 15 s).
-    env: { WEBHAND_SETTLE_QUIET_MS: "40", WEBHAND_STARTUP_MS: "45000" },
+    env: {
+      WEBHAND_SETTLE_QUIET_MS: "40",
+      WEBHAND_STARTUP_MS: "45000",
+      // Prevent parent shell API tokens from leaking into tests; tests that need a fake key stub it explicitly.
+      TYPESAFE_API_KEY: "",
+      CLOUDFLARE_API_TOKEN: "",
+    },
     testTimeout: 60_000,
     hookTimeout: 60_000,
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "unit",
+          include: ["tests/*.test.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "browser",
+          include: ["tests/browser/**/*.test.ts"],
+        },
+      },
+    ],
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],

@@ -30,9 +30,11 @@
 
 ## チェック
 
-`npm run lint`、`npm run typecheck`、`npm test`（Node 24）
+`npm run lint`、`npm run typecheck`、`npm run test:unit` / `npm test`（Node 24）
 
-- `npm run check`（lint・typecheck・knip）と `npm test` は pre-commit（husky）と GitHub Actions で必ず走る。`--no-verify` で回避しない。
-- カバレッジは `npm run test:coverage`（`coverage/` に出力）。合格ラインは lines・statements・functions・branches とも 70%（`vitest.config.ts`）で、下回ると CI が失敗する。CI ではテスト結果とカバレッジ表をジョブサマリー（`GITHUB_STEP_SUMMARY`）に書く。
+- `npm run check`（lint・typecheck・knip）と `npm run test:unit`（`tests/*.test.ts` の非ブラウザ高速テスト）は pre-commit（husky）で必ず走る。`--no-verify` で回避しない。
+- GitHub Actions（`check.yml`）とリリース（`release.yml`）では、`unit`（`tests/*.test.ts`）と `browser`（`tests/browser/**/*.test.ts`、実ブラウザ起動）の両プロジェクトを必須で実行する（`npm test` は両方実行、`npm run test:browser` はブラウザテストのみ実行）。
+- カバレッジは `npm run test:coverage`（`coverage/` に出力、unit と browser の合算）。合格ラインは lines・statements・functions・branches とも 70%（`vitest.config.ts`）で、下回ると CI が失敗する。CI ではテスト結果とカバレッジ表をジョブサマリー（`GITHUB_STEP_SUMMARY`）に書く。
+- テストからの Jev 誤呼出は構造的に遮断する（`vitest.config.ts` が `TYPESAFE_API_KEY` と `CLOUDFLARE_API_TOKEN` を空文字に固定し、`JevPolicy` は `VITEST` 下で `fetch` スタブなしの生成を拒否し、`tests/setup.ts` がモジュール読み込み時および各テスト前後で `deps.policy` を例外送出関数に差し替える）。
 
 - CLI の出力と Jev への state・質問は `tests/golden/` の基準出力と文字単位で一致させる。変えるときは実験の変数として扱い、`npm run test:golden:update` で golden を更新して理由を残す。

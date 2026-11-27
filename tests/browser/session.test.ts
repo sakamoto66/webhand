@@ -10,11 +10,11 @@ import {
   listProfiles,
   probes,
   profileDir,
-} from "../src/engines/chrome.ts";
-import { shellProbe } from "../src/engines/headless-shell.ts";
-import { chooseEngine, ENGINE_CHOICES, hostName } from "../src/engines/index.ts";
-import * as session from "../src/storage/session.ts";
-import { tmpPath } from "./helpers.ts";
+} from "../../src/engines/chrome.ts";
+import { shellProbe } from "../../src/engines/headless-shell.ts";
+import { chooseEngine, ENGINE_CHOICES, hostName } from "../../src/engines/index.ts";
+import * as session from "../../src/storage/session.ts";
+import { tmpPath } from "../helpers.ts";
 
 test("session spec", () => {
   expect(session.parseSession("new")).toBeNull();
@@ -77,7 +77,7 @@ test("saved profiles live under home", () => {
 });
 
 test("an attached browser disconnects without closing Chrome or its page", async () => {
-  const { Browser } = await import("../src/browser/index.ts");
+  const { Browser } = await import("../../src/browser/index.ts");
   const chrome = await session.startChrome();
   try {
     const first = await Browser.open("data:text/html,<title>kept</title>", { port: chrome.port });

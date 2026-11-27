@@ -4,11 +4,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { OK } from "../src/commands/context.ts";
-import * as workspace from "../src/core/workspace.ts";
-import { type Extraction, format } from "../src/extract/index.ts";
-import { cli, cliExit, ROOT, tmpPath } from "./helpers.ts";
-import { isolate } from "./jev.ts";
+import { OK } from "../../src/commands/context.ts";
+import * as workspace from "../../src/core/workspace.ts";
+import { type Extraction, format } from "../../src/extract/index.ts";
+import { cli, cliExit, ROOT, tmpPath } from "../helpers.ts";
+import { isolate } from "../jev.ts";
 
 let cleanup: () => Promise<void>;
 
