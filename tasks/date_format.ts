@@ -1,9 +1,9 @@
 /**
- * Schedule a delivery on a page whose date field reads day/month/year without saying so.
+ * Schedule a delivery on a page whose date field reads day/month/year and says so only in its placeholder.
  *
  * Numbers with slashes are read as DD/MM/YYYY; other shapes are rejected with Invalid date. The goal gives the date
- * the US way (March 4, 2026), so the natural entry 03/04/2026 is accepted and saved as 3 April; the confirmation does
- * not echo the date. For the learning A/B: a fact of the service (the field reads day first) against none. No network.
+ * the US way (March 4, 2026), so the entry 03/04/2026 is accepted and saved as 3 April; the confirmation does not
+ * echo the date. Runs before the placeholder was added (the silent field) are not comparable. No network.
  */
 
 import { join } from "node:path";
