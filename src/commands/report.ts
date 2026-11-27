@@ -81,7 +81,10 @@ function diagnoseOutcome(state: session.State, outcome: string): string {
 }
 
 /** Why the run came back, from the log of this attempt only. No page text. */
-function diagnose(state: session.State, outcome: string): string {
+function diagnose(state: session.State, outcome: string, detail: string | null): string {
+  if (detail === agent.REPEATED_CLICK) {
+    return "the earlier press sent a request and the page shows no result: check whether it took effect before pressing it again";
+  }
   const pageKind = (state.page?.status as { kind?: string } | undefined)?.kind;
   if (pageKind && pageKind in PAGE_STATUS_SIGNS && (pageKind === "sign_in" || outcome === agent.GOAL_REPORTED)) {
     return `${diagnoseOutcome(state, outcome)}. The page has ${PAGE_STATUS_SIGNS[pageKind]}; check whether it blocks the goal`;
@@ -115,7 +118,7 @@ export function report(state: session.State, result: agent.AgentResult): number 
       : render(state.page, { offscreenElements: false, maxOptions: REPORT_MAX_OPTIONS });
   print(`${recentActions(state)}\n${pageView}`);
   if (state.plan.flow === "v2" && ANSWERABLE.includes(outcome)) {
-    print(`WHY: ${diagnose(state, outcome)}`);
+    print(`WHY: ${diagnose(state, outcome, result.detail)}`);
     print(
       "NEXT: answer --note '...' [--value 'LABEL=VALUE'] [--url URL] continues this attempt; replan changes the plan; " +
         "if it cannot be done, ask the person with AskUserQuestion; finish",

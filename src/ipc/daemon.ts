@@ -55,6 +55,7 @@ const HANDLERS: Record<Method, RpcHandler> = {
   listEnd: (b) => b.listEnd(),
   check: (b) => b.check(),
   unseen: (b) => b.unseen(),
+  sentRequest: (b) => b.sentRequest(),
   ignoredWindows: (b) => b.ignoredWindows(),
   screenshot: async (b) => (await b.screenshot()).toString("base64"),
   evaluate: (b, [expression, options]) => b.evaluate(expression, options),

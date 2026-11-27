@@ -6,7 +6,9 @@ import type { Page } from "../core/types.ts";
 // Why the loop handed control back to Claude.
 export const GOAL_REPORTED = "GOAL_REPORTED"; // Jev chose DONE. Claude checks the page; finish verifies.
 export const BLOCKED = "BLOCKED";
-export const STUCK = "STUCK"; // Three actions in a row did not change the page.
+export const STUCK = "STUCK"; // Three actions in a row did not change the page, or REPEATED_CLICK.
+/** The detail of a STUCK that stopped Jev from pressing again a control whose press sent a request and changed nothing. */
+export const REPEATED_CLICK = "Jev chose again a click that sent a request and did not change the page; it did not run";
 export const ATTEMPT_BUDGET = "ATTEMPT_BUDGET";
 export const NEEDS_HUMAN = "NEEDS_HUMAN"; // A person acts in the window: sign-in, codes, CAPTCHA, [person] steps.
 export const NEEDS_VALUE = "NEEDS_VALUE"; // A field needs text and none of Claude's values fits.
@@ -45,6 +47,8 @@ export interface Actor {
   unseen?(): Promise<Record<string, number>>;
   /** New windows the page asked for since the last call. A browser that cannot open one lists them, so the log shows it. */
   ignoredWindows?(): Promise<string[]>;
+  /** Whether the last act sent a request that is not a read, as a form or a save does. */
+  sentRequest?(): Promise<boolean>;
   /** Files the last act downloaded, once. Only a local Chrome with a download directory has any. */
   takeDownloads?(): { name: string; bytes: number }[];
 }

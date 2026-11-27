@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { type Actor, Budget, runAgent } from "../src/agent/index.ts";
+import { REPEATED_CLICK } from "../src/agent/outcomes.ts";
 import { Recorder } from "../src/core/metrics.ts";
 import {
   Decision,
@@ -41,6 +42,10 @@ class FakeBrowser implements Actor {
 
   async fresh(): Promise<boolean> {
     return true;
+  }
+
+  async sentRequest(): Promise<boolean> {
+    return false;
   }
 
   async act(action: Page, _page: Page, text: string | null = null): Promise<void> {
@@ -199,6 +204,83 @@ test("three unchanged pages are stuck", async () => {
   }
   const result = await run(new Static(), Array(3).fill(new Decision("CLICK", CLICK)));
   expect(result.outcome).toBe("STUCK");
+});
+
+test("a click that sent a request and changed nothing is not pressed again, even after a wait", async () => {
+  class Static extends FakeBrowser {
+    override async sentRequest() {
+      return true;
+    }
+    override async observe() {
+      return page("same");
+    }
+  }
+  const browser = new Static();
+  const wait = new Decision("WAIT", { id: "wait", kind: "wait", label: "Wait" });
+  const result = await run(browser, [new Decision("CLICK", CLICK), wait, new Decision("CLICK", CLICK)]);
+  expect(result.outcome).toBe("STUCK");
+  expect(result.detail).toBe(REPEATED_CLICK);
+  expect(browser.acts.map(([id]) => id)).toEqual([CLICK.id, "wait"]);
+  expect(readEvents(recorder.path).filter((e) => e.type === "repeat_refused")).toHaveLength(1);
+  // The next run starts afresh: Claude has looked and may have asked for the press.
+  const again = await run(browser, [new Decision("CLICK", CLICK), new Decision("DONE")]);
+  expect(again.outcome).toBe("GOAL_REPORTED");
+});
+
+test("a click that sent nothing may be pressed again on an unchanged page", async () => {
+  class Counter extends FakeBrowser {
+    override async observe() {
+      return page("same");
+    }
+  }
+  const browser = new Counter();
+  const result = await run(browser, [new Decision("CLICK", CLICK), new Decision("CLICK", CLICK), new Decision("DONE")]);
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect(browser.acts).toHaveLength(2);
+});
+
+test("other changes of the page between the presses do not free the control, and other controls stay free", async () => {
+  class Menu extends FakeBrowser {
+    override async sentRequest() {
+      return this.acts.at(-1)?.[0] === CLICK.id;
+    }
+    // The first press changes nothing; opening the menu changes the page.
+    override async observe() {
+      return page(String(this.acts.filter(([id]) => id !== CLICK.id).length));
+    }
+  }
+  const browser = new Menu();
+  const menu = { ...CLICK, id: "e9", node: 9, label: "Menu" };
+  const result = await run(browser, [
+    new Decision("CLICK", CLICK),
+    new Decision("CLICK", menu),
+    new Decision("CLICK", menu),
+    new Decision("CLICK", CLICK),
+  ]);
+  expect(result.detail).toBe(REPEATED_CLICK);
+  expect(browser.acts.map(([id]) => id)).toEqual([CLICK.id, "e9", "e9"]);
+});
+
+test("a control may be pressed again once the URL has changed", async () => {
+  class Moves extends FakeBrowser {
+    override async sentRequest() {
+      return true;
+    }
+    override async observe() {
+      const moved = this.acts.length >= 2;
+      return { ...page(moved ? "after" : "before"), url: moved ? "next" : "u" };
+    }
+  }
+  const browser = new Moves();
+  const other = { ...CLICK, id: "e9", node: 9, label: "Other" };
+  const result = await run(browser, [
+    new Decision("CLICK", CLICK),
+    new Decision("CLICK", other),
+    new Decision("CLICK", CLICK),
+    new Decision("DONE"),
+  ]);
+  expect(result.outcome).toBe("GOAL_REPORTED");
+  expect(browser.acts).toHaveLength(3);
 });
 
 test("a value chosen by Jev is typed and a missing one types nothing", async () => {
