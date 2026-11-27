@@ -35,6 +35,10 @@ async function commandAnswer(args: Args): Promise<number> {
       print(`REJECTED: --url is outside allowed_domains (${state.allowed_domains.join(", ")})`);
       return FAILED;
     }
+    if (state.explore && !hostAllowed(resolved.url, state.explore.allow)) {
+      print(`REJECTED: --url is outside --allow-domain (${state.explore.allow.join(", ")})`);
+      return FAILED;
+    }
     await openPage(state, resolved.url, true);
   }
   const values = parseValues(args.value);

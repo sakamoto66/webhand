@@ -163,7 +163,7 @@ Limits:
 
 ## Allowed domains
 
-`allowed_domains` in `service.toml` limits where a run's pages may go. A host covers its subdomains; a port in the rule must match. On every engine that accepts it, `start --url`, `replan --url` and `answer --url` outside the list are refused. Only page (document) requests are checked: scripts, images and fetch/XHR requests to other hosts go through. `--explore` has its own rule (`--allow-domain`) instead.
+`allowed_domains` in `service.toml` limits where a run's pages may go. A host covers its subdomains; a port in the rule must match. On every engine that accepts it, `start --url`, `replan --url` and `answer --url` outside the list are refused. Only page (document) requests are checked: scripts, images and fetch/XHR requests to other hosts go through. `--explore` has its own rule (`--allow-domain`, [below](#the---explore-boundary)) instead.
 
 | Engine | What is blocked during a run |
 |---|---|
@@ -175,6 +175,10 @@ Limits:
 A redirect is checked like any other page request, so every host a sign-in passes through (an SSO or identity provider) must be in the list. A refused page shows the browser's error page; a refused `start` or `replan --url` redirect ends the command with `net::ERR_BLOCKED_BY_CLIENT`.
 
 It is not a network boundary. Where requests must not leave, use a firewall or a proxy.
+
+### The `--explore` boundary
+
+`start --explore` refuses every request to a host outside `--allow-domain`, scripts, images and fetch/XHR included, redirect hops too, from the first page of `start`, and notes it as `out_of_scope`. `start --url`, `replan --url` and `answer --url` outside the list are refused. List every host a sign-in passes through. **Not blocked**: WebSocket connections; redirects followed by a service worker (and likely a shared worker) that an earlier command started; and anything the page requests between commands. It is not a network boundary either.
 
 ## Commands
 

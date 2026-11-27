@@ -276,8 +276,8 @@ async function openStartPage(
   const recorder = new Recorder(state.log);
   let browser: Driver | null = null;
   let skipped: string[] = [];
-  // allowed_domains apply from the first page: the browser takes the hosts before anything is opened.
-  const opening = { ...chromeState, allowed_domains: state.allowed_domains };
+  // allowed_domains and --allow-domain apply from the first page: the browser takes them before anything is opened.
+  const opening = { ...chromeState, allowed_domains: state.allowed_domains, explore: state.explore };
   try {
     if (login) {
       browser = await attach(opening, null, browserView(state));

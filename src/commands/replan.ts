@@ -73,6 +73,9 @@ function replanUrl(args: Args, state: session.State): string | null {
   if (state.allowed_domains?.length && !hostAllowed(resolved.url, state.allowed_domains)) {
     throw new ReplanRejected(`--url is outside allowed_domains (${state.allowed_domains.join(", ")})`);
   }
+  if (state.explore && !hostAllowed(resolved.url, state.explore.allow)) {
+    throw new ReplanRejected(`--url is outside --allow-domain (${state.explore.allow.join(", ")})`);
+  }
   return resolved.url;
 }
 

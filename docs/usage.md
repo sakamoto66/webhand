@@ -93,7 +93,7 @@ How the safe batch workflow runs:
 ```
 
 - **Test environments only**: Never run on production or a site you do not have permission to test. `profile:NAME` is refused; only a test-account `--auth NAME` is permitted.
-- **Strict boundary**: Every request outside `--allow-domain` is aborted, and `--max-total-actions` caps the session.
+- **Host boundary**: Requests outside `--allow-domain`, redirects included, are aborted while a command runs, and `--max-total-actions` caps the session. List every sign-in host. WebSocket and a few other cases are [not blocked](reference.md#the---explore-boundary).
 - **Reproduced candidates**: `webhand findings` collects console errors, uncaught errors, 5xx responses, failed requests, and dead ends. The agent repeats each candidate in a fresh session and reports whether it reproduced.
 
 ---
