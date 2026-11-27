@@ -4,11 +4,12 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { deps, FAILED, OK } from "../src/commands/context.ts";
+import { attach } from "../src/commands/shared.ts";
+import { shellProbe } from "../src/engines/headless-shell.ts";
 import { engineFor } from "../src/engines/index.ts";
 import { which } from "../src/engines/process.ts";
-import { RemoteBrowser } from "../src/ipc/remote.ts";
 import * as runbook from "../src/storage/runbook/index.ts";
 import * as session from "../src/storage/session.ts";
 import { cli, cliExit } from "./helpers.ts";
@@ -239,7 +240,12 @@ test.each(UNENFORCED)("%s does not attach to a saved session that has allowed_do
   await expect(engineFor(engine).attach(state, null)).rejects.toThrow(`${label} cannot enforce allowed_domains`);
 });
 
-const NO_LIGHTPANDA = which("lightpanda") === null;
+/** The engines that accept allowed_domains, and whether this machine lacks them. */
+const GUARDING = [
+  { engine: "chrome", missing: false, betweenCommands: false },
+  { engine: "headless-shell", missing: shellProbe.binary() === null, betweenCommands: false },
+  { engine: "lightpanda", missing: which("lightpanda") === null, betweenCommands: true },
+];
 
 /** An allowed site and a site outside it, which counts every request that reaches it as a page. */
 async function twoSites() {
@@ -272,15 +278,16 @@ async function twoSites() {
     else {
       res.end(
         `<title>Home</title><h1>Allowed Home</h1><p><a href="${out}/link">Leave site</a></p>` +
-          `<p><a href="/redir">Bounce</a></p><p><a href="${out}/blank" target="_blank">New window</a></p>`,
+          `<p><a href="/redir">Bounce</a></p><p><a href="${out}/blank" target="_blank">New window</a></p>` +
+          `<p><a href="/redir" target="_blank">Popup redirect</a></p>`,
       );
     }
   });
   return { home: `http://127.0.0.1:${port}`, host: `127.0.0.1:${port}`, out, reached };
 }
 
-const startBounded = (url: string, ...extra: string[]) =>
-  cli("start", "--engine", "lightpanda", "--goal", "Stay", "--url", url, "--step", "Wait", ...extra);
+const startBounded = (engine: string, url: string, ...extra: string[]) =>
+  cli("start", "--engine", engine, "--chrome", "linux", "--goal", "Stay", "--url", url, "--step", "Wait", ...extra);
 
 /** Presses the link with this label, as the CLI observed it. */
 async function press(label: string): Promise<void> {
@@ -292,38 +299,49 @@ async function press(label: string): Promise<void> {
 
 const pause = () => new Promise((resolve) => setTimeout(resolve, 400));
 
-test.skipIf(NO_LIGHTPANDA)("lightpanda: clicks and redirects do not reach a host outside", async () => {
-  const site = await twoSites();
-  boundedService(site.host);
-  const started = await startBounded(`${site.home}/`, "--service", "bounded", "--max-attempts", "9");
-  expect(started.code).toBe(OK);
-
-  for (const label of ["Leave site", "Bounce", "New window"]) {
-    await press(label);
-    await pause();
-    expect(site.reached, label).toEqual([]);
-    await cli("replan", "--reason", "go home", "--restart");
-  }
-  await cli("finish", "--status", "abandoned", "--reason", "test");
-});
-
-test.skipIf(NO_LIGHTPANDA)("lightpanda: a start URL that redirects outside never reaches it", async () => {
-  const site = await twoSites();
-  boundedService(site.host);
-  await expect(startBounded(`${site.home}/redir`, "--service", "bounded")).rejects.toThrow("ERR_BLOCKED_BY_CLIENT");
-  expect(site.reached).toEqual([]);
-  expect(session.load()).toBeNull();
-});
-
-test.skipIf(NO_LIGHTPANDA)(
-  "lightpanda: replan --service guards the session, between commands too, and leaves the allowed site as it was",
-  async () => {
+describe.each(GUARDING)("$engine", ({ engine, missing, betweenCommands }) => {
+  test.skipIf(missing)("clicks and redirects do not reach a host outside", async () => {
     const site = await twoSites();
     boundedService(site.host);
-    expect((await startBounded(`${site.home}/`)).code).toBe(OK);
+    const started = await startBounded(engine, `${site.home}/`, "--service", "bounded", "--max-attempts", "9");
+    expect(started.code).toBe(OK);
+
+    for (const label of ["Leave site", "Bounce", "New window", "Popup redirect"]) {
+      await press(label);
+      await pause();
+      expect(site.reached, label).toEqual([]);
+      await cli("replan", "--reason", "go home", "--restart");
+    }
+    await cli("finish", "--status", "abandoned", "--reason", "test");
+  });
+
+  test.skipIf(missing)("a start URL that redirects outside never reaches it", async () => {
+    const site = await twoSites();
+    boundedService(site.host);
+    await expect(startBounded(engine, `${site.home}/redir`, "--service", "bounded")).rejects.toThrow(
+      "ERR_BLOCKED_BY_CLIENT",
+    );
+    expect(site.reached).toEqual([]);
+    expect(session.load()).toBeNull();
+  });
+
+  test.skipIf(missing)("a first page that moves itself outside does not get there", async () => {
+    const site = await twoSites();
+    boundedService(site.host);
+    expect((await startBounded(engine, `${site.home}/meta`, "--service", "bounded")).code).toBe(OK);
+    await pause();
+    expect(site.reached).toEqual([]);
+    await cli("finish", "--status", "abandoned", "--reason", "test");
+  });
+
+  test.skipIf(missing)("replan --service guards the session and leaves the allowed site as it was", async () => {
+    const site = await twoSites();
+    boundedService(site.host);
+    expect((await startBounded(engine, `${site.home}/`)).code).toBe(OK);
     expect((await cli("replan", "--reason", "bound it", "--service", "bounded")).code).toBe(OK);
 
-    // The page's own navigations, started by one connection and finished after it ended.
+    // The page's own navigations. Lightpanda's daemon keeps watching after a command ends; Chrome is watched
+    // only while one is connected.
     const triggers = [
       ...[301, 302, 303, 307, 308].map((status) => `location.href = '/status/${status}'`),
       "location.href = '/chain'",
@@ -333,30 +351,33 @@ test.skipIf(NO_LIGHTPANDA)(
       `void setTimeout(() => { location.href = '${site.out}/timer' }, 100)`,
       `void window.open('${site.out}/open')`,
       "void window.open('/redir')",
+      "void window.open('/redir', '_blank', 'noopener')",
       `const g = document.createElement('form'); g.action = '${site.out}/get'; document.body.append(g); g.submit()`,
       `const p = document.createElement('form'); p.method = 'post'; p.action = '/redir'; document.body.append(p); p.submit()`,
       `const i = document.createElement('iframe'); i.src = '${site.out}/iframe'; document.body.append(i)`,
     ];
-    const socket = session.load()?.socket as string;
+    const connect = () => attach(session.load() as session.State, null);
     for (const trigger of triggers) {
-      const first = await RemoteBrowser.connect(socket);
-      await first.goto(`${site.home}/`);
+      const first = await connect();
+      await first.goto?.(`${site.home}/`);
       await first.evaluate(`{ ${trigger} }`);
-      await first.close();
+      if (betweenCommands) await first.close();
       await pause();
+      if (!betweenCommands) await first.close();
       expect(site.reached, trigger).toEqual([]);
     }
 
     // As in Chrome: a redirect inside the list is followed, and what is not a page navigation is not held back.
-    const browser = await RemoteBrowser.connect(socket);
-    await browser.goto(`${site.home}/inside`);
+    const browser = await connect();
+    await browser.goto?.(`${site.home}/inside`);
     expect((await browser.observe()).title).toBe("Landed");
-    await expect(browser.goto(`${site.home}/redir`)).rejects.toThrow("ERR_BLOCKED_BY_CLIENT");
+    await expect(browser.goto?.(`${site.home}/redir`)).rejects.toThrow("ERR_BLOCKED_BY_CLIENT");
     expect(site.reached).toEqual([]);
-    await browser.goto(`${site.home}/script`);
+    await pause(); // Chrome is still showing its error page for the refused load.
+    await browser.goto?.(`${site.home}/script`);
     await pause();
     expect(site.reached).toEqual(["/lib.js"]);
     await browser.close();
     await cli("finish", "--status", "abandoned", "--reason", "test");
-  },
-);
+  });
+});

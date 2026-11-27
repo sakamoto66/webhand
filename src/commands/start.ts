@@ -276,8 +276,8 @@ async function openStartPage(
   const recorder = new Recorder(state.log);
   let browser: Driver | null = null;
   let skipped: string[] = [];
-  // A served engine is guarded from the first page: its daemon takes the hosts before anything is opened.
-  const opening = engine.serve ? { ...chromeState, allowed_domains: state.allowed_domains } : chromeState;
+  // allowed_domains apply from the first page: the browser takes the hosts before anything is opened.
+  const opening = { ...chromeState, allowed_domains: state.allowed_domains };
   try {
     if (login) {
       browser = await attach(opening, null, browserView(state));

@@ -168,9 +168,11 @@ Limits:
 | Engine | What is blocked during a run |
 |---|---|
 | `lightpanda` | Every page request, redirect hops and new windows included, from the first page until `finish`, between commands too. Frames: the tested version (1.1.0-nightly) did not load them |
-| `chrome`, `headless-shell` | Navigations by the page (links, forms, scripts, meta refresh, frames, a new tab's first page), only while a webhand command is running. **Not blocked**: server redirects (the request reaches the redirect target), anything on the first page load of `start` (redirects, scripts), and navigations between commands |
+| `chrome`, `headless-shell` | Every page request in every tab and frame, redirect hops included, from the first page of `start`, while a webhand command is running. **Not blocked**: navigations the page makes between commands (a timer, a delayed refresh) |
 | `obscura` | Refused: `start` and `replan --service` reject a service with `allowed_domains`. Redirect hops cannot be stopped there |
 | `browser-run`, `kitesurf` | Refused in the same way: blocking has not been verified |
+
+A redirect is checked like any other page request, so every host a sign-in passes through (an SSO or identity provider) must be in the list. A refused page shows the browser's error page; a refused `start` or `replan --url` redirect ends the command with `net::ERR_BLOCKED_BY_CLIENT`.
 
 It is not a network boundary. Where requests must not leave, use a firewall or a proxy.
 

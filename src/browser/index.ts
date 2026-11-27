@@ -10,7 +10,7 @@ import {
 } from "playwright-core";
 import { sleep } from "../core/format.ts";
 import { type Action, type Page, StalePage } from "../core/types.ts";
-import { type Finding, hostAllowed } from "../explore.ts";
+import type { Finding } from "../explore.ts";
 import type { StorageState } from "../storage/auth.ts";
 import { dispatchAction } from "./actions/index.ts";
 import { guardDocuments } from "./document-guard.ts";
@@ -105,11 +105,7 @@ export class Browser {
         await instance.tabs.findPlaceholder(instance.context);
         if (!options.explore && options.allowedDomains?.length) {
           const allow = options.allowedDomains;
-          await instance.context.route("**/*", async (route) => {
-            const request = route.request();
-            if (!request.isNavigationRequest() || hostAllowed(request.url(), allow)) return route.continue();
-            return route.abort("blockedbyclient");
-          });
+          await guardDocuments(await instance.browser.newBrowserCDPSession(), () => allow); // Before any page opens.
         }
         if (url) {
           // A saved profile may restore old tabs. The run owns exactly one fresh tab.
@@ -140,7 +136,7 @@ export class Browser {
     }
   }
 
-  /** allowed_domains for an engine that needs CDP interception (see document-guard.ts). A later call replaces the hosts. */
+  /** allowed_domains on an engine without a browser-wide CDP session (Lightpanda): the page is guarded. A later call replaces the hosts. */
   async guardDocuments(allow: string[]): Promise<void> {
     const guarding = this.guarded !== null;
     this.guarded = allow;
