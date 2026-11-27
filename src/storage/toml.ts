@@ -1,6 +1,6 @@
 /**
  * Shared TOML loading, scoped lookup (project wins over user), SHA-256 digest, and {param} placeholder helpers
- * used by both runbooks (.webhand/runbooks) and saved checks (.webhand/checks).
+ * used by service information, runbooks, and saved checks, all under .webhand/services/<service>/.
  */
 
 import { createHash } from "node:crypto";
@@ -9,6 +9,15 @@ import { dirname, join } from "node:path";
 import { parse } from "smol-toml";
 import { isFile } from "../core/fs.ts";
 import { roots, type Scope } from "../core/workspace.ts";
+
+/**
+ * One folder per service, under each scope's .webhand: services/<service>/service.toml, with its procedures in
+ * runbooks/<name>.toml and its saved checks in checks/<name>.toml.
+ */
+export const SERVICES_DIR = "services";
+export const RUNBOOKS_DIR = "runbooks";
+export const CHECKS_DIR = "checks";
+export const SERVICE_FILE = "service.toml";
 
 export const WORD = "[\\p{L}\\p{N}_-]+";
 export const PARAM = /\{([A-Za-z_][\p{L}\p{N}_]*)\}/gu;
@@ -24,7 +33,7 @@ export interface ScopedFile {
   base: string;
 }
 
-/** Scope folders for a subdirectory under .webhand (e.g. "runbooks" or "checks"), project first. */
+/** Scope folders for a subdirectory under .webhand (e.g. "services"), project first. */
 export function scopedFolders(subdir: string): { scope: Scope; dir: string }[] {
   return roots().map(({ scope, dir }) => ({ scope, dir: join(dir, subdir) }));
 }

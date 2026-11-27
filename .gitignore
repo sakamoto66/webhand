@@ -6,8 +6,8 @@
 # 実行時の生成物（ページ本文やプロファイルを含む）
 runs/
 state/
-# WEBHAND_HOME をこのリポジトリにしたときのユーザー単位の手順書（プロジェクト単位は .webhand/runbooks）
-/runbooks/
+# WEBHAND_HOME をこのリポジトリにしたときのユーザー単位の手順書（プロジェクト単位は .webhand/services）
+/services/
 
 # Node
 node_modules/

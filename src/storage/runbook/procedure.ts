@@ -6,11 +6,22 @@ import { RunbookError } from "../../core/errors.ts";
 import { quote, show } from "../../core/format.ts";
 import { isFile } from "../../core/fs.ts";
 import type { Scope } from "../../core/workspace.ts";
-import { findScopedFile, getField, isBlank, PARAM, readTomlFile, STATUSES, type TomlDoc, WORD } from "../toml.ts";
-import { RUNBOOK_SUBDIR, root, SERVICE_FILE } from "./service.ts";
+import {
+  findScopedFile,
+  getField,
+  isBlank,
+  PARAM,
+  RUNBOOKS_DIR,
+  readTomlFile,
+  SERVICES_DIR,
+  STATUSES,
+  type TomlDoc,
+  WORD,
+} from "../toml.ts";
+import { root } from "./service.ts";
 import { patterns } from "./view.ts";
 
-const NAME = new RegExp(`^${WORD}(/${WORD})?$`, "u");
+const NAME = new RegExp(`^${WORD}/${WORD}$`, "u");
 const ACTORS = new Set(["jev", "human"]);
 
 export interface Runbook {
@@ -26,17 +37,16 @@ export interface Runbook {
   skip: string[];
 }
 
-/** Checks a runbook name such as hotel/filter. */
-function checkName(name: string): string {
-  if (!NAME.test(name) || name.split("/").at(-1) === SERVICE_FILE) {
-    throw new RunbookError(`Invalid runbook name: ${quote(name)}`);
-  }
-  return name;
+/** The file of a runbook such as hotel/filter, under a services folder: hotel/runbooks/filter.toml. */
+function relative(name: string): string {
+  if (!NAME.test(name)) throw new RunbookError(`Invalid runbook name: ${quote(name)} (expected service/name)`);
+  const [service, stem] = name.split("/");
+  return join(service, RUNBOOKS_DIR, `${stem}.toml`);
 }
 
 /** Where a runbook of a scope is written. */
 export function path(name: string, scope: Scope = "project"): string {
-  return join(root(scope), `${checkName(name)}.toml`);
+  return join(root(scope), relative(name));
 }
 
 export function parseValues(pairs: string[]): Record<string, string> {
@@ -64,7 +74,7 @@ export function resolveUrl(url: string, base = process.cwd()): string {
 
 /** Validates a runbook and fills in its parameters. Every problem is an error, not a guess. */
 export function load(name: string, values: Record<string, string> = {}): Runbook {
-  const found = findScopedFile(RUNBOOK_SUBDIR, `${checkName(name)}.toml`);
+  const found = findScopedFile(SERVICES_DIR, relative(name));
   if (!found) throw new RunbookError(`Unknown runbook: ${name}`);
   return loadFile(found.file, name, found.scope, values, found.base);
 }

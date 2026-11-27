@@ -10,8 +10,8 @@
 
 | 場所 | パス | 内容 |
 | --- | --- | --- |
-| ユーザー | `~/.webhand/`（`WEBHAND_HOME` で変更可） | `runbooks/`（個人用のサービス情報・手順書）、`checks/`（個人用の保存確認）、`memory/`（flow v2 のサイト記憶。旧 `knowledge/` は自動移行）、`runs/`（実行と実演の JSONL ログ・任意スクリーンショット）、`state/`（実行中セッション、保存プロファイル、`auth/` 保存ログイン、`batches/` バッチ状態） |
-| プロジェクト | 現在のディレクトリから上にたどって最初に見つかる `.webhand/`（ホームディレクトリで止まる） | `runbooks/`（プロジェクトのサービス情報と手順書。git で共有できる）、`checks/`（プロジェクトの保存確認） |
+| ユーザー | `~/.webhand/`（`WEBHAND_HOME` で変更可） | `services/<service>/`（個人用の `service.toml`、手順書 `runbooks/`、保存確認 `checks/`）、`memory/`（flow v2 のサイト記憶。旧 `knowledge/` は自動移行）、`runs/`（実行と実演の JSONL ログ・任意スクリーンショット）、`state/`（実行中セッション、保存プロファイル、`auth/` 保存ログイン、`batches/` バッチ状態） |
+| プロジェクト | 現在のディレクトリから上にたどって最初に見つかる `.webhand/`（ホームディレクトリで止まる） | `services/<service>/`（プロジェクトの `service.toml`、手順書 `runbooks/`、保存確認 `checks/`。git で共有できる） |
 
 - 手順書とサービス情報は、プロジェクト、ユーザーの順に探します。同じ名前ならプロジェクトのものを使います。`catalog` は両方を一覧し、それぞれの出所を `(project)` / `(user)` で示します。
 - `record` は既定でプロジェクトに書きます（`.webhand/` がなければ git のルート、なければ現在のディレクトリに作ります）。`--scope user` でユーザーに書きます。
@@ -19,7 +19,7 @@
 
 ```mermaid
 flowchart LR
-  AG["コーディングエージェント"] -->|"/webhand-teach"| RB["手順書<br>.webhand/runbooks/#lt;service#gt;/<br>または ~/.webhand/runbooks/#lt;service#gt;/"]
+  AG["コーディングエージェント"] -->|"/webhand-teach"| RB["手順書<br>.webhand/services/#lt;service#gt;/<br>または ~/.webhand/services/#lt;service#gt;/"]
   AG -->|"/webhand<br>計画・入力値・確認・見直し"| CLI["CLI webhand"]
   RB -.->|"catalog"| CLI
   CLI -->|"CDP"| CH["Chrome<br>新規 / 保存プロファイル<br>WSL では Windows 側も可"]
@@ -173,7 +173,7 @@ networkingMode=mirrored
 | `webhand act OP [TARGET]` | エージェント | Jev の代わりに操作を 1 つ実行する（`CLICK`, `TYPE_TEXT`, `SELECT`, `UPLOAD_FILE`, `SCROLL_DOWN`, `SCROLL_UP`, `SCROLL_TO`, `WAIT`, `TAB_n`） |
 | `webhand observe [--read KIND ...]` | エージェント | 操作せずに現在のページを表示する |
 | `webhand check --expect KIND:ARGS ...` | エージェント | 期待を今のページと決定的に照合する（読み取り専用、モデルなし）。`text:`・`no-text:`・`field:`・`checked:`・`count:`・`url:`・`title:`。`--read` はその呼び出しのみ全文を読む |
-| `webhand check --saved service/name:ID [--param K=V] [--read] [--production] [--allow-draft]` | エージェント | `.webhand/checks/<service>/<name>.toml` に固定した期待で照合し、ログに `check_run` を残す |
+| `webhand check --saved service/name:ID [--param K=V] [--read] [--production] [--allow-draft]` | エージェント | `.webhand/services/<service>/checks/<name>.toml` に固定した期待で照合し、ログに `check_run` を残す |
 | `webhand check-last service/name` | エージェント | 保存確認ごとの最新判定と digest を実行ログから表示する |
 | `webhand extract KIND [--within R] [--columns A,B] [--table N] [--rows raw\|data] [--expect-count N] [--format table\|json\|csv\|markdown] [--out PATH]` | エージェント | 決定的な読み取り専用 DOM 抽出（`table`, `list`, `link`, `fields`, `text`）。`--out` はカレントディレクトリ配下へ安全に保存する |
 | `webhand findings` | エージェント | `--explore` セッションで記録した異常候補を再現手順つきで表示する |
@@ -210,7 +210,7 @@ networkingMode=mirrored
 | --- | --- | --- |
 | `TYPESAFE_API_KEY` | *(実行時必須)* | Jev（TypeSafe API）のキー。環境変数のみから読み、`.env` 等からは読まない |
 | `TYPESAFE_MODEL` | `jev-latest` | TypeSafe API に送るモデル名 |
-| `WEBHAND_HOME` | `~/.webhand` | ユーザーデータの保存ルート（`runbooks/`, `checks/`, `memory/`, `runs/`, `state/`） |
+| `WEBHAND_HOME` | `~/.webhand` | ユーザーデータの保存ルート（`services/`, `memory/`, `runs/`, `state/`） |
 | `WEBHAND_RUNS_KEEP_DAYS` | `30` | `start` が、この日数より古い実行フォルダを1日1回まで削除する。`0` ですべて残す |
 | `WEBHAND_CHROME` | `auto` | `--chrome` の既定値（`auto`, `linux`, `windows`） |
 | `WEBHAND_ENGINE` | `auto` | `--engine` の既定値（`auto`, `chrome`, `headless-shell`, `lightpanda`, `obscura`, `browser-run`, `kitesurf`） |
@@ -244,9 +244,9 @@ v2 が記憶するのは、`~/.webhand/memory/<host>.json` に置く、ページ
 
 | ファイル | 内容 | 使われ方 |
 | --- | --- | --- |
-| `runbooks/<service>/service.toml` | サービスの説明、`base_url`、任意の `allowed_domains`、ログイン要否、ページと領域、Jev 向けの事実 | `catalog` で読み、`--service` で渡す。`allowed_domains`（ホスト名のみ。例: `["app.example.com"]`）を書くと、`start` / `replan --url` / `answer --url` および許可外ドメインへのナビゲーション・リダイレクト・新規タブ遷移を拒否する |
-| `checks/<service>/<name>.toml` | 保存した受け入れ確認（`status` は draft/approved、`env` は test/read-only、params、確認ごとの steps・`expect`・`manual`・`depends_on`）。実行では書き換えない。[design-regression.md](design/design-regression.md) | `webhand check --saved` と `/webhand-regress` で使用 |
-| `runbooks/<service>/<name>.toml` | 手順書（`goal`, `start_url`, `status`, `params`, `steps`, `hints`, `done_when`, `focus`, `skip`） | エージェントの計画とバッチ実行（`webhand batch init`）の下敷き。手順と hints は Jev にも渡す |
+| `services/<service>/service.toml` | サービスの説明、`base_url`、任意の `allowed_domains`、ログイン要否、ページと領域、Jev 向けの事実 | `catalog` で読み、`--service` で渡す。`allowed_domains`（ホスト名のみ。例: `["app.example.com"]`）を書くと、`start` / `replan --url` / `answer --url` および許可外ドメインへのナビゲーション・リダイレクト・新規タブ遷移を拒否する |
+| `services/<service>/checks/<name>.toml` | 保存した受け入れ確認（`status` は draft/approved、`env` は test/read-only、params、確認ごとの steps・`expect`・`manual`・`depends_on`）。実行では書き換えない。[design-regression.md](design/design-regression.md) | `webhand check --saved` と `/webhand-regress` で使用 |
+| `services/<service>/runbooks/<name>.toml` | 手順書（`goal`, `start_url`, `status`, `params`, `steps`, `hints`, `done_when`, `focus`, `skip`） | エージェントの計画とバッチ実行（`webhand batch init`）の下敷き。手順と hints は Jev にも渡す |
 
 ### バッチ実行（`webhand batch`）
 

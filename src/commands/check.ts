@@ -100,7 +100,7 @@ export const checkCommand: CommandDef = {
         name: "saved",
         type: "string",
         metavar: "service/name:ID",
-        help: "Use the expectations of a saved check (.webhand/checks) instead of --expect; they cannot be edited here",
+        help: "Use the expectations of a saved check (.webhand/services/<service>/checks) instead of --expect; they cannot be edited here",
       },
       { name: "param", type: "string", multiple: true, metavar: "KEY=VALUE", help: "A saved check's parameter" },
       { name: "allow-draft", type: "boolean", help: "Trial a saved check no person has approved yet" },

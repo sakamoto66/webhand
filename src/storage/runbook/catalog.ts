@@ -5,8 +5,16 @@ import { join } from "node:path";
 import { RunbookError } from "../../core/errors.ts";
 import { isFile } from "../../core/fs.ts";
 import type { Scope } from "../../core/workspace.ts";
-import { findScopedFile, getField, readTomlFile, scopedFolders, type TomlDoc } from "../toml.ts";
-import { loadService, RUNBOOK_SUBDIR, SERVICE_FILE, type ServiceInfo } from "./service.ts";
+import {
+  findScopedFile,
+  getField,
+  RUNBOOKS_DIR,
+  readTomlFile,
+  SERVICES_DIR,
+  scopedFolders,
+  type TomlDoc,
+} from "../toml.ts";
+import { loadService, type ServiceInfo } from "./service.ts";
 
 interface Procedure {
   name: string;
@@ -33,24 +41,27 @@ function subfolders(dir: string): string[] {
     .map((entry) => entry.name);
 }
 
-/** All saved services and runbooks in both scopes, without filling parameters. The agent reads this to plan. */
+/**
+ * All saved services and runbooks in both scopes, without filling parameters. The agent reads this to plan. A folder
+ * holding only saved checks is not listed here: those are listed with the checks.
+ */
 export function catalog(): CatalogEntry[] {
-  const folders = scopedFolders(RUNBOOK_SUBDIR);
+  const folders = scopedFolders(SERVICES_DIR);
   const services = [...new Set(folders.flatMap(({ dir }) => subfolders(dir)))].sort();
-  return services.map((service) => {
+  const entries = services.map((service) => {
     const info = loadService(service);
     const names = new Set<string>();
     for (const { dir } of folders) {
-      const folder = join(dir, service);
+      const folder = join(dir, service, RUNBOOKS_DIR);
       if (!existsSync(folder)) continue;
       for (const file of readdirSync(folder)) {
-        if (file.endsWith(".toml") && file !== `${SERVICE_FILE}.toml` && isFile(join(folder, file))) {
+        if (file.endsWith(".toml") && isFile(join(folder, file))) {
           names.add(file.slice(0, -".toml".length));
         }
       }
     }
     const procedures = [...names].sort().map((stem): Procedure => {
-      const found = findScopedFile(RUNBOOK_SUBDIR, join(service, `${stem}.toml`));
+      const found = findScopedFile(SERVICES_DIR, join(service, RUNBOOKS_DIR, `${stem}.toml`));
       if (!found) throw new RunbookError(`${service}/${stem} disappeared while reading`);
       const { data } = readTomlFile(found.file, (msg) => new RunbookError(msg));
       return {
@@ -69,4 +80,5 @@ export function catalog(): CatalogEntry[] {
     });
     return { service, info, procedures };
   });
+  return entries.filter((entry) => entry.info !== null || entry.procedures.length > 0);
 }

@@ -8,16 +8,16 @@ Every starter runbook here begins with `status = "draft"` — review it, try it 
 
 | Example | What it demonstrates |
 | --- | --- |
-| [`hotel-planisphere/`](hotel-planisphere/) | Complete example for the public practice site [HOTEL PLANISPHERE](https://hotel-example-site.takeyaqa.dev/ja/): `service.toml` with `allowed_domains`, `reserve.toml` runbook, and `guests.sample.csv` for batch runs |
+| [`hotel-planisphere/`](hotel-planisphere/) | Complete example for the public practice site [HOTEL PLANISPHERE](https://hotel-example-site.takeyaqa.dev/ja/): `service.toml` with `allowed_domains`, `runbooks/reserve.toml`, and `guests.sample.csv` for batch runs |
 | [`internal-form/`](internal-form/) | Template for an authenticated internal web form: `allowed_domains`, `[person]` sign-in step, and parameterized form fields |
 
 ## How to use
 
-1. Copy an example folder into your project (`.webhand/runbooks/`) or user folder (`~/.webhand/runbooks/`):
+1. Copy an example folder into your project (`.webhand/services/`) or user folder (`~/.webhand/services/`):
 
    ```bash
-   mkdir -p .webhand/runbooks
-   cp -r examples/runbooks/hotel-planisphere .webhand/runbooks/
+   mkdir -p .webhand/services
+   cp -r examples/services/hotel-planisphere .webhand/services/
    ```
 
 2. Verify webhand sees it:
@@ -26,7 +26,7 @@ Every starter runbook here begins with `status = "draft"` — review it, try it 
    npx -y webhand@0.7 catalog
    ```
 
-3. Trial it once (`--allow-draft`), then set `status = "approved"` in `reserve.toml` after reviewing:
+3. Trial it once (`--allow-draft`), then set `status = "approved"` in `runbooks/reserve.toml` after reviewing:
 
    ```text
    /webhand Reserve on hotel-planisphere with dummy guest details (trial draft)
@@ -35,5 +35,5 @@ Every starter runbook here begins with `status = "draft"` — review it, try it 
 4. Optional — run multiple rows from the sample CSV with `webhand batch`:
 
    ```bash
-   npx -y webhand@0.7 batch init --runbook hotel-planisphere/reserve --input examples/runbooks/hotel-planisphere/guests.sample.csv
+   npx -y webhand@0.7 batch init --runbook hotel-planisphere/reserve --input examples/services/hotel-planisphere/guests.sample.csv
    ```

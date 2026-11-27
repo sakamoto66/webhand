@@ -1,4 +1,4 @@
-/** Verifies every starter template in examples/runbooks/ parses cleanly and follows safety rules. */
+/** Verifies every starter template in examples/services/ parses cleanly and follows safety rules. */
 
 import { cpSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -7,13 +7,13 @@ import * as batch from "../src/storage/batch.ts";
 import * as runbook from "../src/storage/runbook/index.ts";
 import { ROOT } from "./helpers.ts";
 
-test("starter runbooks and sample CSV under examples/runbooks/ are valid, draft-only, and domain-scoped", () => {
-  const examplesDir = join(ROOT, "examples", "runbooks");
-  // Copy into the isolated test user runbooks folder so loadService / load work directly.
-  const userRunbooks = runbook.root("user");
-  mkdirSync(userRunbooks, { recursive: true });
-  cpSync(join(examplesDir, "hotel-planisphere"), join(userRunbooks, "hotel-planisphere"), { recursive: true });
-  cpSync(join(examplesDir, "internal-form"), join(userRunbooks, "internal-form"), { recursive: true });
+test("starter runbooks and sample CSV under examples/services/ are valid, draft-only, and domain-scoped", () => {
+  const examplesDir = join(ROOT, "examples", "services");
+  // Copy into the isolated test user services folder so loadService / load work directly.
+  const userServices = runbook.root("user");
+  mkdirSync(userServices, { recursive: true });
+  cpSync(join(examplesDir, "hotel-planisphere"), join(userServices, "hotel-planisphere"), { recursive: true });
+  cpSync(join(examplesDir, "internal-form"), join(userServices, "internal-form"), { recursive: true });
   vi.spyOn(process, "cwd").mockReturnValue(process.env.WEBHAND_HOME as string);
 
   const hotelSvc = runbook.loadService("hotel-planisphere");
@@ -23,7 +23,7 @@ test("starter runbooks and sample CSV under examples/runbooks/ are valid, draft-
   expect(internalSvc?.allowed_domains).toEqual(["portal.example.internal", "sso.example.internal"]);
   expect(internalSvc?.login.required).toBe(true);
 
-  // Sample CSV validates every row against hotel-planisphere/reserve.toml
+  // Sample CSV validates every row against hotel-planisphere/runbooks/reserve.toml
   const csvPath = join(examplesDir, "hotel-planisphere", "guests.sample.csv");
   const parsed = batch.parseCsv(readFileSync(csvPath, "utf8"));
   expect(parsed.rows.length).toBeGreaterThanOrEqual(2);

@@ -17,8 +17,7 @@ import type { CommandDef } from "./types.ts";
 /** A person demonstrates a procedure. A long-running command, so run it in the background. */
 async function commandRecord(args: Args): Promise<number> {
   const runbookFile = runbook.path(args.name, args.scope);
-  const parts = String(args.name).split("/");
-  const serviceFile = parts.length > 1 ? runbook.servicePath(parts[0], args.scope) : null;
+  const serviceFile = runbook.servicePath(String(args.name).split("/")[0], args.scope);
   const profile = session.parseSession(args.session);
   const [chrome, note] = chooseChrome(args.chrome);
   const stem = String(args.name).replaceAll("/", "-");
@@ -58,7 +57,7 @@ async function commandRecord(args: Args): Promise<number> {
   if (note) print(`NOTE: ${note}`);
   print(`RECORDED ${quote(counts)} log=${log}`);
   print(`WRITE THE RUNBOOK TO ${runbookFile}`);
-  if (serviceFile) print(`WRITE THE SERVICE INFORMATION TO ${serviceFile}`);
+  print(`WRITE THE SERVICE INFORMATION TO ${serviceFile}`);
   if (counts.unsupported) {
     print("WARNING: the record has operations the agent cannot reproduce. See its unsupported events");
   }

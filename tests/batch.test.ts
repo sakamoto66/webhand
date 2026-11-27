@@ -27,7 +27,7 @@ afterEach(async () => {
 
 function installHotelRunbook(status: "approved" | "draft" = "approved", name = "stay/search"): string {
   const [service, proc] = name.split("/");
-  const dir = join(runbook.root("user"), service);
+  const dir = join(runbook.root("user"), service, "runbooks");
   mkdirSync(dir, { recursive: true });
   const fixtureUrl = pathToFileURL(join(ROOT, "tasks", "fixtures", "hotel.html")).href;
   writeFileSync(

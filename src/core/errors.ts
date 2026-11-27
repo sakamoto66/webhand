@@ -16,7 +16,7 @@ export class RunbookError extends WebhandError {
   override name = "RunbookError";
 }
 
-/** A saved check file (.webhand/checks) cannot be used as written. */
+/** A saved check file (.webhand/services/<service>/checks) cannot be used as written. */
 export class CheckFileError extends WebhandError {
   override name = "CheckFileError";
 }

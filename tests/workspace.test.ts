@@ -9,7 +9,7 @@ import { inDirectory, tmpPath } from "./helpers.ts";
 test("everything of the user lives under the workspace", () => {
   const dir = tmpPath();
   vi.stubEnv("WEBHAND_HOME", dir);
-  expect(runbook.root("user")).toBe(join(dir, "runbooks"));
+  expect(runbook.root("user")).toBe(join(dir, "services"));
   expect(session.home()).toBe(join(dir, "state"));
 });
 

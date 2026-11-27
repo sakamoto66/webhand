@@ -10,8 +10,8 @@ webhand uses two locations: one per user (`~/.webhand/`) and one per project (`.
 
 | Scope | Path | Contents |
 | --- | --- | --- |
-| User | `~/.webhand/` (override with `WEBHAND_HOME`) | `runbooks/` (personal service information and runbooks), `checks/` (personal saved acceptance checks), `memory/` (flow v2 site memory; migrates legacy `knowledge/` automatically), `runs/` (run & demonstration JSONL logs and optional screenshots), `state/` (active sessions, saved profiles, `auth/` saved logins, and `batches/` batch queues) |
-| Project | The first `.webhand/` found walking up from the current directory (stops at the home directory) | `runbooks/` (project service information and runbooks, shared via git), `checks/` (project saved acceptance checks) |
+| User | `~/.webhand/` (override with `WEBHAND_HOME`) | `services/<service>/` (personal `service.toml`, `runbooks/`, and saved `checks/`), `memory/` (flow v2 site memory; migrates legacy `knowledge/` automatically), `runs/` (run & demonstration JSONL logs and optional screenshots), `state/` (active sessions, saved profiles, `auth/` saved logins, and `batches/` batch queues) |
+| Project | The first `.webhand/` found walking up from the current directory (stops at the home directory) | `services/<service>/` (the project's `service.toml`, `runbooks/`, and saved `checks/`, shared via git) |
 
 - Runbooks and service information are looked up in the project first, then the user folder. When names collide, the project's version wins. `catalog` lists both and marks each entry `(project)` or `(user)`.
 - `record` writes to the project by default (creating `.webhand/` at the git root if none exists, or in the current directory outside git). Use `--scope user` to write to the user folder.
@@ -19,7 +19,7 @@ webhand uses two locations: one per user (`~/.webhand/`) and one per project (`.
 
 ```mermaid
 flowchart LR
-  AG["Coding Agent"] -->|"/webhand-teach"| RB["Runbooks<br>.webhand/runbooks/#lt;service#gt;/<br>or ~/.webhand/runbooks/#lt;service#gt;/"]
+  AG["Coding Agent"] -->|"/webhand-teach"| RB["Runbooks<br>.webhand/services/#lt;service#gt;/<br>or ~/.webhand/services/#lt;service#gt;/"]
   AG -->|"/webhand<br>plan, values, checks, replans"| CLI["webhand CLI"]
   RB -.->|"catalog"| CLI
   CLI -->|"CDP"| CH["Chrome<br>fresh / saved profile<br>Windows side from WSL"]
@@ -173,7 +173,7 @@ If the CLI is not installed globally, read `webhand` in the table below as `npx 
 | `webhand act OP [TARGET]` | Agent | Performs a single action in Jev's place (`CLICK`, `TYPE_TEXT`, `SELECT`, `UPLOAD_FILE`, `SCROLL_DOWN`, `SCROLL_UP`, `SCROLL_TO`, `WAIT`, `TAB_n`) |
 | `webhand observe [--read KIND ...]` | Agent | Prints the current page observation without acting |
 | `webhand check --expect KIND:ARGS ...` | Agent | Deterministic read-only check against the current page (`text:`, `no-text:`, `field:`, `checked:`, `count:`, `url:`, `title:`); `--read` reads whole-page text for this call only |
-| `webhand check --saved service/name:ID [--param K=V] [--read] [--production] [--allow-draft]` | Agent | Compares the page against fixed expectations from `.webhand/checks/<service>/<name>.toml` and logs `check_run` |
+| `webhand check --saved service/name:ID [--param K=V] [--read] [--production] [--allow-draft]` | Agent | Compares the page against fixed expectations from `.webhand/services/<service>/checks/<name>.toml` and logs `check_run` |
 | `webhand check-last service/name` | Agent | Shows the latest recorded verdict and digest for each check in a saved check file from the run logs |
 | `webhand extract KIND [--within R] [--columns A,B] [--table N] [--rows raw\|data] [--expect-count N] [--format table\|json\|csv\|markdown] [--out PATH]` | Agent | Deterministic read-only DOM extraction (`table`, `list`, `link`, `fields`, `text`); `--out` saves safely inside the current directory |
 | `webhand findings` | Agent | Prints anomaly candidates collected during an `--explore` session with the steps that led to them |
@@ -210,7 +210,7 @@ With `--har PATH` on `start` (Chrome or `headless-shell` only), webhand runs a d
 | --- | --- | --- |
 | `TYPESAFE_API_KEY` | *(required for `start`/`run`)* | Jev (TypeSafe API) key. Read only from the environment, never from `.env` |
 | `TYPESAFE_MODEL` | `jev-latest` | Model name sent to the TypeSafe API |
-| `WEBHAND_HOME` | `~/.webhand` | User data root (`runbooks/`, `checks/`, `memory/`, `runs/`, `state/`) |
+| `WEBHAND_HOME` | `~/.webhand` | User data root (`services/`, `memory/`, `runs/`, `state/`) |
 | `WEBHAND_RUNS_KEEP_DAYS` | `30` | `start` removes run folders older than this many days, at most once a day. `0` keeps all |
 | `WEBHAND_CHROME` | `auto` | Default for `--chrome` (`auto`, `linux`, `windows`) |
 | `WEBHAND_ENGINE` | `auto` | Default for `--engine` (`auto`, `chrome`, `headless-shell`, `lightpanda`, `obscura`, `browser-run`, `kitesurf`) |
@@ -244,9 +244,9 @@ From a human demonstration, the service's source code, or the log of an earlier 
 
 | File | Contents | How it is used |
 | --- | --- | --- |
-| `runbooks/<service>/service.toml` | Service description, `base_url`, optional `allowed_domains`, login metadata, pages and regions, facts for Jev | Read through `catalog`; passed with `--service`. When `allowed_domains` is set (hosts only, e.g. `["app.example.com"]`), `start` / `replan --url` / `answer --url` and Chrome document navigations/redirects/new tabs outside the list are refused |
-| `checks/<service>/<name>.toml` | Saved acceptance checks (`status` draft/approved, `env` test/read-only, params, per check: steps, `expect`, `manual`, `depends_on`). Never rewritten by a run; see [design-regression.md](design/design-regression.md) | Used by `webhand check --saved` and `/webhand-regress` |
-| `runbooks/<service>/<name>.toml` | Runbook (`goal`, `start_url`, `status`, `params`, `steps`, `hints`, `done_when`, `focus`, `skip`) | Basis for the agent's plan and batch runs (`webhand batch init`); steps and hints are also passed to Jev |
+| `services/<service>/service.toml` | Service description, `base_url`, optional `allowed_domains`, login metadata, pages and regions, facts for Jev | Read through `catalog`; passed with `--service`. When `allowed_domains` is set (hosts only, e.g. `["app.example.com"]`), `start` / `replan --url` / `answer --url` and Chrome document navigations/redirects/new tabs outside the list are refused |
+| `services/<service>/checks/<name>.toml` | Saved acceptance checks (`status` draft/approved, `env` test/read-only, params, per check: steps, `expect`, `manual`, `depends_on`). Never rewritten by a run; see [design-regression.md](design/design-regression.md) | Used by `webhand check --saved` and `/webhand-regress` |
+| `services/<service>/runbooks/<name>.toml` | Runbook (`goal`, `start_url`, `status`, `params`, `steps`, `hints`, `done_when`, `focus`, `skip`) | Basis for the agent's plan and batch runs (`webhand batch init`); steps and hints are also passed to Jev |
 
 ### Batch runs (`webhand batch`)
 

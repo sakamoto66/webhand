@@ -127,14 +127,14 @@ test("doctor marks missing headless shell as INFO and summarizes workspace and u
     origins: [],
   });
   // Create one approved runbook in user scope.
-  const serviceDir = join(runbook.root("user"), "demo-svc");
+  const serviceDir = join(runbook.root("user"), "demo-svc", "runbooks");
   mkdirSync(serviceDir, { recursive: true });
   writeFileSync(
     join(serviceDir, "task.toml"),
     'status = "approved"\ngoal = "Open home"\nstart_url = "https://example.test"\n\n[[steps]]\ninstruction = "Wait"\n',
   );
   // Create one malformed check file to trigger WARN.
-  const badChecksDir = join(process.env.WEBHAND_HOME as string, "checks", "broken");
+  const badChecksDir = join(runbook.root("user"), "broken", "checks");
   mkdirSync(badChecksDir, { recursive: true });
   writeFileSync(join(badChecksDir, "bad.toml"), "not = [valid toml\n");
 

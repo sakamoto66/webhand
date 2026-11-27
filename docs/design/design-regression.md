@@ -27,8 +27,8 @@
 
 手順書と同じ形式（TOML）と置き場所の規則を使う。
 
-- プロジェクト: `.webhand/checks/<service>/<name>.toml`（チームで共有する確認）
-- ユーザー: `~/.webhand/checks/<service>/<name>.toml`
+- プロジェクト: `.webhand/services/<service>/checks/<name>.toml`（チームで共有する確認）
+- ユーザー: `~/.webhand/services/<service>/checks/<name>.toml`
 - 同じ名前はプロジェクトが優先。
 
 ```toml
@@ -96,7 +96,7 @@ depends_on = []             # 同じセッションで続けて動かす前提�
 
 最小にする。判断は Claude とスキルに残す。
 
-- `webhand catalog`: 確認ファイル（`checks/`）を一覧に出し、形を検証する（`status`、`env`、`expect` の構文）。壊れたものは理由付きで示す。
+- `webhand catalog`: 確認ファイル（`services/<service>/checks/`）を一覧に出し、形を検証する（`status`、`env`、`expect` の構文）。壊れたものは理由付きで示す。
 - `check` の実行結果を、ログの `check` イベントに加え、各確認の実行の終わり（`finish`）に `check_run` として記録する: 確認の名前と `digest`、`id`、判定、`reason`。期待の中身は含めない（引用は報告にある）。入力値は書かない。
 - `webhand checks last NAME`（読み取り専用）: ログから、確認ごとの直前の判定と `digest` を出す。比較のための素材で、判定はしない。
 - 新しい操作系のコマンドは足さない。実行は既存の `start` / `run` / `check` / `finish`。

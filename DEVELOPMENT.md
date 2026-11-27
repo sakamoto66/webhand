@@ -29,7 +29,7 @@ To keep run logs inside the repository, set `WEBHAND_HOME` to the repository's a
 { "env": { "WEBHAND_HOME": "/absolute/path/to/this/repository" } }
 ```
 
-User-scope runbooks are then read from the repository's `runbooks/` (ignored by git) instead of `~/.webhand/runbooks/`.
+User-scope runbooks are then read from the repository's `services/` (ignored by git) instead of `~/.webhand/services/`.
 
 ### Development & test environment variables
 
@@ -70,14 +70,14 @@ src/                 the CLI (shipped as dist/ after `npm run build`)
 assets/              page scripts injected into Chrome (`snapshot/`, `extract.js`, `recorder.js`)
 skills/              published Agent Skills (`webhand`, `webhand-teach`, `webhand-extract`,
                      `webhand-explore`, `webhand-verify`, `webhand-regress`)
-examples/runbooks/   copy-and-adapt starter `service.toml`, `draft` runbooks, and sample batch CSV
+examples/services/   copy-and-adapt starter `service.toml`, `draft` runbooks, and sample batch CSV
 hooks.json           Antigravity native plugin PreToolUse hook (`--allow-control` confirmation)
 hooks/               Claude Code `hooks.json` and shared `ask-allow-control.mjs` script
 .claude-plugin/      Claude Code plugin and marketplace manifests
 .antigravity-plugin/ Antigravity native plugin manifest
 .codex-plugin/       Codex plugin manifest
 .agents/             Codex marketplace manifest and research-only skills (`.claude/skills/` symlinks here)
-.webhand/runbooks/   this repository's own runbooks
+.webhand/services/   this repository's own runbooks
 research/            research-only entry points (`webhand.ts`, `tasks.ts`, `batch.ts`, `smoke.ts`, `progress.ts`, `webarena/`); not shipped
 tasks/               research tasks with independent `verify()` and local HTML fixtures; not shipped
 tests/               vitest suites, golden records (`tests/golden/`), test doubles (`tests/jev.ts`)
@@ -167,7 +167,7 @@ npm run smoke -- --task hotel_filter     # model-free run of a task's SCRIPT
 - **A research task**: add `tasks/<name>.ts` exporting `GOAL`, `startUrl(root)`, async `verify(browser)` returning `{ success, evidence }`, and `SCRIPT` (for `npm run smoke`). Keep fixtures local under `tasks/fixtures/`. Tasks run through Node's type stripping (Node 22.18+). Run a task with `/webhand-research NAME` (`.agents/skills/webhand-research`, symlinked from `.claude/skills/webhand-research`). Neither `tasks/` nor `research/` is shipped to npm.
 - **Running tasks in a batch**: `node research/batch.ts --tasks A,B --repeat N --model MODEL --out DIR [--full]` from the repository root, with herdr running. Each run is a new interactive `claude` session in its own herdr tab, started with `/webhand-research NAME (session: new)` and its own `WEBHAND_HOME` under DIR; nothing answers questions or permission prompts, and a run without `run_end` after 20 minutes is recorded and not retried. One line per run goes to `DIR/results.jsonl` (success is `verified` only); rerunning skips runs that have a line. It stops on uncommitted or untracked files, and when a line in DIR or the next run is on another commit. By default the session is lean (fewer tools, no bundled skills); `--full` keeps both. Everything else is the same: `--setting-sources project` (no user or local settings, hooks, plugins, skills or synced skills), `claudeMdExcludes` for `~/.claude/**`, `--permission-mode auto`, `--strict-mcp-config`, and auto memory off. Managed settings, the login, and `CLAUDE.md` / `AGENTS.md` files in other folders above the repository still apply. Each line also records `claude_version` and `batch_node_version` (the batch process's Node). DIR must be outside the repository or ignored by git. Premises and open items for other agents: [batch verification](docs/research/batch-verification.md) (Japanese).
 - **Watching runs**: `node research/progress.ts [--tasks LIST | --research N --webarena N | --total N] [--since WHEN] [--dir DIR]...` from another terminal shows a board of the `/webhand-research` and `/webhand-webarena-research` runs started since it started (or `--since`): per skill, planned, done, running and not started, `verify()` results (OK only when `verified` is true) and WebArena scores (from `eval_result.json`'s score only) counted apart, the kinds of the runs that were not OK, each open run and whether it moves or looks stalled, and an ETA when a plan is given. A run with no `run_end` and no session is counted as interrupted; re-runs take no plan slot. `--events` or `--log FILE` prints one line per event instead. It reads only the session state, its lock, the run logs, and that score. With no `--dir` it looks in `$WEBHAND_HOME`, `~/.webhand`, and the checkout. It does not print page text, values, verify()'s evidence, or expected answers.
-- **A project runbook**: put it in `.webhand/runbooks/<service>/` (or a starter template under `examples/runbooks/`). Start as `status = "draft"`; only the user approves it.
+- **A project runbook**: put it in `.webhand/services/<service>/runbooks/` (or a starter template under `examples/services/`). Start as `status = "draft"`; only the user approves it.
 - **A policy (arm)**: implement `Policy` from `src/core/types.ts` and reuse `actionSpace`, `modelState`, and `resolve` from `src/policies/base.ts`, so every arm sees the same action space and state.
 
 ## Commits and pull requests
@@ -179,7 +179,7 @@ npm run smoke -- --task hotel_filter     # model-free run of a task's SCRIPT
 ## Releasing
 
 1. Bump the version in `package.json`, `.claude-plugin/plugin.json`, `.antigravity-plugin/plugin.json`, and `.codex-plugin/plugin.json` together (verified by `tests/manifests.test.ts`).
-2. If the major or minor version changes, update `webhand@0.7` in `skills/*/SKILL.md`, `README*.md`, `docs/usage*.md`, `docs/reference*.md`, and `examples/runbooks/README.md`.
+2. If the major or minor version changes, update `webhand@0.7` in `skills/*/SKILL.md`, `README*.md`, `docs/usage*.md`, `docs/reference*.md`, and `examples/services/README.md`.
 3. Merge to `main`, then publish a GitHub Release with the tag `vX.Y.Z` on `main`. `.github/workflows/release.yml` verifies that the tag matches all manifests and is on `main`, runs the checks and tests, and publishes to npm via trusted publishing (provenance attached; never publish locally). `prepublishOnly` runs `npm run check && npm run build && npm run check:package`. The npm tarball ships only `dist/`, `assets/`, the licenses, and the READMEs (`files` in `package.json`).
 
 ## Third-party code

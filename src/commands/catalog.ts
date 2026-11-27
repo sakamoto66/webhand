@@ -99,9 +99,9 @@ async function commandCatalog(args: Args): Promise<number> {
   if (minScore < 0 || minScore > 1) throw new CliExit("--min-score must be between 0 and 1.");
 
   const project = workspace.projectRoot();
-  const projectRunbooks = runbook.root("project");
-  print(`RUNBOOKS (project) ${projectRunbooks}${project ? "" : " (not created)"}`);
-  print(`RUNBOOKS (user) ${runbook.root("user")}`);
+  const projectServices = runbook.root("project");
+  print(`SERVICES (project) ${projectServices}${project ? "" : " (not created)"}`);
+  print(`SERVICES (user) ${runbook.root("user")}`);
 
   const allServices = runbook.catalog();
 
