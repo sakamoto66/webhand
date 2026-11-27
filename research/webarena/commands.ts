@@ -13,6 +13,7 @@ import * as session from "../../src/storage/session.ts";
 import { preAuthenticate } from "./auth.ts";
 import { inspectSiteConfigs, loadConfig, resolveAutoLoginTargets } from "./config.ts";
 import { listTasksPublic, loadTaskPublic, resolveDatasetPath } from "./dataset.ts";
+import { writeHtmlReport } from "./html.ts";
 import { formatReportMarkdown, summarizeRunDir } from "./report.ts";
 import { validateAgentResponse } from "./response.ts";
 
@@ -284,6 +285,16 @@ async function commandReport(args: string[], io: IO): Promise<number> {
   return OK;
 }
 
+async function commandHtml(args: string[], io: IO): Promise<number> {
+  const { values, rest } = takeOptions(args, ["output-dir", "out-dir", "notes", "config"]);
+  if (rest.length) throw new UsageError(`unrecognized arguments: ${rest.join(" ")}`);
+  const outputDir = values["output-dir"] ?? values["out-dir"];
+  if (!outputDir) throw new UsageError("--output-dir is required");
+  const { config } = loadConfig(values.config);
+  io.out(`HTML_REPORT: ${writeHtmlReport(outputDir, config, values.notes)}\n`);
+  return OK;
+}
+
 async function commandStart(args: string[], io: IO): Promise<number> {
   const { values, rest } = takeOptions(args, ["task-id", "out-dir", "dataset", "config"]);
   if (values["task-id"] === null) return main(["start", ...args], io);
@@ -421,6 +432,7 @@ export const COMMANDS: Record<string, (args: string[], io: IO) => Promise<number
   list: commandList,
   doctor: commandDoctor,
   report: commandReport,
+  html: commandHtml,
   start: commandStart,
   finish: commandFinish,
   eval: commandEval,

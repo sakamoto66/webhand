@@ -381,6 +381,7 @@ export async function batch(argv: string[], deps: Deps = defaults): Promise<void
     // Scores are WebArena-Verified's, not tasks/' verify().
     deps.out(deps.webarena(["eval", "--output-dir", out, "--task-ids", webarena.join(",")]));
     deps.out(deps.webarena(["report", "--output-dir", out]));
+    if (process.env.WEBHAND_SCREENSHOTS === "1") deps.out(deps.webarena(["html", "--output-dir", out]));
     const ended = rows.filter((row) => row.end_reason === "run_end").length;
     deps.out(`RUNS ${ended}/${rows.length} reached run_end`);
   } else {

@@ -307,6 +307,19 @@ describe("research/batch.ts", () => {
     vi.unstubAllEnvs();
   });
 
+  it("writes the HTML report of a WebArena batch with screenshots", async () => {
+    for (const [value, commands] of [
+      ["", ["eval", "report"]],
+      ["1", ["eval", "report", "html"]],
+    ] as const) {
+      vi.stubEnv("WEBHAND_SCREENSHOTS", value);
+      const herdr = fake({});
+      await batch(["--webarena", "0", "--model", "m", "--out", tmpPath()], herdr.deps);
+      expect(herdr.scored.map((args) => args[0])).toEqual(commands);
+    }
+    vi.unstubAllEnvs();
+  });
+
   it("passes WEBHAND_SCREENSHOTS to the session only when the caller set it", async () => {
     vi.stubEnv("WEBHAND_SCREENSHOTS", "");
     const off = fake({ hotel_filter: true });
