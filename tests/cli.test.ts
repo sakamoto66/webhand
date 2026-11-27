@@ -1,7 +1,7 @@
 /** The role split across separate CLI calls, on real Chrome. Jev is replaced; no paid API. */
 
-import { existsSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { UsageError } from "../src/args.ts";
@@ -11,6 +11,7 @@ import { BUDGET, FAILED, OK, UNCERTAIN } from "../src/commands/context.ts";
 import { logOnce } from "../src/core/metrics.ts";
 import { probes } from "../src/engines/chrome.ts";
 import { actionSpace } from "../src/policies/base.ts";
+import * as runbook from "../src/storage/runbook/index.ts";
 import * as session from "../src/storage/session.ts";
 import { cli, cliExit, readEvents, research, researchExit, tmpPath } from "./helpers.ts";
 import { isolate, type Move, ScriptedJev } from "./jev.ts";
@@ -842,4 +843,40 @@ test("--run hands straight to Jev from start, replan, and act in one command", a
   const end = events().at(-1);
   expect(end.verified).toBe(true);
   expect(end.attempts).toBe(2);
+});
+
+/** A user-scope service for the test, with the extra TOML lines given. */
+function saveService(name: string, extra: string, tail = ""): void {
+  const file = runbook.servicePath(name, "user");
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(
+    file,
+    `service = "${name}"\ndescription = "d"\nbase_url = "x"\nfacts = ["A fact"]\n${extra}\n[login]\nrequired = false\n${tail}`,
+  );
+}
+
+test("replan adds service information to a session started without one", async () => {
+  saveService(
+    "added",
+    "",
+    '[[pages]]\nurl = "x"\npurpose = "p"\n[[pages.regions]]\nkey = "footer"\ndefault = "skip"\n',
+  );
+  saveService("elsewhere", 'allowed_domains = ["shop.test"]');
+  await begin();
+  const state = () => session.load() as session.State;
+  const replan = (service: string) => cli("replan", "--reason", "Use the saved facts", "--service", service);
+
+  expect((await replan("no-such-service")).out).toContain("REJECTED: no service information");
+  expect((await replan("elsewhere")).out).toContain("outside service elsewhere's allowed_domains");
+  expect(state().service).toBeNull();
+
+  expect((await replan("added")).code).toBe(OK);
+  expect(state().service).toBe("added");
+  expect(state().plan.service?.facts).toEqual(["A fact"]);
+  expect(state().view?.skip).toContain("footer");
+  expect(events().findLast((e) => e.type === "plan")?.service).toBe("added");
+
+  // The same service again is fine; another one is not.
+  expect((await replan("added")).code).toBe(OK);
+  expect((await replan("hotel")).out).toContain("already uses service added");
 });
