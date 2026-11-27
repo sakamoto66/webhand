@@ -27,7 +27,7 @@ import {
   noteRefused,
   type OnChange,
 } from "./execute.ts";
-import { actionsIn, executed, looping, stopReason, unseenParts } from "./guards.ts";
+import { actionsIn, executed, looping, MAX_UNCHANGED_WAITS, stopReason, unseenParts, waitedOut } from "./guards.ts";
 import {
   type Actor,
   type AgentResult,
@@ -62,12 +62,14 @@ export {
   GOAL_REPORTED,
   JEV_FAILED,
   looping,
+  MAX_UNCHANGED_WAITS,
   NEEDS_HUMAN,
   NEEDS_VALUE,
   READ_ONLY,
   STUCK,
   UNCERTAIN,
   unseenParts,
+  waitedOut,
 };
 
 const TERMINAL_OUTCOMES: Record<string, string> = {
