@@ -3,6 +3,7 @@
 import { quote } from "../core/format.ts";
 import { pageEvent, type Recorder, type ScreenshotAfter, safeUrl } from "../core/metrics.ts";
 import { type Action, Decision, type HistoryEntry, type Page, StalePage, type Value } from "../core/types.ts";
+import { dateShape } from "../core/value-shape.ts";
 import type { SiteMemory } from "../storage/memory.ts";
 import { samePage } from "./guards.ts";
 import { type Actor, MISSING, STALE } from "./outcomes.ts";
@@ -62,13 +63,24 @@ export async function captureScreenshot(
   }
 }
 
-/** A step for the run log: the value's label instead of the typed text, and the URL without query values. */
-function logged(step: HistoryEntry, region: unknown, values: Value[]): Record<string, unknown> {
+/**
+ * A step for the run log: the value's label instead of the typed text (with the shape of a date), the format the
+ * field asks for, and the URL without query values.
+ */
+function logged(step: HistoryEntry, action: Action, values: Value[]): Record<string, unknown> {
   const { text, url, ...rest } = step;
+  const { region } = action;
   const entry: Record<string, unknown> = { ...rest, region: typeof region === "string" ? region : null };
   entry.url = safeUrl(url);
   entry.value = text === null ? null : (values.find((v) => v.value === text)?.label ?? null);
   if (text !== null) entry.text_chars = [...String(text)].length;
+  if (step.kind === "fill") {
+    const shape = text === null ? null : dateShape(String(text));
+    if (shape) entry.value_shape = shape;
+    for (const key of ["placeholder", "pattern"] as const) {
+      if (action[key]) entry[key] = action[key];
+    }
+  }
   return entry;
 }
 
@@ -99,7 +111,7 @@ export async function execute(
   const downloads = browser.takeDownloads?.() ?? [];
   if (downloads.length) step.downloads = downloads;
   history.push(step);
-  recorder.event("step", logged(step, action.region, options.values ?? []));
+  recorder.event("step", logged(step, action, options.values ?? []));
   onChange(page);
   const asked = browser.ignoredWindows ? await browser.ignoredWindows().catch(() => []) : [];
   const newPage = await browser.observe();

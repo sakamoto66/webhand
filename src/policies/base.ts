@@ -43,7 +43,17 @@ export function actionSpace(actions: Action[]): [Element[], Targets, Controls] {
       const index = String(elements.length + 1);
       indices.set(node, index);
       const element: Element = {};
-      for (const key of ["role", "value", "checked", "selected", "expanded", "at", "context"]) {
+      for (const key of [
+        "role",
+        "value",
+        "placeholder",
+        "pattern",
+        "checked",
+        "selected",
+        "expanded",
+        "at",
+        "context",
+      ]) {
         if (key in action) element[key] = action[key];
       }
       element.index = index;

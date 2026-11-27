@@ -242,6 +242,9 @@ export async function runAgent(
       if ((decision.action.kind === "fill" || decision.action.kind === "upload") && decision.text === null) {
         const field: Record<string, unknown> = {};
         for (const key of ["label", "role", "value"]) field[key] = decision.action[key] ?? null;
+        for (const key of ["placeholder", "pattern"]) {
+          if (decision.action[key]) field[key] = decision.action[key];
+        }
         const what = decision.action.kind === "upload" ? "file" : "value";
         return finish(NEEDS_VALUE, `no ${what} from the plan fits this field`, { field });
       }

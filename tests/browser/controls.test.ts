@@ -2,6 +2,8 @@
 
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { Browser, type ViewChoice } from "../../src/browser/index.ts";
+import { render } from "../../src/output.ts";
+import { actionSpace } from "../../src/policies/base.ts";
 import { ROOT } from "../helpers.ts";
 import { find, fixture, task } from "./support.ts";
 
@@ -399,4 +401,25 @@ test("HOVER opens a hidden sidebar submenu without navigating, letting the next 
     page,
   );
   expect(await instance.evaluate("document.title")).toBe("contributors");
+});
+
+test("a text field keeps its format hints even when a label names it", async () => {
+  const url = fixture(
+    "format_hints.html",
+    `<!doctype html><body><form>
+      <label>Delivery date <input id="date" placeholder="DD/MM/YYYY" pattern="\\d{2}/\\d{2}/\\d{4}"></label>
+      <input id="named" placeholder="Order notes">
+      <button type="button" placeholder="ignored">Save</button>
+    </form></body>`,
+  );
+  await browser.close();
+  const page = await (await open(url)).observe();
+  const date = find(page, (a) => a.label === "Delivery date");
+  expect(date).toMatchObject({ placeholder: "DD/MM/YYYY", pattern: "\\d{2}/\\d{2}/\\d{4}" });
+  // A placeholder that already is the name is not repeated.
+  expect(find(page, (a) => a.label === "Order notes").placeholder).toBeUndefined();
+  expect(find(page, (a) => a.label === "Save").placeholder).toBeUndefined();
+  const [elements] = actionSpace(page.actions);
+  expect(render(page)).toContain('placeholder="DD/MM/YYYY"');
+  expect(elements.find((e) => e.label === "Delivery date")?.placeholder).toBe("DD/MM/YYYY");
 });
