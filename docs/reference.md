@@ -160,7 +160,7 @@ Limits:
 
 ## Commands
 
-If the CLI is not installed globally, read `webhand` in the table below as `npx -y webhand@0.7`. `webhand --version` prints the version; `webhand COMMAND --help` shows every option of a command.
+If the CLI is not installed globally, read `webhand` in the table below as `npx -y webhand@latest`. `webhand --version` prints the version; `webhand COMMAND --help` shows every option of a command.
 
 | Command | Used by | Description |
 | --- | --- | --- |

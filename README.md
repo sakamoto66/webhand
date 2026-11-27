@@ -108,13 +108,13 @@ echo 'export TYPESAFE_API_KEY=...' >> ~/.bashrc   # or your shell's profile (e.g
 ```
 
 > [!TIP]
-> The CLI needs no installation — skills invoke `npx -y webhand@0.7 ...` automatically. For faster startup, install it globally with `npm i -g webhand`.
+> The CLI needs no installation — skills invoke `npx -y webhand@<version> ...` automatically, with the version written in each skill. For faster startup, install it globally with `npm i -g webhand`; the skills then use `webhand` directly.
 
 ### 3. Check your setup and delegate your first task
 
 ```bash
-npx -y webhand@0.7 doctor    # check Node.js, Chrome, TYPESAFE_API_KEY, and workspace
-npx -y webhand@0.7 catalog   # list known services and runbooks
+npx -y webhand@latest doctor    # check Node.js, Chrome, TYPESAFE_API_KEY, and workspace
+npx -y webhand@latest catalog   # list known services and runbooks
 ```
 
 Then ask your coding agent (use `/webhand` in Claude Code, or invoke the `webhand` skill in Antigravity / Codex):
