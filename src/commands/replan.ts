@@ -26,6 +26,37 @@ import type { CommandDef } from "./types.ts";
 /** A `replan` that cannot be taken: the message after "REJECTED: ". Nothing has been saved yet. */
 class ReplanRejected extends Error {}
 
+/**
+ * Adds --service to a session started without one: Jev gets its facts, and its regions and allowed_domains apply, as
+ * with `start --service`. A session keeps the service it has. Whether it was added.
+ */
+function applyReplanService(args: Args, state: session.State): boolean {
+  if (!args.service) return false;
+  if (state.service) {
+    if (state.service === args.service) return false;
+    throw new ReplanRejected(`this session already uses service ${state.service}`);
+  }
+  const info = runbook.loadService(args.service);
+  if (!info) throw new ReplanRejected(`no service information for ${args.service} (see: webhand catalog)`);
+  // An explore session is limited by its own --allow-domain.
+  const allowed = state.explore ? [] : (info.allowed_domains ?? []);
+  if (allowed.length) {
+    const outside = [String(state.page.url), state.start_url].some((url) => !hostAllowed(url, allowed));
+    if (outside) {
+      throw new ReplanRejected(
+        `the session's page or start URL is outside service ${args.service}'s allowed_domains (${allowed.join(", ")})`,
+      );
+    }
+    state.allowed_domains = allowed;
+  }
+  state.service = args.service;
+  state.plan.service = { description: info.description, facts: info.facts };
+  // A session without a service has no runbook, so the service's regions are all that is saved.
+  state.view_saved = runbook.view(runbook.serviceView(info), state.view_saved);
+  state.view = runbook.view(state.view_saved, state.view_claude);
+  return true;
+}
+
 /** The page --url names, as the browser opens it. null without --url. */
 function replanUrl(args: Args, state: session.State): string | null {
   if (!args.url) return null;
@@ -99,6 +130,7 @@ function logPlan(args: Args, state: session.State, url: string | null, extra: Re
     steps: planText(plan),
     values: plan.values.map((v: Value) => v.label),
     view: state.view ?? null,
+    ...(args.service ? { service: state.service } : {}),
     ...(plan.compare ? { compare: plan.compare } : {}),
     ...(plan.collect ? { collect: plan.collect } : {}),
     ...(plan.more ? { more: plan.more } : {}),
@@ -148,9 +180,10 @@ async function commandReplan(args: Args): Promise<number> {
   let viewChanged: boolean;
   try {
     if (args.url && args.restart) throw new ReplanRejected("use --url or --restart, not both");
+    const added = applyReplanService(args, state); // Before --url, which must be inside its allowed_domains.
     url = replanUrl(args, state);
     applyReplanPlan(args, state);
-    viewChanged = applyReplanView(args, state);
+    viewChanged = applyReplanView(args, state) || added;
   } catch (error) {
     if (!(error instanceof ReplanRejected)) throw error;
     print(`REJECTED: ${error.message}`);
@@ -181,6 +214,7 @@ export const replanCommand: CommandDef = {
       { name: "step", type: "string", multiple: true, help: "Replace the steps" },
       valueOption(),
       fileOption(),
+      { name: "service", type: "string", help: "Add saved service information to a session started without one" },
       { name: "restart", type: "boolean", help: "Open the start URL again before the next attempt" },
       { name: "url", type: "string", help: "Open this URL before the next attempt instead (another way in)" },
       ...viewOptions(),
