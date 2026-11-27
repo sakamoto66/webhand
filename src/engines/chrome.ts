@@ -229,9 +229,15 @@ export async function stopLocal(state: State): Promise<void> {
 }
 
 /** Connects to a local Chrome or headless-shell instance over its debugging port. */
-export async function attachLocal(state: State, url: string | null, view?: ViewChoice | null): Promise<Driver> {
+export async function attachLocal(
+  state: State,
+  url: string | null,
+  view?: ViewChoice | null,
+  onStuckTabsClosed?: (count: number) => void,
+): Promise<Driver> {
   return await Browser.open(url, {
     port: state.port,
+    onStuckTabsClosed,
     view,
     downloadDir: state.download_dir ?? null,
     explore: state.explore ?? null,

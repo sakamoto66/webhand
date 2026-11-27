@@ -2,10 +2,13 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { BrowserContext, CDPSession, Page as PlaywrightPage } from "playwright-core";
+import { sleep } from "../core/format.ts";
 import { type Action, type Page, StalePage } from "../core/types.ts";
 import { home as sessionHome, tabPath } from "../storage/session.ts";
 
 const MAX_TAB_TITLE = 60;
+/** The longest an observation waits for a new tab that is not listed yet. Tests that only need such a tab shorten it. */
+export const newTabLimit = { ms: 5000 };
 
 /** A tab's title as the model sees it: one line, clipped. Page text, so never instructions. */
 function tabTitle(title: string): string {
@@ -15,6 +18,10 @@ function tabTitle(title: string): string {
 export class TabManager {
   /** Lightpanda lists a placeholder tab that is no page: nothing can attach to it and it hangs on close. */
   private placeholder: PlaywrightPage | null = null;
+  private targets: CDPSession | null = null;
+  private readonly ids = new WeakMap<PlaywrightPage, string>();
+  /** Unlisted tabs that are not waited for again. */
+  private readonly givenUp = new Set<string>();
 
   async findPlaceholder(context: BrowserContext): Promise<void> {
     for (const page of context.pages()) {
@@ -38,6 +45,54 @@ export class TabManager {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * The tabs the browser has that the context does not list. Playwright lists a new tab only once its server has
+   * answered. Empty when the browser cannot say.
+   */
+  private async unlistedTabs(context: BrowserContext): Promise<string[]> {
+    try {
+      this.targets ??= (await context.browser()?.newBrowserCDPSession()) ?? null;
+      if (!this.targets) return [];
+      const { targetInfos } = await this.targets.send("Target.getTargets");
+      // Read after the targets, so a tab listed in between counts as listed.
+      const listed = new Set<string>();
+      for (const page of this.openTabs(context)) {
+        const id = this.ids.get(page) ?? (await this.tabId(context, page));
+        if (id === null) continue;
+        this.ids.set(page, id);
+        listed.add(id);
+      }
+      const own = new Set(targetInfos.filter((t) => listed.has(t.targetId)).map((t) => t.browserContextId));
+      return targetInfos
+        .filter((t) => t.type === "page" && !t.subtype && own.has(t.browserContextId))
+        .map((t) => t.targetId)
+        .filter((id) => !listed.has(id) && !this.givenUp.has(id));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Waits, up to newTabLimit, for new tabs to be listed and to have their documents, so that they are offered
+   * with their titles. A tab still unlisted then (no answer, a 204) is given up. True when there was one to wait for.
+   */
+  async awaitNewTabs(context: BrowserContext): Promise<boolean> {
+    const deadline = performance.now() + newTabLimit.ms;
+    let pending = await this.unlistedTabs(context);
+    if (pending.length === 0) return false;
+    const awaited = new Set<string>();
+    while (pending.length > 0 && performance.now() < deadline) {
+      for (const id of pending) awaited.add(id);
+      await sleep(25);
+      pending = await this.unlistedTabs(context);
+    }
+    for (const id of pending) this.givenUp.add(id);
+    const arrived = this.openTabs(context).filter((page) => awaited.has(this.ids.get(page) ?? ""));
+    const timeout = Math.max(1, deadline - performance.now()); // 0 would wait without a limit.
+    await Promise.all(arrived.map((page) => page.waitForLoadState("domcontentloaded", { timeout }).catch(() => {})));
+    return true;
   }
 
   /** The tab the last command left the run on; the first tab when none was kept or it is gone. */
