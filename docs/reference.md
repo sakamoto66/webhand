@@ -48,8 +48,6 @@ Run folders older than 30 days are removed automatically (`WEBHAND_RUNS_KEEP_DAY
 | `JEV_FAILED` | Jev's response was unusable (nothing was executed) | `run` again, `replan`, or `act` |
 | `UNCERTAIN` | Unknown whether an action took effect | Does not repeat it; `finish --status error` |
 
-In flow v2, ten `WAIT`s in a row on an unchanged page also end the attempt as `STUCK`.
-
 Confidence is logged but never used to stop Jev.
 
 ## Sessions

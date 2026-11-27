@@ -62,9 +62,6 @@ function diagnoseStuck(state: session.State): string {
   if (agent.looping(history, attempt)) {
     return "Jev scrolled up and down three times and chose nothing: what it needs may not be on this page, or is elsewhere on it";
   }
-  if (state.plan.flow === "v2" && agent.waitedOut(history, attempt)) {
-    return `Jev waited ${agent.MAX_UNCHANGED_WAITS} times and the page did not change: check whether it already shows what the goal needs, or whether it is still loading`;
-  }
   const recent = history.filter((h) => (h.attempt ?? 1) === attempt).slice(-3);
   if (recent.some((h) => h.kind === "stale")) {
     return "the last choices were refused as stale: the page keeps changing under the target";
