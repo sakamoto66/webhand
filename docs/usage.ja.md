@@ -118,7 +118,7 @@ flowchart LR
 ```
 
 - **スターターテンプレート活用**: [`examples/services/`](../examples/services/README.md)（`hotel-planisphere/`・`internal-form/`）を `.webhand/services/`（Git でチーム共有）または `~/.webhand/services/`（個人用）にコピーしてすぐ試せます。
-- **ドメイン境界の保護**: `service.toml` に `allowed_domains = ["app.example.com"]` を書いておくと、通常実行でも許可外ドメインへの移動・リダイレクト・新規タブ遷移を自動遮断します。
+- **ドメイン境界の保護**: `service.toml` に `allowed_domains = ["app.example.com"]` を書いておくと、通常実行でも許可外ドメインの開始 URL を拒否し、移動を遮断します。遮断できる範囲はエンジンで異なり、Chrome はサーバーのリダイレクトを遮断しません。[許可ドメイン](reference.ja.md#許可ドメインallowed_domains)を参照してください。
 - **人間向けマニュアル生成**: チーム共有用に人間向けの操作手順書（Markdown）もほしい場合は、`/webhand-teach` にあわせて依頼できます。
 - **秘密情報は書かない**: パスワード・トークン・個人情報は手順書に書かず、変わる値は `params`、ログインは `[person]` ステップにします。
 

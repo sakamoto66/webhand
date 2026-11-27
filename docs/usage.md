@@ -117,7 +117,7 @@ Three ways to teach:
 ```
 
 - **Starter templates**: Copy and adapt an example from [`examples/services/`](../examples/services/README.md) (`hotel-planisphere/` or `internal-form/`) into `.webhand/services/` (project-shared via Git) or `~/.webhand/services/` (personal).
-- **Domain boundary**: Add `allowed_domains = ["app.example.com"]` to `service.toml` so normal runs refuse navigations, redirects, and new tabs outside your service's hosts.
+- **Domain boundary**: Add `allowed_domains = ["app.example.com"]` to `service.toml` so normal runs refuse start URLs and block navigations outside your service's hosts. How much is blocked depends on the engine, and Chrome does not block server redirects: see [Allowed domains](reference.md#allowed-domains).
 - **Human-readable SOP**: Ask `/webhand-teach` to also produce a Markdown guide from the approved runbook when your team wants human documentation alongside the TOML.
 - **Never store secrets**: Keep passwords, tokens, and personal data out of runbooks; pass changing inputs via `params` and mark login steps as `[person]`.
 

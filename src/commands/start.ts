@@ -7,7 +7,7 @@ import { gitState, maskUrls, pageEvent, Recorder, safeUrl } from "../core/metric
 import type { Plan, Step, Value } from "../core/types.ts";
 import { browserUrl, chooseChrome as pickChrome } from "../engines/chrome.ts";
 import { chooseEngine, engineFor, hostName } from "../engines/index.ts";
-import type { Engine } from "../engines/types.ts";
+import { ENFORCING_ENGINES, type Engine } from "../engines/types.ts";
 import { hostAllowed, parseAllow } from "../explore.ts";
 import { type HarState, startHarRecorder, stopHarRecorder } from "../har/session.ts";
 import type { Driver } from "../ipc/remote.ts";
@@ -171,6 +171,11 @@ function planStart(args: Args, target: StartTarget): { plan: Plan; goal: string;
       `The start URL is outside service ${service.service}'s allowed_domains (${service.allowed_domains.join(", ")})`,
     );
   }
+  if (!args.explore && service?.allowed_domains?.length && !target.engine.capabilities.allowedDomains) {
+    throw new CliExit(
+      `${target.engine.label} cannot enforce service ${service.service}'s allowed_domains. ${ENFORCING_ENGINES}`,
+    );
+  }
   if (args.allow_control.length && !args.read_only) throw new CliExit("--allow-control needs --read-only");
   if (args.read_only && steps.some((step) => step.actor === "human")) {
     throw new CliExit("A read-only session has no [person] steps: start from a saved login (--auth or profile:NAME)");
@@ -271,12 +276,14 @@ async function openStartPage(
   const recorder = new Recorder(state.log);
   let browser: Driver | null = null;
   let skipped: string[] = [];
+  // A served engine is guarded from the first page: its daemon takes the hosts before anything is opened.
+  const opening = engine.serve ? { ...chromeState, allowed_domains: state.allowed_domains } : chromeState;
   try {
     if (login) {
-      browser = await attach(chromeState, null, browserView(state));
+      browser = await attach(opening, null, browserView(state));
       skipped = await browser.restore(login.state, state.start_url);
     } else {
-      browser = await attach(chromeState, state.start_url, browserView(state));
+      browser = await attach(opening, state.start_url, browserView(state));
     }
     state.page = await browser.observe();
     recorder.event("run_start", {

@@ -134,6 +134,7 @@ Limits:
 - `file:` URLs cannot be opened (serve the page over http), and a second tab cannot be opened. A link with `target="_blank"` or `window.open` does nothing and raises no error: the page stays as it was. The run log records a `window_ignored` event (step and URLs) after such a step, so a click that "did nothing" can be told from one that was refused. Jev gets no new option for it.
 - No layout: element positions are simulated and screenshots are placeholders, so what Jev is shown differs from Chrome. Compare results with Chrome as a separate experiment.
 - `lightpanda` must be on `PATH`.
+- `allowed_domains` is enforced: each page request, redirect hops and new windows included, is checked before it is sent, also between commands. A refused page reads as "Navigation failed, Reason: BlockedByClient" (`replan --restart` goes back). See [Allowed domains](#allowed-domains).
 
 ## Obscura
 
@@ -142,6 +143,7 @@ Limits:
 - Install: unpack the release archive (`obscura` and `obscura-worker` side by side) and set `WEBHAND_OBSCURA` to the `obscura` path, or put it on `PATH`.
 - Obscura refuses loopback and private addresses by default (its SSRF guard). For local pages only, set `WEBHAND_OBSCURA_ALLOW_PRIVATE=1`; leave it unset for real sites.
 - Same limits as Lightpanda: no saved profile, no window (`--headed`, `[person]` steps, `record` and `profile` are refused).
+- A service with `allowed_domains` is refused: Obscura does not let webhand stop a redirect before it is sent. See [Allowed domains](#allowed-domains).
 - New windows: `window.open` opens nothing and is recorded as `window_ignored`, as for Lightpanda. A `target="_blank"` link loads its target in the same tab instead (the page changes, so there is no `window_ignored`).
 - Tabs: Obscura has several pages and webhand switches between them (`TAB_n`), but nothing a page does opens a second tab (see above), so in practice a run has one. Its `Page.bringToFront` is not implemented, which webhand tolerates.
 - An inline element straight under `<body>` (not inside a paragraph, a block or a flex container) gets no size and is not offered; inside any block it is.
@@ -157,6 +159,20 @@ Limits:
 - A session closes after 60 seconds without a command unless `keep_alive` extends it; webhand asks for the longest, 20 minutes. If the session has gone, the next command fails (a change to the browser is never retried): `start` again.
 - Limits depend on the Cloudflare plan (Workers Free: 3 concurrent browsers and 10 minutes a day; Paid: 200 concurrent). Results have not been compared with Chrome; treat that as a separate experiment.
 - `--engine kitesurf` uses Cloudflare's other browser for the same API: Kitesurf, a stateless browser made for agents (beta, free behind per-account limits; not Chromium, so it reads some pages differently). Everything above applies, with one difference: Cloudflare does not allow `keep_alive` with it, so the session closes after the default 60 seconds without a command. Run the commands of a run without long pauses, or use `browser-run`. Checked with an example page, a form submit, `--auth` and screenshots. A link that opens a new window (`target=_blank`) can end the session about 3 seconds later, and the command then fails (2 of 3 tries; the third switched to the new tab). Do not rely on a second tab. Right after creation a session was also found already closed (`410 Gone`) twice, so Kitesurf, still in beta, may need a second `start`. The causes were not traced. Not for video, WebGL, bot challenges, or long signed-in sessions (Cloudflare's own list).
+- A service with `allowed_domains` is refused on `browser-run` and `kitesurf`: blocking has not been verified there. See [Allowed domains](#allowed-domains).
+
+## Allowed domains
+
+`allowed_domains` in `service.toml` limits where a run's pages may go. A host covers its subdomains; a port in the rule must match. On every engine that accepts it, `start --url`, `replan --url` and `answer --url` outside the list are refused. Only page (document) requests are checked: scripts, images and fetch/XHR requests to other hosts go through. `--explore` has its own rule (`--allow-domain`) instead.
+
+| Engine | What is blocked during a run |
+|---|---|
+| `lightpanda` | Every page request, redirect hops and new windows included, from the first page until `finish`, between commands too. Frames: the tested version (1.1.0-nightly) did not load them |
+| `chrome`, `headless-shell` | Navigations by the page (links, forms, scripts, meta refresh, frames, a new tab's first page), only while a webhand command is running. **Not blocked**: server redirects (the request reaches the redirect target), anything on the first page load of `start` (redirects, scripts), and navigations between commands |
+| `obscura` | Refused: `start` and `replan --service` reject a service with `allowed_domains`. Redirect hops cannot be stopped there |
+| `browser-run`, `kitesurf` | Refused in the same way: blocking has not been verified |
+
+It is not a network boundary. Where requests must not leave, use a firewall or a proxy.
 
 ## Commands
 
@@ -244,7 +260,7 @@ From a human demonstration, the service's source code, or the log of an earlier 
 
 | File | Contents | How it is used |
 | --- | --- | --- |
-| `services/<service>/service.toml` | Service description, `base_url`, optional `allowed_domains`, login metadata, pages and regions, facts for Jev | Read through `catalog`; passed with `--service`. When `allowed_domains` is set (hosts only, e.g. `["app.example.com"]`), `start` / `replan --url` / `answer --url` and Chrome document navigations/redirects/new tabs outside the list are refused |
+| `services/<service>/service.toml` | Service description, `base_url`, optional `allowed_domains`, login metadata, pages and regions, facts for Jev | Read through `catalog`; passed with `--service`. `allowed_domains` takes hosts only, e.g. `["app.example.com"]`: see [Allowed domains](#allowed-domains) |
 | `services/<service>/checks/<name>.toml` | Saved acceptance checks (`status` draft/approved, `env` test/read-only, params, per check: steps, `expect`, `manual`, `depends_on`). Never rewritten by a run; see [design-regression.md](design/design-regression.md) | Used by `webhand check --saved` and `/webhand-regress` |
 | `services/<service>/runbooks/<name>.toml` | Runbook (`goal`, `start_url`, `status`, `params`, `steps`, `hints`, `done_when`, `focus`, `skip`) | Basis for the agent's plan and batch runs (`webhand batch init`); steps and hints are also passed to Jev |
 

@@ -10,7 +10,7 @@ import { resolveSidecarScript, startSidecar } from "../ipc/sidecar.ts";
 import type { State } from "../storage/session.ts";
 import { stopLocal } from "./chrome.ts";
 import { freePort, isFile, which } from "./process.ts";
-import { type Engine, rejectWindowAndProfile, type StartOptions } from "./types.ts";
+import { type Engine, rejectAllowedDomains, rejectWindowAndProfile, type StartOptions } from "./types.ts";
 
 /** Where the binary is: the given environment variable when it names a file, else PATH. */
 function binary(command: string, variable?: string): string | null {
@@ -24,11 +24,18 @@ export function servedEngine(spec: {
   /** An environment variable that names the binary (Obscura's release archive is not installed anywhere). */
   binaryVariable?: string;
   serve: NonNullable<Engine["serve"]>;
+  /** The engine's CDP Fetch pauses every document request, redirect hops included (see browser/document-guard.ts). */
+  guardsDocuments?: boolean;
 }): Engine {
   return {
     id: spec.id,
     label: spec.label,
-    capabilities: { localFiles: false, har: false, explore: false },
+    capabilities: {
+      localFiles: false,
+      har: false,
+      explore: false,
+      allowedDomains: spec.guardsDocuments ?? false,
+    },
     serve: spec.serve,
     async start(options: StartOptions): Promise<State> {
       rejectWindowAndProfile(spec.label, options);
@@ -55,8 +62,10 @@ export function servedEngine(spec: {
     },
     stop: stopLocal,
     async attach(state, url, view) {
+      if (!spec.guardsDocuments) rejectAllowedDomains(spec.label, state);
       const remote = await RemoteBrowser.connect(state.socket, view ?? null);
       try {
+        if (state.allowed_domains?.length) await remote.guardDocuments(state.allowed_domains);
         if (url) await remote.goto(url);
       } catch (error) {
         await remote.close();

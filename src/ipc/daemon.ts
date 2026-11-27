@@ -60,6 +60,10 @@ const HANDLERS: Record<Method, RpcHandler> = {
   evaluate: (b, [expression, options]) => b.evaluate(expression, options),
   storageState: (b) => b.storageState(),
   restore: (b, [state, url]) => b.restore(state, url),
+  guardDocuments: async (b, [allow]) => {
+    await b.guardDocuments(allow);
+    return null;
+  },
   shutdown: (_b, _params, stop) => {
     setImmediate(stop);
     return null;
