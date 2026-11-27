@@ -178,8 +178,24 @@ npm run smoke -- --task hotel_filter     # モデルなしの SCRIPT スモー�
 
 ## リリース
 
-1. `npm version X.Y.Z --no-git-tag-version` で版を上げます。`package.json`、`package-lock.json`、3つの `plugin.json`、スキルが実行する版がまとめて更新されます（`scripts/sync-version.ts`）。フラグは外さないでください。外すと npm は `package.json` と lock だけを commit します。`node scripts/sync-version.ts --check` で版がずれたファイルを確認でき、ずれがあれば `tests/version.test.ts` が失敗します。他のページは `webhand@latest` と書きます。
-2. `main` へマージしたあと、`main` 上のタグ `vX.Y.Z` で GitHub Release を公開します。`.github/workflows/release.yml` がタグと全マニフェストの一致・`main` ブランチであることを確認し、テスト実行後に npm trusted publishing で公開します（ローカルから `npm publish` しないでください）。`prepublishOnly` が `npm run check && npm run build && npm run check:package` を実行し、配布物が `dist/`・`assets/`・ライセンス・README だけであることを保証します。
+```bash
+node scripts/release.ts X.Y.Z --dry-run   # 読み取りのみ：今の段階と残りの操作を表示
+node scripts/release.ts X.Y.Z
+```
+
+作業ツリーが clean で依存をインストール済みのチェックアウトで、書き込み権限のある `gh` にログインして実行します（リリースの commit で pre-commit の check とテストが走ります）。スクリプトは次を行います。
+
+1. `origin/main` から `release/X.Y.Z` を作り、`npm version X.Y.Z --no-git-tag-version`、commit、push して pull request を作ります。
+2. すべてのチェック（ruleset で必須でないものを含む `check`・`package`・`test`・`verify-tasks`）の完了を待ち、1回だけ確認してから、検査した head をマージします。
+3. マージ commit に GitHub Release `vX.Y.Z` を自動生成のノート付きで公開します。これで `.github/workflows/release.yml` が起動します。
+
+**続けて、`npm` environment の承認をすぐ行ってください。** マージから公開までの間、`main` のスキルは npm にまだない版を指定するため、`npx` が失敗することがあります。
+
+途中で止まると、何が残っていて次に何をするかを表示します。同じコマンドをもう一度実行すると、すでにある branch・pull request・マージ・タグから続けます。削除や force push はしません。公開そのものが失敗したときは失敗した job を再実行し、コードが原因ならタグは動かさず、直して次の patch 版をリリースします。
+
+`npm version` は `package.json`、`package-lock.json`、3つの `plugin.json`、スキルが実行する版をまとめて更新します（`scripts/sync-version.ts`）。手で実行するときはフラグを外さないでください。外すと npm は `package.json` と lock だけを commit します。`node scripts/sync-version.ts --check` で版がずれたファイルを確認でき、ずれがあれば `tests/version.test.ts` が失敗します。他のページは `webhand@latest` と書きます。
+
+`release.yml` はタグと全マニフェストの一致・`main` ブランチであることを確認し、テスト実行後に npm trusted publishing で公開します（ローカルから `npm publish` しないでください）。`prepublishOnly` が `npm run check && npm run build && npm run check:package` を実行し、配布物が `dist/`・`assets/`・ライセンス・README だけであることを保証します。
 
 ## サードパーティのコード
 

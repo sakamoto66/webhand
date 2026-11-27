@@ -178,8 +178,24 @@ npm run smoke -- --task hotel_filter     # model-free run of a task's SCRIPT
 
 ## Releasing
 
-1. Bump the version with `npm version X.Y.Z --no-git-tag-version`: it updates `package.json`, `package-lock.json`, the three `plugin.json` manifests, and the version the skills run (`scripts/sync-version.ts`). Keep the flag; without it npm commits only `package.json` and the lock file. `node scripts/sync-version.ts --check` lists files that differ, and `tests/version.test.ts` fails on them. Other pages say `webhand@latest`.
-2. Merge to `main`, then publish a GitHub Release with the tag `vX.Y.Z` on `main`. `.github/workflows/release.yml` verifies that the tag matches all manifests and is on `main`, runs the checks and tests, and publishes to npm via trusted publishing (provenance attached; never publish locally). `prepublishOnly` runs `npm run check && npm run build && npm run check:package`. The npm tarball ships only `dist/`, `assets/`, the licenses, and the READMEs (`files` in `package.json`).
+```bash
+node scripts/release.ts X.Y.Z --dry-run   # only reads: shows where the release stands and what is left
+node scripts/release.ts X.Y.Z
+```
+
+Run it in a clean checkout with the dependencies installed (the release commit runs the pre-commit check and tests) and `gh` logged in with write access. It:
+
+1. Creates `release/X.Y.Z` from `origin/main`, runs `npm version X.Y.Z --no-git-tag-version`, commits, pushes, and opens a pull request.
+2. Waits for every check (`check`, `package`, `test`, and `verify-tasks`, including the ones the ruleset does not require), asks once, and merges the checked head.
+3. Publishes the GitHub Release `vX.Y.Z` on the merge commit with generated notes. This starts `.github/workflows/release.yml`.
+
+**Then approve the `npm` environment right away.** From the merge until the publish, the skills on `main` ask for a version that npm does not have yet, so their `npx` can fail.
+
+If it stops, it says what is left and what to do next. Run the same command again: it continues from the branch, pull request, merge, or tag that already exists. It never deletes or force-pushes. If the publish itself fails, rerun the failed job; if the code is at fault, fix it and release the next patch version instead of moving the tag.
+
+`npm version` updates `package.json`, `package-lock.json`, the three `plugin.json` manifests, and the version the skills run (`scripts/sync-version.ts`). When running it by hand, keep the flag; without it npm commits only `package.json` and the lock file. `node scripts/sync-version.ts --check` lists files that differ, and `tests/version.test.ts` fails on them. Other pages say `webhand@latest`.
+
+`release.yml` verifies that the tag matches all manifests and is on `main`, runs the checks and tests, and publishes to npm via trusted publishing (provenance attached; never publish locally). `prepublishOnly` runs `npm run check && npm run build && npm run check:package`. The npm tarball ships only `dist/`, `assets/`, the licenses, and the READMEs (`files` in `package.json`).
 
 ## Third-party code
 
