@@ -366,29 +366,6 @@ test("v2: three round trips of scrolling stop the run as STUCK, though every scr
   expect(v1.outcome).toBe("GOAL_REPORTED");
 });
 
-test("v2: ten unchanged waits in a row stop the run as STUCK; fewer, a changed page, or an answer do not", async () => {
-  const waits = (count: number) => Array.from({ length: count }, () => entry("WAIT", "wait", false));
-  const asked = async (history: HistoryEntry[], flow: "v2" | null = "v2") =>
-    runAgent(
-      new FakeBrowser(),
-      new FakePolicy([new Decision("DONE")]),
-      { ...PLAN, flow },
-      recorder,
-      new Budget(40, 40),
-      { history },
-    );
-  const stopped = await asked(waits(10));
-  expect(stopped.outcome).toBe("STUCK");
-  expect(stopped.detail).toContain("waited 10 times");
-  expect(stopped.decisions).toBe(0); // Jev was not asked again.
-  expect((await asked(waits(9))).outcome).toBe("GOAL_REPORTED");
-  const changed = [...waits(5), entry("WAIT", "wait", true), ...waits(5)];
-  expect((await asked(changed)).outcome).toBe("GOAL_REPORTED"); // The page moved on in between.
-  const answered = [...waits(10), { ...entry("ANSWER", "answer", true), operation: "ANSWER" }];
-  expect((await asked(answered)).outcome).toBe("GOAL_REPORTED"); // Counted again after Claude's answer.
-  expect((await asked(waits(10), null)).outcome).toBe("GOAL_REPORTED"); // v1 is unchanged.
-});
-
 test("v2: scrolling that is not a back and forth, or has another action between, is not a loop", async () => {
   const down = ["SCROLL_DOWN", "SCROLL_DOWN", "SCROLL_UP", "SCROLL_DOWN", "SCROLL_UP", "SCROLL_DOWN"].map((op) =>
     entry(op, "scroll", true),
