@@ -385,6 +385,54 @@ describe("research/webarena-config", () => {
   });
 });
 
+describe("research/webarena html report", () => {
+  beforeEach(() => {
+    workDir = tmpPath();
+  });
+
+  test("links each task's files and screenshots, escapes the logs, and shows only the eval score", async () => {
+    const task = join(workDir, "7");
+    mkdirSync(join(task, "webhand-screenshots"), { recursive: true });
+    writeFileSync(join(task, "webhand-screenshots", "step-0001-attempt-1.png"), "png");
+    const events = [
+      { type: "run_start", goal: "Find <b>it</b>" },
+      { type: "plan", attempt: 1, steps: ["1. Open the list"] },
+      { type: "step", step: 1, attempt: 1, operation: "CLICK", action: "<script>x</script>" },
+      { type: "screenshot", step: 1, attempt: 1, after: "action", file: "../../elsewhere/step-0001-attempt-1.png" },
+      { type: "step", step: 2, attempt: 1, operation: "CLICK", action: "Save" },
+      { type: "run_end", status: "done", attempts: 1, reason: "shown" },
+    ];
+    writeFileSync(join(task, "webhand.jsonl"), events.map((x) => JSON.stringify(x)).join("\n"));
+    writeFileSync(join(task, "eval_result.json"), JSON.stringify({ score: 0, status: "failure", expected: "SECRET" }));
+    const config = join(workDir, "config.json");
+    writeFileSync(config, "{}");
+
+    const made = await wa("html", "--output-dir", workDir, "--config", config);
+    expect(made.out).toContain(join(workDir, "index.html"));
+    const read = (name: string) => readFileSync(join(workDir, name), "utf8");
+    expect(read("index.html")).toContain('href="7/7.html"');
+    expect(read("index.html")).toContain('href="7/eval_result.json"');
+    expect(read("index.html")).toContain("判定なし");
+    const plain = read("7/7.html");
+    expect(plain).toContain("&lt;script&gt;x&lt;/script&gt;");
+    expect(plain).not.toContain("<script>");
+    expect(plain).toContain('src="webhand-screenshots/step-0001-attempt-1.png"');
+    expect(plain).not.toContain("elsewhere");
+    expect(`${plain}${read("index.html")}`).not.toContain("SECRET");
+    expect(plain).toContain('href="eval_result.json"');
+    expect(plain.match(/="\.\.\/[^"]*"/g)).toEqual(['="../index.html"']);
+
+    writeFileSync(join(workDir, "notes.json"), JSON.stringify({ 7: { ok_until: 1, summary: "Save <failed>" } }));
+    await wa("html", "--out-dir", workDir, "--config", config);
+    expect(read("7/7.html")).toContain('class="step ok" id="s1"');
+    expect(read("7/7.html")).toContain('class="step problem" id="s2"');
+    expect(read("index.html")).toContain("Save &lt;failed&gt;");
+
+    writeFileSync(join(workDir, "notes.json"), JSON.stringify({ 7: {} }));
+    expect(await waExit("html", "--output-dir", workDir, "--config", config)).toContain('needs a "summary"');
+  });
+});
+
 describe("research/webarena CLI integration", () => {
   let cleanup: () => Promise<void>;
   let server: Server;
