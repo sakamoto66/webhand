@@ -1,10 +1,11 @@
 /** research/batch.ts with a fake herdr: no Claude, no Jev, no browser. */
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { reply } from "../research/auto-answer.ts";
 import { batch, type Deps } from "../research/batch.ts";
 import { readEvents, tmpPath } from "./helpers.ts";
 
@@ -25,19 +26,29 @@ function fake(verified: Record<string, boolean>, status = "idle") {
   const claudeDir = tmpPath();
   const calls: string[][] = [];
   const output: string[] = [];
+  const scored: string[][] = [];
   let time = 0;
+  let panes = 0;
   const deps: Deps = {
     herdr(args) {
       calls.push(args);
-      if (args[1] === "create") return JSON.stringify({ result: { root_pane: { pane_id: `p${calls.length}` } } });
+      if (args[1] === "create") return JSON.stringify({ result: { root_pane: { pane_id: `p${++panes}` } } });
+      if (args[1] === "split") return JSON.stringify({ result: { pane: { pane_id: `p${++panes}` } } });
       if (args[1] === "get") return JSON.stringify({ result: { pane: { agent_status: status } } });
       if (args[1] === "run") {
         const command = args[3];
+        if (command.includes("research/progress.ts")) return "";
+        const id = /'\/webhand-webarena-research (\d+) /.exec(command)?.[1];
+        const out = /Pass --out-dir (\S+) to start/.exec(command)?.[1];
         const home = /'WEBHAND_HOME=([^']+)'/.exec(command)?.[1] as string;
         const task = /'\/webhand-research (\S+) \(session: new\)'/.exec(command)?.[1] as string;
         const session = /'--session-id' '([^']+)'/.exec(command)?.[1] as string;
         write(join(claudeDir, "projects", "x", `${session}.jsonl`), message("a", 5), message("a", 7), message("b", 2));
-        if (task in verified) {
+        if (id && out) {
+          const log = join(out, id, "webhand.jsonl");
+          const lines = existsSync(log) ? readFileSync(log, "utf8").split("\n") : [];
+          write(log, ...lines, { type: "run_end", status: "done", attempts: 1 });
+        } else if (task in verified) {
           const end = { type: "run_end", verified: verified[task], attempts: 2 };
           write(join(home, "runs", "now", `${task}.jsonl`), { type: "run_start" }, end, '{"type":');
         }
@@ -50,6 +61,11 @@ function fake(verified: Record<string, boolean>, status = "idle") {
     now: () => time,
     claudeDir,
     claudeVersion: () => "9.9.9 (Claude Code)",
+    webarenaIds: () => [0, 11, 423],
+    webarena(args) {
+      scored.push(args);
+      return `${args[0]} done`;
+    },
     // A clean tree on HEAD, whatever the checkout running the tests holds; only the ignore rules are real.
     git(...args) {
       if (args[0] === "status") return "";
@@ -58,8 +74,10 @@ function fake(verified: Record<string, boolean>, status = "idle") {
     },
     out: (text) => output.push(text),
   };
-  const commands = () => calls.filter((args) => args[1] === "run").map((args) => args[3]);
-  return { deps, calls, output, commands };
+  const runs = () => calls.filter((args) => args[1] === "run").map((args) => args[3]);
+  const commands = () => runs().filter((command) => command.includes("'claude'"));
+  const board = () => runs().filter((command) => command.includes("research/progress.ts"));
+  return { deps, calls, output, commands, board, scored };
 }
 
 const args = (out: string, ...more: string[]) => ["--tasks", "hotel_filter", "--model", "m", "--out", out, ...more];
@@ -77,7 +95,8 @@ describe("research/batch.ts", () => {
     expect(rows[0].tokens).toMatchObject({ input_tokens: 2, output_tokens: 9, cache_read_input_tokens: 20 });
     expect(rows[0].commit).toBe(HEAD);
     expect(rows[0]).toMatchObject({ claude_version: "9.9.9 (Claude Code)", batch_node_version: process.version });
-    expect(herdr.calls.filter((call) => call[1] === "close").map((call) => call[2])).toEqual(["p2", "p6"]);
+    // p1 is the board; each used pane is closed after its replacement opens, and the last shells are closed.
+    expect(herdr.calls.filter((call) => call[1] === "close").map((call) => call[2])).toEqual(["p2", "p3", "p4", "p5"]);
     expect(herdr.output).toContain("VERIFIED 2/2 (100%)");
     expect(herdr.output.join("\n")).toContain("output_tokens=18");
   });
@@ -137,7 +156,7 @@ describe("research/batch.ts", () => {
     const herdr = fake({}, status);
     await batch(args(out), herdr.deps);
     expect(readEvents(join(out, "results.jsonl"))[0]).toMatchObject({ verified: null, end_reason: reason, blocked });
-    expect(herdr.calls.at(-1)).toEqual(["pane", "close", "p2"]);
+    expect(herdr.calls).toContainEqual(["pane", "close", "p2"]);
   });
 
   it("records a pane that blocks while the report is awaited", async () => {
@@ -164,7 +183,7 @@ describe("research/batch.ts", () => {
       ...herdr.deps,
       herdr(args) {
         const result = herdr.deps.herdr(args);
-        if (args[1] === "create") throw new Error("no tab");
+        if (args[1] === "run" && args[3].includes("'claude'")) throw new Error("no tab");
         return result;
       },
       claudeVersion() {
@@ -178,7 +197,6 @@ describe("research/batch.ts", () => {
       [2, null, "launch_failed"],
     ]);
     expect(rows[0]).toMatchObject({ error: "no tab", claude_version: null });
-    expect(herdr.calls.map((call) => call[1])).toEqual(["list", "create", "create"]);
   });
 
   it("lightens the session unless --full", async () => {
@@ -200,11 +218,93 @@ describe("research/batch.ts", () => {
     const shared = {
       claudeMdExcludes: [join(homedir(), ".claude", "**")],
       skillOverrides: { "auto-mode-setup": "off" },
+      hooks: { PreToolUse: [{ matcher: "AskUserQuestion", hooks: [expect.objectContaining({ type: "command" })] }] },
     };
     expect(lighter).toEqual({ ...shared, disableBundledSkills: true });
     expect(full.commands()[0]).not.toContain("--tools");
     const { env: _, ...whole } = settings(full.commands()[0]);
     expect(whole).toEqual(shared);
+  });
+
+  it("runs --parallel at a time, then the --serial ones one by one", async () => {
+    const out = tmpPath();
+    const herdr = fake({});
+    const events: string[] = [];
+    const deps: Deps = {
+      ...herdr.deps,
+      out(text) {
+        events.push(text.trim().split(" ").slice(0, 2).join(" "));
+      },
+    };
+    await batch(["--webarena", "423,0,11", "--serial", "423", "--model", "m", "--out", out, "--parallel", "2"], deps);
+    expect(events.slice(0, 6)).toEqual([
+      "RUN webarena_0",
+      "RUN webarena_11",
+      "webarena_0 #1",
+      "webarena_11 #1",
+      "RUN webarena_423",
+      "webarena_423 #1",
+    ]);
+    const rows = readEvents(join(out, "results.jsonl"));
+    expect(rows.map((row) => [row.task, row.status, row.serial, row.verified])).toEqual([
+      ["webarena_0", "done", false, null],
+      ["webarena_11", "done", false, null],
+      ["webarena_423", "done", true, null],
+    ]);
+    expect(herdr.board()).toHaveLength(1);
+    expect(herdr.board()[0]).toContain("'--tasks' 'webarena_0,webarena_11,webarena_423'");
+    expect(herdr.scored.map((args) => args[0])).toEqual(["eval", "report"]);
+    expect(events).toContain("RUNS 3/3");
+  });
+
+  it("keeps a WebArena session from the answer files and answers its questions", async () => {
+    const out = tmpPath();
+    const herdr = fake({});
+    await batch(["--webarena", "0", "--model", "m", "--out", out], herdr.deps);
+    const [command] = herdr.commands();
+    expect(command).toContain(`'/webhand-webarena-research 0 (session: new) Pass --out-dir ${out} to start.`);
+    const settings = JSON.parse(/'--settings' '(.*)'$/.exec(command)?.[1] as string);
+    expect(settings.permissions.deny).toContain(`Read(/${out}/**)`);
+    expect(settings.permissions.deny).toContain("Bash(*eval_result.json*)");
+    expect(settings.hooks.PreToolUse[0].matcher).toBe("AskUserQuestion");
+  });
+
+  it("does not take an earlier run's end for a WebArena task run again", async () => {
+    const out = tmpPath();
+    write(join(out, "0", "webhand.jsonl"), { type: "run_end", status: "error", attempts: 3 });
+    await batch(["--webarena", "0", "--model", "m", "--out", out], fake({}).deps);
+    expect(readEvents(join(out, "results.jsonl"))[0]).toMatchObject({ status: "done", attempts: 1 });
+  });
+
+  it.each([
+    [["--webarena", "7"], "Unknown WebArena task ID"],
+    [["--webarena", "0", "--repeat", "2"], "--repeat is not for --webarena"],
+    [["--webarena", "0,0"], "twice"],
+    [["--webarena", "0", "--serial", "11"], "not run"],
+    [["--webarena", "0", "--tasks", "hotel_filter"], "usage:"],
+    [["--webarena", "0", "--parallel", "0"], "usage:"],
+  ])("refuses %j", async (more, message) => {
+    const { deps, calls } = fake({});
+    await expect(batch([...more, "--model", "m", "--out", tmpPath()], deps)).rejects.toThrow(message);
+    expect(calls).toEqual([]);
+  });
+
+  it("answers a question with a fixed sentence, and one about signing in with another", () => {
+    const answers = (question: string) =>
+      reply({ tool_name: "AskUserQuestion", tool_input: { questions: [{ question }] } })?.hookSpecificOutput
+        .updatedInput.answers;
+    expect(answers("Which one?")).toEqual({ "Which one?": "お答えできません。手元の情報だけで進めてください。" });
+    expect(answers("Please sign in")).toEqual({ "Please sign in": "対応できません。手元の情報だけで進めてください。" });
+    expect(reply({ tool_name: "Bash" })).toBeNull();
+  });
+
+  it("opens one tab, in the workspace it was started from", async () => {
+    vi.stubEnv("HERDR_WORKSPACE_ID", "w9");
+    const herdr = fake({ hotel_filter: true });
+    await batch(args(tmpPath()), herdr.deps);
+    const created = herdr.calls.filter((call) => call[1] === "create");
+    expect(created.map((call) => call.slice(0, 4))).toEqual([["tab", "create", "--workspace", "w9"]]);
+    vi.unstubAllEnvs();
   });
 
   it("refuses a missing model, an unknown task, and an --out that git would track", async () => {

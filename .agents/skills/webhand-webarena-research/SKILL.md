@@ -1,13 +1,13 @@
 ---
 name: webhand-webarena-research
 description: Run a ServiceNow/webarena-verified benchmark task through webhand, recording network.har and agent_response.json for deterministic offline evaluation. Research repository only; not part of the plugin. Use when asked to run a WebArena-Verified benchmark task, such as /webhand-webarena-research 108.
-argument-hint: "[TASK_ID | --sites SITE] [--out-dir DIR]"
-allowed-tools: Read(skills/webhand/SKILL.md), Bash(node research/webarena.ts:*), AskUserQuestion
+argument-hint: "[TASK_ID... | --sites SITE] [--out-dir DIR]"
+allowed-tools: Read(skills/webhand/SKILL.md), Bash(node research/webarena.ts:*), Bash(node research/batch.ts:*), AskUserQuestion
 ---
 
 # webhand WebArena-Verified research run
 
-Read `skills/webhand/SKILL.md` and follow it exactly, with these differences only:
+**When the request names more than one task** (several IDs, a site, or a template batch), do not run them in this session: follow [More than one task](#more-than-one-task). **One task** runs here: read `skills/webhand/SKILL.md` and follow it exactly, with these differences only:
 
 - Run every command from the repository root as `node research/webarena.ts` in place of `webhand` (same arguments). Do not use `npx`.
 - **Never open or read** the WebArena dataset JSON (`state/webarena/*.json`), `eval_result.json`, or `state/webarena/config.json`: reading expected answers invalidates the benchmark, and the config file may hold test-environment auto-login credentials.
@@ -27,3 +27,19 @@ Read `skills/webhand/SKILL.md` and follow it exactly, with these differences onl
   - Add `--eval` when asked to score immediately with `uvx webarena-verified eval-tasks` (prints a compact single-line `WEBARENA_VERIFIED_SCORE` by default; add `--verbose` for full evaluator logs).
 - After a batch run, aggregate offline with `node research/webarena.ts eval --output-dir DIR [--sites SITE]` and generate the complete summary table (including all failed/blocked/incomplete runs) with `node research/webarena.ts report --output-dir DIR`.
 - Report `status`, `task_type`, `wa_status`, `attempts`, `log`, `har`, `agent_response`, and (if evaluated) `webarena_verified_score`. Keep `webarena_verified_score` distinct from `tasks/`'s `verify()` — never call it `verify()`.
+
+## More than one task
+
+`research/batch.ts` runs each task in its own new Claude Code session, three at a time in a new herdr tab with a `research/progress.ts` pane, then runs `eval` and `report`. Do not start webhand sessions yourself.
+
+1. Run `doctor` and `list` (above) to check the environment and get the IDs and intents.
+2. Choose `--serial`: every task whose intent could change data on a site (create, update, delete, cancel, approve, set, send, and the like), and every one you are unsure about. Judge from the public intent only. These run one at a time after all the others, because tasks on a site share its container.
+3. When strict isolation is needed, have the user recreate the site container first (above) and record whether it was reset.
+4. Run from the repository root, as a background command, and wait for it to end:
+
+   ```bash
+   node research/batch.ts --webarena ID,ID,... --serial ID,ID --model claude-sonnet-5-5 --out DIR
+   ```
+
+   Use another `--model` or `--parallel N` only when the user asks. `DIR` is a new folder outside the repository or ignored by git (such as `runs/webarena/NAME`); the same `DIR` again runs only the tasks without a line in `DIR/results.jsonl`. It stops on uncommitted or untracked files. Dataset and config paths come from the environment (`WEBARENA_DATASET`, `WEBARENA_CONFIG`), which it passes to every session.
+5. Report the output's summary table, the runs that did not reach `run_end` or that blocked (`DIR/results.jsonl`), and `DIR`. A permission prompt or a question in text gets no answer: tell the user which pane waits.
