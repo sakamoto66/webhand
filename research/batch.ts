@@ -160,6 +160,8 @@ async function runTask(job: Job, home: string, pane: string, options: Options, d
   try {
     mkdirSync(home, { recursive: true });
     const env: Record<string, string> = { WEBHAND_HOME: home, CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" };
+    // A new pane does not get the caller's environment, so what the caller set is named here.
+    if (process.env.WEBHAND_SCREENSHOTS) env.WEBHAND_SCREENSHOTS = process.env.WEBHAND_SCREENSHOTS;
     if (job.id !== null) {
       for (const name of ["WEBARENA_DATASET", "WEBARENA_CONFIG"]) {
         const value = process.env[name];

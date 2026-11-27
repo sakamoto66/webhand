@@ -61,7 +61,7 @@
 
 `--out` はリポジトリ外か git の無視対象でなければ拒否する。未追跡の文書なども未コミット扱いで拒否するので、専用の worktree から実行する。無視対象のファイルと、実行中に変えて戻したファイルは検出しない。
 
-比較する回では `TYPESAFE_MODEL` で Jev のモデルを固定する。batch の起動時に指定してもペインには届かない（`batch.ts` がペインに渡す環境変数は `WEBHAND_HOME`、`CLAUDE_CODE_DISABLE_AUTO_MEMORY`、WebArena の `WEBARENA_DATASET`・`WEBARENA_CONFIG` だけで、`pane split` に `--env` を付けない。herdr 0.9.3 では、呼び出し側だけに設定した値は新しいペインで未設定だった）。指定はペインのシェルが読む起動ファイル（例: `~/.bashrc` の `export`）で実行前に行う。webhand は `process.env.TYPESAFE_MODEL`（なければ `jev-latest`）を使うが、ペインの値が `claude` を経て webhand に届くことは実セッションで未確認、herdr サーバー側の環境変数で指定する方法も未確認なので、実行後に各ログの `call` の `model` を確かめる。モデルは行にも再実行の判定にも含まれないので、変えるときは新しい `--out` を使う。
+比較する回では `TYPESAFE_MODEL` で Jev のモデルを固定する。batch の起動時に指定してもペインには届かない（`batch.ts` がペインに渡す環境変数は `WEBHAND_HOME`、`CLAUDE_CODE_DISABLE_AUTO_MEMORY`、呼び出し側で指定した `WEBHAND_SCREENSHOTS`、WebArena の `WEBARENA_DATASET`・`WEBARENA_CONFIG` だけで、`pane split` に `--env` を付けない。herdr 0.9.3 では、呼び出し側だけに設定した値は新しいペインで未設定だった）。指定はペインのシェルが読む起動ファイル（例: `~/.bashrc` の `export`）で実行前に行う。webhand は `process.env.TYPESAFE_MODEL`（なければ `jev-latest`）を使うが、ペインの値が `claude` を経て webhand に届くことは実セッションで未確認、herdr サーバー側の環境変数で指定する方法も未確認なので、実行後に各ログの `call` の `model` を確かめる。モデルは行にも再実行の判定にも含まれないので、変えるときは新しい `--out` を使う。
 
 ## 3. agy 対応で決める・確かめる項目
 
