@@ -418,6 +418,7 @@ A click can open a new tab (`target="_blank"`, `window.open`). webhand keeps the
 
 - With two or more tabs open, the observation shows `TABS: N open, this is tab K`, and each other tab is offered as a control `TAB_n` ("Switch to tab n: title"). Jev chooses by number, like `SCROLL_DOWN` or `WAIT`; with one tab nothing changes. `webhand act TAB_2` does the same by hand.
 - A switch runs only when the number of tabs, their order, and the target's title are still what was observed. Otherwise nothing runs and the result is `STALE`. A switch changes nothing on any page.
+- A new tab is listed only once its server has answered. An observation waits up to 5 seconds for one that is not listed yet, so the first look after a click offers it, with its title. A tab that has not answered by then, or never loads (a 204), is not waited for again in that command; one that answers later appears in a later observation. Lightpanda and Obscura open no new tabs, so nothing waits there.
 - A new, closed, or switched tab counts as a page change, so it does not add to `STUCK`.
 - A tab that closes itself leaves the run on the last tab still open.
 - The tab the run is on is kept between commands in `state/tab`, because each command attaches to Chrome anew.

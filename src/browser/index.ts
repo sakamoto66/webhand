@@ -211,6 +211,10 @@ export class Browser {
       let state: Page | null;
       try {
         await this.evaluate(settleScript(), { awaitPromise: true });
+        // An engine whose windows are tracked opens no tabs. After a wait for one, this page is settled again.
+        if (!this.tracksWindows && (await this.tabs.awaitNewTabs(this.context))) {
+          await this.evaluate(settleScript(), { awaitPromise: true });
+        }
         if (this.compat) await this.evaluate(COMPAT);
         if (this.tracksWindows) await this.evaluate(TRACK_WINDOWS);
         state = await this.evaluate(readState(this.view));
