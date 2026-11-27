@@ -10,9 +10,10 @@ import {
 } from "playwright-core";
 import { sleep } from "../core/format.ts";
 import { type Action, type Page, StalePage } from "../core/types.ts";
-import { type Finding, hostAllowed } from "../explore.ts";
+import type { Finding } from "../explore.ts";
 import type { StorageState } from "../storage/auth.ts";
 import { dispatchAction } from "./actions/index.ts";
+import { guardDocuments } from "./document-guard.ts";
 import { DownloadTracker } from "./downloads.ts";
 import { ExploreWatcher } from "./explore-watcher.ts";
 import { FrameRegistry, frameOf } from "./frames.ts";
@@ -71,6 +72,7 @@ export class Browser {
   private keepsTab = true;
   private tracksWindows = false;
   private compat = false;
+  private guarded: string[] | null = null;
   private readonly downloads: DownloadTracker;
   private readonly explorer = new ExploreWatcher();
   private readonly tabs = new TabManager();
@@ -103,11 +105,7 @@ export class Browser {
         await instance.tabs.findPlaceholder(instance.context);
         if (!options.explore && options.allowedDomains?.length) {
           const allow = options.allowedDomains;
-          await instance.context.route("**/*", async (route) => {
-            const request = route.request();
-            if (!request.isNavigationRequest() || hostAllowed(request.url(), allow)) return route.continue();
-            return route.abort("blockedbyclient");
-          });
+          await guardDocuments(await instance.browser.newBrowserCDPSession(), () => allow); // Before any page opens.
         }
         if (url) {
           // A saved profile may restore old tabs. The run owns exactly one fresh tab.
@@ -136,6 +134,13 @@ export class Browser {
       await instance.close();
       throw error;
     }
+  }
+
+  /** allowed_domains on an engine without a browser-wide CDP session (Lightpanda): the page is guarded. A later call replaces the hosts. */
+  async guardDocuments(allow: string[]): Promise<void> {
+    const guarding = this.guarded !== null;
+    this.guarded = allow;
+    if (!guarding) await guardDocuments(this.cdp, () => this.guarded ?? []);
   }
 
   takeFindings(): Finding[] {

@@ -242,7 +242,7 @@ export async function attachLocal(state: State, url: string | null, view?: ViewC
 export const chrome: Engine = {
   id: "chrome",
   label: null,
-  capabilities: { localFiles: true, har: true, explore: true },
+  capabilities: { localFiles: true, har: true, explore: true, allowedDomains: true },
   async start(options) {
     let executable: string | null;
     if (options.chrome === "windows") {

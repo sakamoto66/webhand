@@ -134,6 +134,7 @@ networkingMode=mirrored
 - `file:` の URL は開けません（ページは http で配信します）。2つ目のタブも開けません。`target="_blank"` のリンクや `window.open` は何も起きず、エラーにもならず、ページはそのままです。そのステップの後に、実行ログへ `window_ignored` イベント（ステップと URL）を残すので、「何も起きなかったクリック」を、拒否されたものと区別できます。Jev に新しい選択肢は出しません。
 - レイアウトがないため、要素の位置は模擬で、スクリーンショットはプレースホルダーです。Jev に見せる内容が Chrome と違うので、Chrome との比較は別の実験として扱います。
 - `lightpanda` が `PATH` にある必要があります。
+- `allowed_domains` を守れます。リダイレクトの途中や新しいウィンドウを含むページのリクエストを、送る前に確かめます。コマンドの間も同じです。拒否したページは「Navigation failed、Reason: BlockedByClient」と読まれます（`replan --restart` で戻れます）。[許可ドメイン](#許可ドメインallowed_domains)を参照してください。
 
 ## Obscura
 
@@ -142,6 +143,7 @@ networkingMode=mirrored
 - 入れ方: リリースのアーカイブを展開し（`obscura` と `obscura-worker` を同じ場所に置く）、`WEBHAND_OBSCURA` に `obscura` のパスを設定するか、`PATH` に置きます。
 - Obscura は既定で、ループバックとプライベートアドレスを拒否します（SSRF 対策）。ローカルのページを使うときだけ `WEBHAND_OBSCURA_ALLOW_PRIVATE=1` を設定します。実在のサイトでは設定しません。
 - 制約は Lightpanda と同じです。保存プロファイルも窓もないので、`--headed`、`[person]` ステップ、`record`、`profile` は使えません。
+- `allowed_domains` を持つサービスの実行は拒否します。Obscura では、リダイレクト先へのリクエストを送る前に止められません。[許可ドメイン](#許可ドメインallowed_domains)を参照してください。
 - 新しいウィンドウ: `window.open` は何も開かず、Lightpanda と同じく `window_ignored` として記録します。`target="_blank"` のリンクは、新しいウィンドウではなく、同じタブでリンク先を読み込みます（ページが変わるので、`window_ignored` は出ません）。
 - タブ: Obscura は複数のページを持ち、webhand はそれらを切り替えられます（`TAB_n`）。ただし、ページの操作で2つ目のタブが開くことはない（上記）ので、実際には1つです。`Page.bringToFront` は未実装で、webhand は、それがなくても切り替えます。
 - `<body>` の直下にある inline の要素（段落、ブロック、flex の中でないもの）は、大きさが 0 になり、Jev には出ません。ブロックの中にあれば出ます。
@@ -157,6 +159,22 @@ networkingMode=mirrored
 - コマンドが 60 秒来ないとセッションは閉じます。`keep_alive` で延ばせ、webhand は最長の 20 分を求めます。セッションが消えていれば次のコマンドは失敗します（ブラウザへの変更操作はリトライしません）。`start` からやり直してください。
 - 上限は Cloudflare のプランによります（Workers Free: 同時 3 ブラウザ、1 日 10 分。Paid: 同時 200）。Chrome との結果の比較はまだしていません。別の実験として扱ってください。
 - `--engine kitesurf` は、同じ API で Cloudflare のもう一つのブラウザ Kitesurf を使います。エージェント向けのステートレスなブラウザです（ベータ。アカウントごとの上限の範囲で無料。Chromium ではないので、ページの読み取りが違うことがあります）。上記はすべて当てはまりますが、一つだけ違います。Cloudflare は `keep_alive` との併用を認めないので、コマンドが 60 秒来ないとセッションが閉じます。コマンドの間を空けすぎないか、`browser-run` を使ってください。確認したのは、例のページ、フォーム送信、`--auth`、スクリーンショットです。新しいウィンドウを開くリンク（`target=_blank`）を押すと、約 3 秒後にセッションが終わってコマンドが失敗することがあります（3 回中 2 回。残りの 1 回は新しいタブに切り替わった）。2つ目のタブに頼らないでください。また、作った直後のセッションがすでに閉じている（`410 Gone`）ことが 2 回ありました。Kitesurf はまだベータなので、`start` をやり直す必要があるかもしれません。原因は調べていません。動画、WebGL、ボット対策のチャレンジ、長い、ログイン済みのセッションには向きません（Cloudflare の説明）。
+- `browser-run` と `kitesurf` では、`allowed_domains` を持つサービスの実行を拒否します。遮断できることを確認していないためです。[許可ドメイン](#許可ドメインallowed_domains)を参照してください。
+
+## 許可ドメイン（allowed_domains）
+
+`service.toml` の `allowed_domains` は、実行中のページの移動先を制限します。ホストはサブドメインも含みます。規則にポートがあれば、ポートも一致する必要があります。受け付けるエンジンではどれでも、リスト外の `start --url`、`replan --url`、`answer --url` を拒否します。確かめるのはページ（ドキュメント）のリクエストだけで、他のホストへのスクリプト、画像、fetch/XHR は通ります。`--explore` は代わりに独自の規則（`--allow-domain`）を使います。
+
+| エンジン | 実行中に遮断するもの |
+|---|---|
+| `lightpanda` | リダイレクトの途中や新しいウィンドウを含む、すべてのページのリクエスト。最初のページから `finish` まで、コマンドの間も同じ。フレームは、確認した版（1.1.0-nightly）では読み込まれない |
+| `chrome`、`headless-shell` | すべてのタブとフレームの、リダイレクトの途中を含むすべてのページのリクエスト。`start` の最初のページから、webhand のコマンドが動いている間。**遮断しないもの**: コマンドの間にページが行う移動（タイマー、遅れて実行される refresh） |
+| `obscura` | 拒否: `start` と `replan --service` は `allowed_domains` を持つサービスを受け付けない。リダイレクトの途中を止められないため |
+| `browser-run`、`kitesurf` | 同じく拒否: 遮断できることを確認していない |
+
+リダイレクトもほかのページのリクエストと同じように確かめるため、サインインが経由するすべてのホスト（SSO や ID プロバイダー）をリストに入れる必要があります。拒否したページにはブラウザのエラーページが表示されます。`start` や `replan --url` のリダイレクトが拒否されると、コマンドは `net::ERR_BLOCKED_BY_CLIENT` で終わります。
+
+ネットワークの境界ではありません。リクエストを外に出してはいけない場合は、ファイアウォールやプロキシを使ってください。
 
 ## コマンド
 
@@ -244,7 +262,7 @@ v2 が記憶するのは、`~/.webhand/memory/<host>.json` に置く、ページ
 
 | ファイル | 内容 | 使われ方 |
 | --- | --- | --- |
-| `services/<service>/service.toml` | サービスの説明、`base_url`、任意の `allowed_domains`、ログイン要否、ページと領域、Jev 向けの事実 | `catalog` で読み、`--service` で渡す。`allowed_domains`（ホスト名のみ。例: `["app.example.com"]`）を書くと、`start` / `replan --url` / `answer --url` および許可外ドメインへのナビゲーション・リダイレクト・新規タブ遷移を拒否する |
+| `services/<service>/service.toml` | サービスの説明、`base_url`、任意の `allowed_domains`、ログイン要否、ページと領域、Jev 向けの事実 | `catalog` で読み、`--service` で渡す。`allowed_domains` はホスト名のみ（例: `["app.example.com"]`）。[許可ドメイン](#許可ドメインallowed_domains)を参照 |
 | `services/<service>/checks/<name>.toml` | 保存した受け入れ確認（`status` は draft/approved、`env` は test/read-only、params、確認ごとの steps・`expect`・`manual`・`depends_on`）。実行では書き換えない。[design-regression.md](design/design-regression.md) | `webhand check --saved` と `/webhand-regress` で使用 |
 | `services/<service>/runbooks/<name>.toml` | 手順書（`goal`, `start_url`, `status`, `params`, `steps`, `hints`, `done_when`, `focus`, `skip`） | エージェントの計画とバッチ実行（`webhand batch init`）の下敷き。手順と hints は Jev にも渡す |
 

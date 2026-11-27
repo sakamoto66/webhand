@@ -47,6 +47,7 @@ const METHODS = [
   "evaluate",
   "storageState",
   "restore",
+  "guardDocuments",
   "shutdown",
 ] as const;
 
@@ -211,6 +212,11 @@ export class RemoteBrowser implements Driver {
 
   restore(state: StorageState, url: string): Promise<string[]> {
     return this.call("restore", state, url);
+  }
+
+  /** Has the daemon refuse document requests outside these hosts, from now until the session stops. */
+  async guardDocuments(allow: string[]): Promise<void> {
+    await this.call("guardDocuments", allow);
   }
 
   /** Ends this connection only. The daemon, its browser and the page stay until the session is stopped. */

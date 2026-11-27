@@ -3,7 +3,7 @@
 import { Browser } from "../browser/index.ts";
 import { SessionError } from "../core/errors.ts";
 import type { State } from "../storage/session.ts";
-import { type Engine, rejectWindowAndProfile, type StartOptions } from "./types.ts";
+import { type Engine, rejectAllowedDomains, rejectWindowAndProfile, type StartOptions } from "./types.ts";
 
 const API = "https://api.cloudflare.com/client/v4/accounts";
 
@@ -32,7 +32,7 @@ export function cloudflareEngine(spec: { id: string; label: string; query: strin
   return {
     id: spec.id,
     label: spec.label,
-    capabilities: { localFiles: false, har: false, explore: false },
+    capabilities: { localFiles: false, har: false, explore: false, allowedDomains: false },
     notes: spec.notes,
     async start(options: StartOptions): Promise<State> {
       rejectWindowAndProfile(spec.label, options);
@@ -90,6 +90,7 @@ export function cloudflareEngine(spec: { id: string; label: string; query: strin
       }
     },
     async attach(state, url, view) {
+      rejectAllowedDomains(spec.label, state);
       return await Browser.open(url, { endpoint: { url: state.cdp, headers: browserRunHeaders() }, view });
     },
   };

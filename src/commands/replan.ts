@@ -2,6 +2,8 @@ import * as agent from "../agent/index.ts";
 import type { Args } from "../args.ts";
 import { logOnce, safeUrl } from "../core/metrics.ts";
 import type { Value } from "../core/types.ts";
+import { engineFor } from "../engines/index.ts";
+import { ENFORCING_ENGINES } from "../engines/types.ts";
 import { hostAllowed } from "../explore.ts";
 import { describePlan, headline } from "../output.ts";
 import { planText } from "../policies/base.ts";
@@ -41,6 +43,12 @@ function applyReplanService(args: Args, state: session.State): boolean {
   // An explore session is limited by its own --allow-domain.
   const allowed = state.explore ? [] : (info.allowed_domains ?? []);
   if (allowed.length) {
+    const engine = engineFor(state.engine);
+    if (!engine.capabilities.allowedDomains) {
+      throw new ReplanRejected(
+        `${engine.label} cannot enforce service ${args.service}'s allowed_domains. ${ENFORCING_ENGINES}`,
+      );
+    }
     const outside = [String(state.page.url), state.start_url].some((url) => !hostAllowed(url, allowed));
     if (outside) {
       throw new ReplanRejected(

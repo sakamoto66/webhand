@@ -21,6 +21,8 @@ interface EngineCapabilities {
   har: boolean;
   /** Supports --explore (local Linux Chrome network routing and console/error collection). */
   explore: boolean;
+  /** Can keep a run inside a service's allowed_domains. A run that has them is refused without it. */
+  allowedDomains: boolean;
 }
 
 export interface Engine {
@@ -37,6 +39,16 @@ export interface Engine {
   notes?: { start?: string; auth?: string };
   /** An engine held by a daemon (see ipc/daemon.ts): its own command line, and whether the page needs snapshot compat. */
   serve?: { arguments(port: number): string[]; compat: boolean };
+}
+
+/** What a refusal over allowed_domains tells Claude to do instead. */
+export const ENFORCING_ENGINES = "Use --engine chrome, headless-shell or lightpanda";
+
+/** A session saved with allowed_domains is not attached by an engine that cannot enforce them. */
+export function rejectAllowedDomains(label: string, state: State): void {
+  if (state.allowed_domains?.length) {
+    throw new SessionError(`${label} cannot enforce allowed_domains. ${ENFORCING_ENGINES}`);
+  }
 }
 
 /** Engines without a window have nothing to sign in in, and no saved profile: fail rather than drop the ask quietly. */
