@@ -31,6 +31,7 @@ import {
   TRACK_WINDOWS,
   UNSEEN,
 } from "./scripts/index.ts";
+import { SentTracker } from "./sent.ts";
 import { asset, READ_STATE, readState, type ViewChoice } from "./snapshot.ts";
 import { readStorageState, restoreStorageState } from "./storage.ts";
 import { TabManager } from "./tabs.ts";
@@ -79,6 +80,7 @@ export class Browser {
   private readonly downloads: DownloadTracker;
   private readonly explorer = new ExploreWatcher();
   private readonly tabs = new TabManager();
+  private readonly sending = new SentTracker();
   private readonly frameRegistry = new FrameRegistry();
   browser!: PlaywrightBrowser;
   context!: BrowserContext;
@@ -127,6 +129,7 @@ export class Browser {
         }
         instance.cdp = await instance.context.newCDPSession(instance.page);
         instance.downloads.allow(instance.context);
+        instance.sending.watch(instance.context);
         await instance.tabs.rememberTab(instance.context, instance.page, instance.attached, instance.keepsTab);
         return instance;
       }
@@ -136,6 +139,7 @@ export class Browser {
       instance.page = await instance.context.newPage();
       instance.cdp = await instance.context.newCDPSession(instance.page);
       instance.downloads.allow(instance.context);
+      instance.sending.watch(instance.context);
       if (url) await instance.page.goto(url, { waitUntil: "load" });
       return instance;
     } catch (error) {
@@ -280,6 +284,7 @@ export class Browser {
   async act(action: Action, page: Page, text: string | null = null): Promise<void> {
     const changed = await this.staleParts(page, action);
     if (changed.length) throw new StalePage("Page changed since this decision", changed);
+    this.sending.reset();
     await dispatchAction(
       {
         page: this.page,
@@ -306,6 +311,11 @@ export class Browser {
       page,
       text,
     );
+  }
+
+  /** Whether a request other than a read left the pages since the last act began. */
+  async sentRequest(): Promise<boolean> {
+    return this.sending.any;
   }
 
   /** Read-only signs of why a page cannot be used: see PageCheck. */

@@ -48,6 +48,8 @@ Run folders older than 30 days are removed automatically (`WEBHAND_RUNS_KEEP_DAY
 | `JEV_FAILED` | Jev's response was unusable (nothing was executed) | `run` again, `replan`, or `act` |
 | `UNCERTAIN` | Unknown whether an action took effect | Does not repeat it; `finish --status error` |
 
+When Jev chooses again a click that sent a request (any method but GET, HEAD, or OPTIONS) and left the page unchanged, it does not run and the run stops as `STUCK`: the server may have acted on it, or refused it, with nothing on the page to show which. A click that sends nothing may be repeated. This holds within one `run`, while the URL stays the same: other changes on the page, such as a menu opened and closed, do not lift it. A request the page sends on its own during that click counts too.
+
 Confidence is logged but never used to stop Jev.
 
 ## Sessions

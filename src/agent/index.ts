@@ -41,10 +41,12 @@ import {
   NEEDS_HUMAN,
   NEEDS_VALUE,
   READ_ONLY,
+  REPEATED_CLICK,
   STUCK,
   UNCERTAIN,
 } from "./outcomes.ts";
 import { type ReadOnly, refusal } from "./readonly.ts";
+import { NoEffectClicks } from "./repeat.ts";
 
 export {
   type Actor,
@@ -65,6 +67,7 @@ export {
   NEEDS_HUMAN,
   NEEDS_VALUE,
   READ_ONLY,
+  REPEATED_CLICK,
   STUCK,
   UNCERTAIN,
   unseenParts,
@@ -107,6 +110,7 @@ export async function runAgent(
   let verifyRejections = 0;
   let recoveries = 0;
   const tacticalHints: string[] = [];
+  const noEffect = new NoEffectClicks();
   const started = performance.now();
   let page = options.page || (await browser.observe());
 
@@ -128,58 +132,64 @@ export async function runAgent(
     ...extra,
   });
 
+  /** Stops the attempt, unless Jev picks a recovery that keeps it going: then null. */
+  const stopOrRecover = async (stopOutcome: string, stopDetail: string): Promise<AgentResult | null> => {
+    const canRecover =
+      stopOutcome === STUCK &&
+      Boolean(plan.recover) &&
+      Boolean(policy.recover) &&
+      recoveries < MAX_RECOVERIES &&
+      !stopDetail.includes("cannot see");
+    if (canRecover && policy.recover) {
+      try {
+        const picked = await policy.recover(page, activePlan(), history);
+        flushCalls();
+        recorder.event("tactical_recovery", {
+          attempt,
+          strategy: picked.strategy,
+          confidence: picked.confidence,
+        });
+        if (picked.strategy !== RECOVERY_ESCALATE) {
+          recoveries += 1;
+          if (picked.strategy === "SCROLL_TO_TOP" && (page.scroll?.y ?? 0) > 0) {
+            await browser.act(scroll(-page.scroll.y), page);
+            page = await browser.observe();
+          }
+          const guidance = RECOVERY_STRATEGIES[picked.strategy] ?? picked.strategy;
+          tacticalHints.push(`Tactical recovery (${picked.strategy}): ${guidance}`);
+          history.push({
+            step: history.length + 1,
+            attempt,
+            kind: "recovery",
+            operation: "RECOVERY",
+            action: `Tactical recovery: ${picked.strategy}`,
+            text: null,
+            url: page.url,
+            page_changed: true,
+          });
+          onChange(page);
+          return null;
+        }
+      } catch (error) {
+        flushCalls();
+        if (error instanceof PolicyError) {
+          return finish(JEV_FAILED, error.message, error.diagnostic ? { jev: error.diagnostic } : {});
+        }
+        if (error instanceof MutationUncertain) {
+          return finish(UNCERTAIN, `mutation uncertain: ${error.message}`);
+        }
+        // Non-fatal recovery failure falls through to normal STUCK escalation.
+      }
+    }
+    return finish(stopOutcome, stopDetail);
+  };
+
   while (true) {
     const stop = stopReason(plan, history, page, attempt, budget, decisions);
     if (stop) {
-      const [stopOutcome, stopDetail] = stop;
-      const canRecover =
-        stopOutcome === STUCK &&
-        Boolean(plan.recover) &&
-        Boolean(policy.recover) &&
-        recoveries < MAX_RECOVERIES &&
-        !stopDetail.includes("cannot see");
-      if (canRecover && policy.recover) {
-        try {
-          const picked = await policy.recover(page, activePlan(), history);
-          flushCalls();
-          recorder.event("tactical_recovery", {
-            attempt,
-            strategy: picked.strategy,
-            confidence: picked.confidence,
-          });
-          if (picked.strategy !== RECOVERY_ESCALATE) {
-            recoveries += 1;
-            if (picked.strategy === "SCROLL_TO_TOP" && (page.scroll?.y ?? 0) > 0) {
-              await browser.act(scroll(-page.scroll.y), page);
-              page = await browser.observe();
-            }
-            const guidance = RECOVERY_STRATEGIES[picked.strategy] ?? picked.strategy;
-            tacticalHints.push(`Tactical recovery (${picked.strategy}): ${guidance}`);
-            history.push({
-              step: history.length + 1,
-              attempt,
-              kind: "recovery",
-              operation: "RECOVERY",
-              action: `Tactical recovery: ${picked.strategy}`,
-              text: null,
-              url: page.url,
-              page_changed: true,
-            });
-            onChange(page);
-            continue;
-          }
-        } catch (error) {
-          flushCalls();
-          if (error instanceof PolicyError) {
-            return finish(JEV_FAILED, error.message, error.diagnostic ? { jev: error.diagnostic } : {});
-          }
-          if (error instanceof MutationUncertain) {
-            return finish(UNCERTAIN, `mutation uncertain: ${error.message}`);
-          }
-          // Non-fatal recovery failure falls through to normal STUCK escalation.
-        }
-      }
-      return finish(stopOutcome, stopDetail);
+      const stopped = await stopOrRecover(...stop);
+      if (stopped) return stopped;
+      continue;
     }
     let decision: Decision | null = null;
     const executedBefore = history.length;
@@ -253,7 +263,15 @@ export async function runAgent(
         recorder.event("read_only_refused", { attempt, kind: decision.action.kind, target: decision.action.label });
         return finish(READ_ONLY, `read-only: ${refused}`);
       }
+      if (noEffect.repeats(decision.action, page)) {
+        recorder.event("repeat_refused", { attempt, target: decision.action.label });
+        const stopped = await stopOrRecover(STUCK, REPEATED_CLICK);
+        if (stopped) return stopped;
+        continue;
+      }
       if (decision.action.offscreen) ({ page, decision } = await intoView(browser, page, decision, recorder, attempt));
+      const chosen = decision.action as Action;
+      const before = page;
       page = await execute(browser, page, decision, history, recorder, {
         decidedBy: policy.name,
         attempt,
@@ -261,6 +279,10 @@ export async function runAgent(
         values: [...plan.values, ...(plan.files ?? [])],
         memory: options.memory,
       });
+      // Asked only when it matters: a click that left the page as it was.
+      const ran = history[history.length - 1];
+      const sent = chosen.kind === "click" && !ran.page_changed && Boolean(await browser.sentRequest?.());
+      noEffect.note(chosen, ran, before, sent);
     } catch (error) {
       if (error instanceof StalePage) {
         const observed = page;

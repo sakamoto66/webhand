@@ -25,6 +25,7 @@ export interface Driver extends Reader, RowReader {
   evaluate(expression: string, options?: { awaitPromise?: boolean }): Promise<unknown>;
   unseen(): Promise<Record<string, number>>;
   ignoredWindows(): Promise<string[]>;
+  sentRequest(): Promise<boolean>;
   storageState(): Promise<StorageState>;
   restore(state: StorageState, url: string): Promise<string[]>;
   close(): Promise<void>;
@@ -43,6 +44,7 @@ const METHODS = [
   "check",
   "unseen",
   "ignoredWindows",
+  "sentRequest",
   "screenshot",
   "evaluate",
   "storageState",
@@ -195,6 +197,10 @@ export class RemoteBrowser implements Driver {
 
   ignoredWindows(): Promise<string[]> {
     return this.call("ignoredWindows");
+  }
+
+  sentRequest(): Promise<boolean> {
+    return this.call("sentRequest");
   }
 
   async screenshot(): Promise<Buffer> {
