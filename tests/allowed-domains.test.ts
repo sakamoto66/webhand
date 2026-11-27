@@ -138,7 +138,9 @@ test("start, replan --url, answer --url, and Chrome navigation all block hosts o
     "linux",
   );
   expect(started.code).toBe(OK);
-  expect(started.out).toContain(`ALLOWED DOMAINS: 127.0.0.1:${allowedPort}`);
+  expect(started.out).toContain(
+    `ALLOWED DOMAINS: 127.0.0.1:${allowedPort} (page navigations outside this list are refused while a webhand command is running; not between commands)`,
+  );
 
   // Clicking a link to the disallowed host is aborted by the context route before hitting evilPort.
   const obs = await cli("observe");
@@ -305,6 +307,9 @@ describe.each(GUARDING)("$engine", ({ engine, missing, betweenCommands }) => {
     boundedService(site.host);
     const started = await startBounded(engine, `${site.home}/`, "--service", "bounded", "--max-attempts", "9");
     expect(started.code).toBe(OK);
+    expect(started.out).toContain(
+      `(page navigations outside this list are refused ${betweenCommands ? "until finish, between commands too" : "while a webhand command is running; not between commands"})`,
+    );
 
     for (const label of ["Leave site", "Bounce", "New window", "Popup redirect"]) {
       await press(label);

@@ -365,7 +365,13 @@ function printStarted(args: Args, target: StartTarget, plan: Plan, state: sessio
     );
   }
   if (state.allowed_domains?.length) {
-    print(`ALLOWED DOMAINS: ${state.allowed_domains.join(", ")} (navigations outside this list are refused)`);
+    // A served engine's daemon keeps watching between commands; Chrome is watched only while a command is connected.
+    const when = engine.serve
+      ? "until finish, between commands too"
+      : "while a webhand command is running; not between commands";
+    print(
+      `ALLOWED DOMAINS: ${state.allowed_domains.join(", ")} (page navigations outside this list are refused ${when})`,
+    );
   }
   if (state.har) {
     print(`HAR: recording to ${state.har.path} (contains cookies and page traffic; do not commit)`);
