@@ -13,11 +13,11 @@ import { type Action, type Page, StalePage } from "../core/types.ts";
 import type { Finding } from "../explore.ts";
 import type { StorageState } from "../storage/auth.ts";
 import { dispatchAction } from "./actions/index.ts";
-import { guardDocuments } from "./document-guard.ts";
 import { DownloadTracker } from "./downloads.ts";
 import { ExploreWatcher } from "./explore-watcher.ts";
 import { FrameRegistry, frameOf } from "./frames.ts";
 import { staleParts } from "./freshness.ts";
+import { guardDocuments } from "./request-guard.ts";
 import {
   COMPAT,
   CONTEXTS,
@@ -107,6 +107,12 @@ export class Browser {
           const allow = options.allowedDomains;
           await guardDocuments(await instance.browser.newBrowserCDPSession(), () => allow); // Before any page opens.
         }
+        await instance.explorer.watch(
+          instance.browser,
+          instance.context,
+          instance.tabs.openTabs(instance.context),
+          options.explore ?? null,
+        );
         if (url) {
           // A saved profile may restore old tabs. The run owns exactly one fresh tab.
           const stale = instance.tabs.openTabs(instance.context);
@@ -118,7 +124,6 @@ export class Browser {
         }
         instance.cdp = await instance.context.newCDPSession(instance.page);
         instance.downloads.allow(instance.context);
-        await instance.explorer.watch(instance.context, options.explore ?? null);
         await instance.tabs.rememberTab(instance.context, instance.page, instance.attached, instance.keepsTab);
         return instance;
       }

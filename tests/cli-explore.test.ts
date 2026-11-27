@@ -42,7 +42,9 @@ const begin = (...more: string[]) =>
 
 test("exploring notes a 5xx, a console error and an uncaught error, and refuses a host outside the list", async () => {
   const started = await begin("--explore", "--allow-domain", host, "--max-total-actions", "6");
-  expect(started.out).toContain("EXPLORING: requests to hosts other than");
+  expect(started.out).toContain(
+    `EXPLORING: requests to hosts other than ${host} are refused while a webhand command is running; not between commands, nor for WebSocket connections or redirects followed by a worker an earlier command started. At most 6 actions in all.`,
+  );
   ScriptedJev.moves = [
     ["CLICK", "Load cart", null],
     ["CLICK", "Show total", null],

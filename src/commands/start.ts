@@ -276,8 +276,8 @@ async function openStartPage(
   const recorder = new Recorder(state.log);
   let browser: Driver | null = null;
   let skipped: string[] = [];
-  // allowed_domains apply from the first page: the browser takes the hosts before anything is opened.
-  const opening = { ...chromeState, allowed_domains: state.allowed_domains };
+  // allowed_domains and --allow-domain apply from the first page: the browser takes them before anything is opened.
+  const opening = { ...chromeState, allowed_domains: state.allowed_domains, explore: state.explore };
   try {
     if (login) {
       browser = await attach(opening, null, browserView(state));
@@ -361,7 +361,7 @@ function printStarted(args: Args, target: StartTarget, plan: Plan, state: sessio
   }
   if (state.explore) {
     print(
-      `EXPLORING: requests to hosts other than ${state.explore.allow.join(", ")} are refused. At most ${state.explore.max_total} actions in all. Anomalies are candidates, not verdicts: after each run or act, webhand findings`,
+      `EXPLORING: requests to hosts other than ${state.explore.allow.join(", ")} are refused while a webhand command is running; not between commands, nor for WebSocket connections or redirects followed by a worker an earlier command started. At most ${state.explore.max_total} actions in all. Anomalies are candidates, not verdicts: after each run or act, webhand findings`,
     );
   }
   if (state.allowed_domains?.length) {
