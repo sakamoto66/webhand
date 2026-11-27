@@ -26,6 +26,8 @@ flowchart LR
   CLI -->|"run"| JEV["Jev<br>chooses actions toward the GOAL"]
 ```
 
+Run folders older than 30 days are removed automatically (`WEBHAND_RUNS_KEEP_DAYS`), including the logs `webhand check-last` and `/webhand-teach` read. Only folders named by date and time under `runs/` (or one level below) are removed. New logs are readable by you only.
+
 ## Division of roles
 
 | Who | Role |
@@ -180,6 +182,7 @@ If the CLI is not installed globally, read `webhand` in the table below as `npx 
 | `webhand auth save\|list\|delete [NAME]` | Agent / Person | Manages saved login snapshots (`~/.webhand/state/auth/`) for `start --auth NAME` |
 | `webhand batch init\|status\|list\|skip\|clear [NAME]` | Agent / Person | Manages multi-row CSV/JSON batch runs of an approved runbook (`start --batch ID [--row N]`) |
 | `webhand memory list\|show HOST\|clear [HOST]` | Person | Inspects or clears local flow v2 site memory (`~/.webhand/memory/`; legacy alias: `knowledge`) |
+| `webhand runs list\|prune [--older-than DAYS] [--yes]` | Person | Lists run folders older than DAYS; `prune --yes` removes them |
 | `webhand profile login\|list\|delete [NAME]` | Person | Manages dedicated webhand Chrome profiles |
 
 Prefix a step with `[person]` to make it a step a human performs (requires `--headed`). `--focus REGION` / `--skip REGION` on `start` and `replan` choose which regions are observed (see [Page regions](#page-regions)), and `--read KIND` adds content from beyond the viewport (see [Reading beyond the viewport](#reading-beyond-the-viewport)). With `--runbook NAME --param k=v`, the runbook's GOAL, start URL, and steps become the defaults, and the params are passed to Jev as input values.
@@ -208,6 +211,7 @@ With `--har PATH` on `start` (Chrome or `headless-shell` only), webhand runs a d
 | `TYPESAFE_API_KEY` | *(required for `start`/`run`)* | Jev (TypeSafe API) key. Read only from the environment, never from `.env` |
 | `TYPESAFE_MODEL` | `jev-latest` | Model name sent to the TypeSafe API |
 | `WEBHAND_HOME` | `~/.webhand` | User data root (`runbooks/`, `checks/`, `memory/`, `runs/`, `state/`) |
+| `WEBHAND_RUNS_KEEP_DAYS` | `30` | `start` removes run folders older than this many days, at most once a day. `0` keeps all |
 | `WEBHAND_CHROME` | `auto` | Default for `--chrome` (`auto`, `linux`, `windows`) |
 | `WEBHAND_ENGINE` | `auto` | Default for `--engine` (`auto`, `chrome`, `headless-shell`, `lightpanda`, `obscura`, `browser-run`, `kitesurf`) |
 | `WEBHAND_FLOW` | `v2` | Default for `start --flow` (`v2` or `v1`) |

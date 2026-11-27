@@ -26,6 +26,8 @@ flowchart LR
   CLI -->|"run"| JEV["Jev<br>GOAL までの操作を選択"]
 ```
 
+30日より古い実行フォルダは自動で削除します（`WEBHAND_RUNS_KEEP_DAYS`）。`webhand check-last` や `/webhand-teach` が読むログも対象です。削除するのは `runs/` の下（または1つ下）の、日時の名前のフォルダだけです。新しいログは本人だけが読めます。
+
 ## 役割分担
 
 | 担当 | 役割 |
@@ -180,6 +182,7 @@ networkingMode=mirrored
 | `webhand auth save\|list\|delete [NAME]` | エージェント / 人 | `start --auth NAME` で使う保存ログイン（`~/.webhand/state/auth/`）を管理する |
 | `webhand batch init\|status\|list\|skip\|clear [NAME]` | エージェント / 人 | 承認済み手順書を CSV / JSON の各行で実行するバッチを管理する（`start --batch ID [--row N]`） |
 | `webhand memory list\|show HOST\|clear [HOST]` | 人 | flow v2 が覚えたサイトの記憶（`~/.webhand/memory/`）を表示・消去する（旧名 `knowledge`） |
+| `webhand runs list\|prune [--older-than DAYS] [--yes]` | 人 | DAYS より古い実行フォルダを一覧する。`prune --yes` で削除する |
 | `webhand profile login\|list\|delete [NAME]` | 人 | webhand 専用の保存 Chrome プロファイルを管理する |
 
 手順の先頭に `[person]` を付けると、人が行う手順になります（`--headed` が必須です）。`start` と `replan` の `--focus REGION` / `--skip REGION` で、観測する領域を選べます（下の「ページの領域」）。`--read KIND` で、画面の外の内容を足せます（下の「画面の外を読む」）。`--runbook NAME --param k=v` を指定すると、手順書の GOAL、開始 URL、手順が既定値になり、params は入力値として Jev に渡されます。
@@ -208,6 +211,7 @@ networkingMode=mirrored
 | `TYPESAFE_API_KEY` | *(実行時必須)* | Jev（TypeSafe API）のキー。環境変数のみから読み、`.env` 等からは読まない |
 | `TYPESAFE_MODEL` | `jev-latest` | TypeSafe API に送るモデル名 |
 | `WEBHAND_HOME` | `~/.webhand` | ユーザーデータの保存ルート（`runbooks/`, `checks/`, `memory/`, `runs/`, `state/`） |
+| `WEBHAND_RUNS_KEEP_DAYS` | `30` | `start` が、この日数より古い実行フォルダを1日1回まで削除する。`0` ですべて残す |
 | `WEBHAND_CHROME` | `auto` | `--chrome` の既定値（`auto`, `linux`, `windows`） |
 | `WEBHAND_ENGINE` | `auto` | `--engine` の既定値（`auto`, `chrome`, `headless-shell`, `lightpanda`, `obscura`, `browser-run`, `kitesurf`） |
 | `WEBHAND_FLOW` | `v2` | `start --flow` の既定値（`v2` または `v1`） |

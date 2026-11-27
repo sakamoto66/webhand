@@ -1,9 +1,12 @@
 /** Helpers shared by commands: session lookup, attaching to the session's engine, opening pages, and explore findings. */
 
+import { randomBytes } from "node:crypto";
+import { chmodSync } from "node:fs";
 import { join } from "node:path";
 import * as agent from "../agent/index.ts";
 import { Browser, type ViewChoice } from "../browser/index.ts";
 import { stamp } from "../core/format.ts";
+import { isDir } from "../core/fs.ts";
 import { Recorder } from "../core/metrics.ts";
 import { PolicyError, type Value } from "../core/types.ts";
 import * as workspace from "../core/workspace.ts";
@@ -84,7 +87,12 @@ export function attemptLabel(state: session.State): string {
 }
 
 export function defaultLog(name: string): string {
-  return process.env.WEBHAND_LOG || join(workspace.home(), "runs", stamp(), `${name}.jsonl`);
+  if (process.env.WEBHAND_LOG) return process.env.WEBHAND_LOG;
+  const runs = join(workspace.home(), "runs");
+  // Also closes a runs/ folder an earlier version left readable by others.
+  if (isDir(runs)) chmodSync(runs, 0o700);
+  // The suffix keeps two runs of one name that start in the same second in their own logs.
+  return join(runs, `${stamp()}-${randomBytes(3).toString("hex")}`, `${name}.jsonl`);
 }
 
 /** Why Jev refused, for the run log only. */

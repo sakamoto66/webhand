@@ -3,11 +3,13 @@
  *
  * user     $WEBHAND_HOME, or ~/.webhand
  *   runbooks/  service information and runbooks for every project
+ *   checks/    saved checks (acceptance criteria) for every project
  *   memory/    site memory from earlier runs (per host, no typed values)
- *   runs/      run logs, which hold page text
- *   state/     the active session and saved profiles
+ *   runs/      run logs, which hold page text; old ones are removed (src/storage/runs.ts)
+ *   state/     open sessions, saved profiles, saved sign-ins (auth/), and batches
  * project  the nearest .webhand/ from the current directory up
  *   runbooks/  service information and runbooks for this project; they win over the user's
+ *   checks/    saved checks for this project; they win over the user's
  *
  * Sign-ins and logs never go into a project. The Jev key comes only from the environment (TYPESAFE_API_KEY).
  */
