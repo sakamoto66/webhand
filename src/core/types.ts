@@ -95,7 +95,7 @@ export interface AreaChunk {
   action_preview: string[];
   parent_group?: string;
   columns?: string[];
-  slice?: { index: number; total: number } | string;
+  slice?: { index: number; total: number };
 }
 
 export class Decision {

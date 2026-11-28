@@ -4,16 +4,19 @@
   const dom = mods.dom();
   const el = mods.elements(C, dom);
   const fresh = mods.freshness(C, nodes, dom, el);
+  const areasMode = Boolean(view?.areas);
+  const actView = areasMode && !view?.whole ? { ...view, whole: true } : view;
   const reg = mods.regions(view, C, dom, el);
   const readMod = mods.readLayer(view, C, dom, el, reg);
-  const actMod = mods.actions(view, C, nodes, dom, el, reg, readMod.readKinds);
+  const actMod = mods.actions(actView, C, nodes, dom, el, reg, readMod.readKinds);
 
   const { state } = nodes;
   const { regions, pageRegion, regionOf, actionRegions, viewing, decide, positionOf } = reg;
   const { reveals, beyond } = actMod;
 
   const actions = actMod.collectActions();
-  actMod.attachDuplicateContexts([...actions, ...beyond.map((entry) => entry.action)]);
+  if (areasMode && !view?.whole) actMod.attachDuplicateContexts(actions);
+  else actMod.attachDuplicateContexts([...actions, ...beyond.map((entry) => entry.action)]);
   const lines = readMod.textLines();
   // The freshness marker always uses the viewport text in DOM order, whatever the view.
   const base = readMod.fitText(lines.filter((line) => line.inView));
@@ -32,6 +35,12 @@
   // Compare meaning and identity. Geometry is always resolved and hit-tested just before input.
   const semantics = actions.map(({ rect, ...action }) => action);
   const marker = [...fresh.viewportKey(), document.title, text, semantics, formFields];
+  if (areasMode && !view?.whole && beyond.length) {
+    actMod.attachDuplicateContexts([...actions, ...beyond.map((entry) => entry.action)]);
+  }
+
+  const maxActions = areasMode ? C.AREAS_MAX_ACTIONS : C.MAX_ACTIONS;
+  const maxBeyond = areasMode ? C.AREAS_MAX_BEYOND : C.MAX_BEYOND;
 
   let chosen = actions;
   if (viewing) {
@@ -44,7 +53,7 @@
       )
       .map(({ action }) => action);
   }
-  chosen = actMod.takeCapped(chosen, C.MAX_ACTIONS, (action) => action);
+  chosen = actMod.takeCapped(chosen, maxActions, (action) => action);
   const omitted_actions = actions.length - chosen.length;
   // The region key goes on the action for the run log only; the marker above was taken without it.
   for (const action of chosen) {
@@ -60,7 +69,7 @@
         .map((entry, index) => ({ ...entry, index }))
         .filter(({ action }) => !viewing || decide(actionRegions.get(action)).view !== "skip")
         .sort((a, b) => a.distance - b.distance || a.index - b.index),
-      C.MAX_BEYOND,
+      maxBeyond,
       (entry) => entry.action,
     )
     .sort((a, b) => a.index - b.index)
@@ -82,6 +91,7 @@
   chosen.forEach((action, index) => {
     action.id = `e${index + 1}`;
   });
+  const areas = areasMode ? mods.areas(C, nodes, dom, el, lines, chosen) : null;
   if (scrollY + innerHeight < height - 2) {
     chosen.push({ id: "scroll_down", kind: "scroll", label: "Scroll down", delta: C.SCROLL_STEP });
   }
@@ -123,6 +133,7 @@
     omitted_actions,
     regions: regionSummary,
     omitted_regions: outline.length - regionSummary.length,
+    ...(areas ? { areas } : {}),
     ...(read ? { read } : {}),
     ...(reveals.length > kept.length ? { omitted_reveals: reveals.length - kept.length } : {}),
     ...(beyond.length > beyondKept.length ? { omitted_beyond: beyond.length - beyondKept.length } : {}),
