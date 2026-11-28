@@ -420,7 +420,7 @@ test("Stage-2 fallback retries at most once on NOT_VISIBLE and low confidence (<
     areas,
   };
 
-  // Case 1: NOT_VISIBLE triggers 1 expansion retry that finds target in runner-up area
+  // Case 1: NOT_VISIBLE triggers 1 retry on the whole page, as the default context asks about it
   let chooseCount = 0;
   const fetchNotVisible: Fetch = async (_url, init) => {
     const req = JSON.parse(init.body);
@@ -441,6 +441,8 @@ test("Stage-2 fallback retries at most once on NOT_VISIBLE and low confidence (<
       return { status: 200, json: async () => choiceResponse(req, "CLICK", "NOT_VISIBLE", 0.85) };
     }
     const keys = Object.keys(req.questions.click_target.criteria);
+    expect(keys).toHaveLength(10 + 1); // Every button of the page, and NOT_VISIBLE.
+    expect(req.state.page.areas).toBeUndefined();
     const btn2 = keys.find((k) => JSON.stringify(req.questions.click_target.criteria[k]).includes("Btn 2")) as string;
     expect(btn2).toBeDefined();
     return { status: 200, json: async () => choiceResponse(req, "CLICK", btn2, 0.91) };
@@ -450,7 +452,7 @@ test("Stage-2 fallback retries at most once on NOT_VISIBLE and low confidence (<
   const d1 = await p1.choose(page, SCORED_PLAN, []);
   expect(chooseCount).toBe(2);
   expect(d1.action?.label).toBe("Btn 2");
-  expect(p1.events.at(-1)?.fields).toMatchObject({ fallback: true, fallback_reason: "not_visible" });
+  expect(p1.events.at(-1)?.fields).toMatchObject({ fallback: true, fallback_reason: "not_visible", shown_areas: 10 });
 
   // Case 2: confidence < 0.55 triggers at most 1 retry even if retry still has low confidence
   let lowConfChoose = 0;

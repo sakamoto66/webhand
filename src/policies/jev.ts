@@ -335,7 +335,11 @@ export class JevPolicy implements Policy {
     ) {
       fallback = true;
       fallbackReason = decision.operation === NOT_VISIBLE ? "not_visible" : "low_confidence";
-      const expanded = this.contextManager.expand(prepared, whole, this.budget);
+      // Adding runner-up areas often left a missing target missing, so NOT_VISIBLE asks about the whole page.
+      const expanded =
+        decision.operation === NOT_VISIBLE
+          ? { page: whole, shownAreas: prepared.totalAreas, omittedNodes: 0 }
+          : this.contextManager.expand(prepared, whole, this.budget);
       const retry = await this.chooseFrom(expanded.page, plan, history);
       if (decision.operation === NOT_VISIBLE || (retry.confidence ?? 0) >= (decision.confidence ?? 0)) {
         decision = retry;
