@@ -415,7 +415,9 @@ describe("research/webarena html report", () => {
     expect(read("index.html")).toContain("判定なし");
     const plain = read("7/7.html");
     expect(plain).toContain("&lt;script&gt;x&lt;/script&gt;");
-    expect(plain).not.toContain("<script>");
+    // The page's own slider script is the only one: nothing from the log became markup.
+    expect(plain).not.toContain("<script>x");
+    expect(plain.match(/<script>/g)).toHaveLength(1);
     expect(plain).toContain('src="webhand-screenshots/step-0001-attempt-1.png"');
     expect(plain).not.toContain("elsewhere");
     expect(`${plain}${read("index.html")}`).not.toContain("SECRET");
@@ -424,9 +426,23 @@ describe("research/webarena html report", () => {
 
     writeFileSync(join(workDir, "notes.json"), JSON.stringify({ 7: { ok_until: 1, summary: "Save <failed>" } }));
     await wa("html", "--out-dir", workDir, "--config", config);
-    expect(read("7/7.html")).toContain('class="step ok" id="s1"');
-    expect(read("7/7.html")).toContain('class="step problem" id="s2"');
+    expect(read("7/7.html")).toContain('<section class="slide" id="s1"><div class="step ok">');
+    expect(read("7/7.html")).toContain('<section class="slide" id="s2"><div class="step problem">');
+    expect(read("7/7.html")).toContain('<a class="problem" href="#s2" title="Save">2</a>');
     expect(read("index.html")).toContain("Save &lt;failed&gt;");
+
+    const plan = [{ attempt: 1, item: 1, state: "met", step: 1, evidence: "<list>" }];
+    writeFileSync(join(workDir, "notes.json"), JSON.stringify({ 7: { summary: "ok", plan } }));
+    await wa("html", "--output-dir", workDir, "--config", config);
+    const checked = read("7/7.html");
+    expect(checked).toContain(
+      '<td class="met">達成</td><td class="strip"><a href="#s1">1</a></td><td>&lt;list&gt;</td>',
+    );
+    expect(checked).toContain('<span class="met">計画 1 達成</span>');
+
+    const wrong = [{ attempt: 1, item: 1, state: "done" }];
+    writeFileSync(join(workDir, "notes.json"), JSON.stringify({ 7: { summary: "ok", plan: wrong } }));
+    expect(await waExit("html", "--output-dir", workDir, "--config", config)).toContain('needs "plan"');
 
     writeFileSync(join(workDir, "notes.json"), JSON.stringify({ 7: {} }));
     expect(await waExit("html", "--output-dir", workDir, "--config", config)).toContain('needs a "summary"');
