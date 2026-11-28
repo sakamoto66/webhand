@@ -7,6 +7,7 @@ import { Browser, type ViewChoice } from "../../src/browser/index.ts";
 import type { AreaChunk } from "../../src/browser/snapshot.ts";
 import { type Action, type Page, type Plan, StalePage } from "../../src/core/types.ts";
 import { type Fetch, JevPolicy } from "../../src/policies/jev.ts";
+import { estimateTokens } from "../../src/policies/jev-fit.ts";
 import { verify as verifyCatalogDeep } from "../../tasks/catalog_deep.ts";
 import { ROOT } from "../helpers.ts";
 import { fixture } from "./support.ts";
@@ -350,7 +351,13 @@ test("end-to-end scored context selects and executes deep card 420 on catalog_de
   const decision = await policy.choose(page, plan, []);
   expect(policy.calls.some((c) => c.purpose === "context_score")).toBe(true);
   expect(policy.calls.some((c) => c.purpose === "choose")).toBe(true);
+  expect(policy.calls.filter((c) => c.purpose === "context_score").length).toBeLessThanOrEqual(3);
+  const chooseCall = policy.calls.find((c) => c.purpose === "choose");
+  expect(chooseCall?.dropped_elements ?? 0).toBe(0);
   expect(chooseRequests).toHaveLength(1);
+  expect(chooseRequests[0].state.page.areas.length).toBeLessThanOrEqual(25);
+  expect(chooseRequests[0].state.page.areas.some((a: { id: string }) => a.id === "_omitted")).toBe(true);
+  expect(estimateTokens(JSON.stringify(chooseRequests[0]))).toBeLessThanOrEqual(24_000);
   expect(policy.events?.at(-1)?.fields).toMatchObject({ hierarchical: true, fallback: false });
   expect(decision.context_areas).toBeDefined();
   expect(decision.context_areas?.shown).toBeLessThan(decision.context_areas?.total ?? 0);
@@ -421,7 +428,10 @@ test("end-to-end scored context packs bottom appendix text and top form separate
   expect(String(packedState.page.text)).toContain("AUD-7492-QM");
   expect(packedState.elements.some((el: { label: string }) => el.label === "Confirmation code")).toBe(true);
   expect(Array.isArray(packedState.page.areas)).toBe(true);
-  expect(packedState.page.areas.length).toBe(areas.length);
+  expect(packedState.page.areas.length).toBeLessThanOrEqual(25);
+  expect(packedState.page.areas.some((a: { id: string; shown: boolean }) => a.id === "_omitted" && !a.shown)).toBe(
+    true,
+  );
   expect(packedState.page.areas.some((a: { shown: boolean }) => !a.shown)).toBe(true);
   expect(decision.operation).toBe("CLICK");
   expect(decision.action?.label).toBe("Submit");
