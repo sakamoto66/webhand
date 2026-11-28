@@ -217,7 +217,7 @@ function planStart(args: Args, target: StartTarget): { plan: Plan; goal: string;
     ...(args.more ? { more: args.more } : {}),
     ...(expects.length ? { expects } : {}),
     ...(twoStage ? { two_stage: true } : {}),
-    ...(context === "scored" ? { context: "scored" as const } : {}),
+    ...(context !== "default" ? { context: context as Plan["context"] } : {}),
     ...(recover ? { recover: true } : {}),
     ...(args.flow === "v2" ? { flow: "v2" as const } : {}),
   };

@@ -165,8 +165,11 @@ export interface Plan {
   expects?: string[];
   /** Coarse-to-fine 2-stage Jev selection (region first, then elements in that region). */
   two_stage?: boolean;
-  /** Context selection mode: "default" (standard viewport/whole view) or "scored" (2-axis noul area scoring). */
-  context?: "default" | "scored";
+  /**
+   * Context selection mode: "default" (standard viewport/whole view), "scored" (2-axis noul area scoring), or
+   * "visible" (the viewport's elements first, the whole page when none serves).
+   */
+  context?: "default" | "scored" | "visible";
   /** Allow Jev to pick a non-destructive tactical recovery strategy before stopping as STUCK. */
   recover?: boolean;
 }

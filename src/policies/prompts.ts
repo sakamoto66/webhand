@@ -18,6 +18,14 @@ NEEDS_HUMAN; sign_in means a password field is shown, which does not by itself n
 next step of the plan is marked [person] or cannot be done without signing in, a password, or a verification code. A password field is never listed as an element: when the next step needs it, answer NEEDS_HUMAN, not NOT_VISIBLE; error is an error page, so BLOCKED; dialog means a dialog is open, so deal with it first.
 page.status.unseen counts frames, canvases, and plugin objects, whose content is not observed.`;
 
+/** --context visible, first ask: only the elements in the viewport are listed. */
+const VISIBLE_FIRST_ELEMENTS = `Elements and page text cover only the visible viewport. page.hidden_elements says how many more elements are
+beyond it; they are not listed now. Choose the element the next step needs only when it is listed, never a different
+element in view as a stand-in. When it is not listed, answer NOT_VISIBLE and the whole page is offered next; do not
+look for it any other way. page.regions outlines the whole page by region.
+`;
+const WHOLE_ONLY = WHOLE_ELEMENTS.slice(0, WHOLE_ELEMENTS.indexOf("page.status.kind"));
+
 export const NEXT_ACTION = `Advance the user's entire goal from the CURRENT page using one operation.
 Work through the plan's steps in order; the action history shows what was already done in this run.
 Do not start a later step, such as opening a result, while an earlier step is not visibly done on the page.
@@ -41,6 +49,9 @@ password, verification code, or CAPTCHA is required. BLOCKED means no supported 
 
 /** v2 (whole page): elements beyond the viewport are offered with their own operations. */
 export const NEXT_ACTION_WHOLE = NEXT_ACTION.replace(VIEWPORT_ELEMENTS, WHOLE_ELEMENTS);
+
+/** The v2 rules for the first ask of --context visible. */
+export const NEXT_ACTION_VISIBLE_FIRST = NEXT_ACTION_WHOLE.replace(WHOLE_ONLY, VISIBLE_FIRST_ELEMENTS);
 
 /** Added to NEXT_ACTION when the page has a read layer. */
 export const READ_RULES = `page.read holds chosen kinds of content from the whole page, beyond the viewport, for
