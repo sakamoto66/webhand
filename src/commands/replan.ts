@@ -1,7 +1,7 @@
 import * as agent from "../agent/index.ts";
 import type { Args } from "../args.ts";
 import { logOnce, safeUrl } from "../core/metrics.ts";
-import type { Value } from "../core/types.ts";
+import type { Plan, Value } from "../core/types.ts";
 import { engineFor } from "../engines/index.ts";
 import { ENFORCING_ENGINES } from "../engines/types.ts";
 import { hostAllowed } from "../explore.ts";
@@ -125,7 +125,7 @@ function applyReplanPlan(args: Args, state: session.State): void {
     if (!CONTEXTS.includes(args.context)) {
       throw new ReplanRejected(`--context must be one of: ${CONTEXTS.join(", ")}`);
     }
-    plan.context = args.context === "scored" ? "scored" : undefined;
+    plan.context = args.context === "default" ? undefined : (args.context as Plan["context"]);
   }
   if (plan.compare && plan.collect) {
     throw new ReplanRejected("use --compare or --collect, not both (turn one off with none)");

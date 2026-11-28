@@ -29,6 +29,7 @@ import {
   INSTRUCTION_RULES,
   MORE_RULES,
   NEXT_ACTION,
+  NEXT_ACTION_VISIBLE_FIRST,
   NEXT_ACTION_WHOLE,
   NOT_VISIBLE,
   NOT_VISIBLE_HELP,
@@ -85,9 +86,11 @@ export function buildQuestions(
   tabbed = false,
   files: Map<string, Value> = new Map(),
   scoredContext = false,
+  visibleFirst = false,
 ): [Record<string, unknown>, Record<string, string>] {
   const brief = taskBrief(plan);
-  const next = plan.flow === "v2" ? NEXT_ACTION_WHOLE : NEXT_ACTION;
+  const whole = visibleFirst ? NEXT_ACTION_VISIBLE_FIRST : NEXT_ACTION_WHOLE;
+  const next = plan.flow === "v2" ? whole : NEXT_ACTION;
   const readRules = plan.flow === "v2" ? READ_RULES_WHOLE : READ_RULES;
   const rules = [
     next,

@@ -209,7 +209,7 @@ If the CLI is not installed globally, read `webhand` in the table below as `npx 
 | `webhand runs list\|prune [--older-than DAYS] [--yes]` | Person | Lists run folders older than DAYS; `prune --yes` removes them |
 | `webhand profile login\|list\|delete [NAME]` | Person | Manages dedicated webhand Chrome profiles |
 
-Prefix a step with `[person]` to make it a step a human performs (requires `--headed`). `--focus REGION` / `--skip REGION` on `start` and `replan` choose which regions are observed (see [Page regions](#page-regions)), and `--read KIND` adds content from beyond the viewport (see [Reading beyond the viewport](#reading-beyond-the-viewport)). `--context scored` (or `WEBHAND_CONTEXT=scored`; default `default`) turns on 2-axis parallel `noul` area scoring and context packing for large pages in flow v2. With `--runbook NAME --param k=v`, the runbook's GOAL, start URL, and steps become the defaults, and the params are passed to Jev as input values.
+Prefix a step with `[person]` to make it a step a human performs (requires `--headed`). `--focus REGION` / `--skip REGION` on `start` and `replan` choose which regions are observed (see [Page regions](#page-regions)), and `--read KIND` adds content from beyond the viewport (see [Reading beyond the viewport](#reading-beyond-the-viewport)). `--context scored` (or `WEBHAND_CONTEXT=scored`; default `default`) turns on 2-axis parallel `noul` area scoring and context packing for large pages in flow v2. With `--context visible`, on a flow v2 page with 20 or more elements beyond the viewport, Jev is asked about the viewport's elements first, and about the whole page once more only when it answers `NOT_VISIBLE`, `BLOCKED`, or `ESCALATE`. With `--runbook NAME --param k=v`, the runbook's GOAL, start URL, and steps become the defaults, and the params are passed to Jev as input values.
 
 With `--har PATH` on `start` (Chrome or `headless-shell` only), webhand runs a detached CDP recorder for the life of the session and writes a HAR 1.2 file atomically (mode `0600`) when `finish` runs, before Chrome closes. It captures requests and responses across CLI commands, redirects, and new tabs without changing what Jev sees. HAR files contain cookies, unredacted query strings, POST payloads, and text/JSON response bodies: treat them as sensitive and never commit or share them.
 
@@ -239,7 +239,7 @@ With `--har PATH` on `start` (Chrome or `headless-shell` only), webhand runs a d
 | `WEBHAND_CHROME` | `auto` | Default for `--chrome` (`auto`, `linux`, `windows`) |
 | `WEBHAND_ENGINE` | `auto` | Default for `--engine` (`auto`, `chrome`, `headless-shell`, `lightpanda`, `obscura`, `browser-run`, `kitesurf`) |
 | `WEBHAND_FLOW` | `v2` | Default for `start --flow` (`v2` or `v1`) |
-| `WEBHAND_CONTEXT` | `default` | Default for `start --context` (`default` or `scored`: 2-axis parallel `noul` area scoring and context packing for large pages) |
+| `WEBHAND_CONTEXT` | `default` | Default for `start --context` (`default`; `scored`: 2-axis parallel `noul` area scoring and context packing for large pages; or `visible`: the elements in the viewport first, the whole page when none serves) |
 | `WEBHAND_MEMORY` | `1` | Set `0` to disable flow v2 site-memory recording and offering (legacy: `WEBHAND_KNOWLEDGE`) |
 | `WEBHAND_MEMORY_USE` | `1` | Set `0` to keep recording but stop offering site memory to Jev (legacy: `WEBHAND_KNOWLEDGE_USE`) |
 | `WEBHAND_SCREENSHOTS` | *(off)* | Set `1` to save PNG screenshots alongside the run log (contains typed values; not sent to Jev) |

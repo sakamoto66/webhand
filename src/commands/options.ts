@@ -136,6 +136,6 @@ export function contextOption(withDefault = true): OptionSpec {
     type: "string",
     choices: [...CONTEXTS],
     ...(withDefault ? { default: process.env.WEBHAND_CONTEXT || "default" } : {}),
-    help: "Context selection: default (standard view) or scored (2-axis noul area scoring). Default: WEBHAND_CONTEXT, else default",
+    help: "Context selection: default (standard view), scored (2-axis noul area scoring), or visible (viewport first). Default: WEBHAND_CONTEXT, else default",
   };
 }

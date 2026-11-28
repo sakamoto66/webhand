@@ -46,6 +46,7 @@ import {
   CLAIM_MET,
   CLAIM_NOT_MET,
   CLAIM_UNKNOWN,
+  ESCALATE,
   NOT_VISIBLE,
   OPERATIONS,
   RECOVERY_STRATEGIES,
@@ -58,6 +59,10 @@ export { type Fetch, validateChoice, validateNoul };
 const TWO_STAGE_MIN_ELEMENTS = 16;
 /** If stage-2 region-narrowed choice falls below this confidence, double-check once against the full page. */
 const LOW_CONFIDENCE_THRESHOLD = 0.55;
+/** --context visible asks the whole page at once when fewer elements than this lie beyond the viewport. */
+const MIN_HIDDEN_ELEMENTS = 20;
+/** Answers to the viewport alone that elements beyond it could change. */
+const ASK_WHOLE: string[] = [NOT_VISIBLE, "BLOCKED", ESCALATE];
 const CLAIM_VERDICTS: ClaimVerdict[] = [CLAIM_MET, CLAIM_NOT_MET, CLAIM_UNKNOWN];
 
 /** Groups interactive actions by their snapshot region key to build Stage-1 candidates. */
@@ -92,6 +97,21 @@ function filterPageToRegion(page: Page, region: string): Page {
     return r === region || r.startsWith(`${region}/`);
   });
   return { ...page, actions };
+}
+
+/**
+ * The page with the elements in the viewport only, and how many were left out. Scrolling is not offered: an element
+ * that is not listed is asked for with the whole page instead.
+ */
+function visibleOnly(page: Page): Page {
+  const hidden = new Set<unknown>();
+  const actions = (page.actions ?? []).filter((action: Action) => {
+    if (action.kind === "scroll") return false;
+    if (!(action.kind in OPERATIONS) || !action.offscreen) return true;
+    hidden.add(action.node);
+    return false;
+  });
+  return { ...page, actions, hidden_elements: hidden.size };
 }
 
 export class JevPolicy implements Policy {
@@ -275,6 +295,9 @@ export class JevPolicy implements Policy {
   }
 
   async choose(whole: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {
+    if (plan.context === "visible") {
+      return this.chooseVisibleFirst(whole, plan, history);
+    }
     if (plan.context === "scored") {
       return this.chooseScored(whole, plan, history);
     }
@@ -296,6 +319,35 @@ export class JevPolicy implements Policy {
       }
     }
     return this.chooseFrom(whole, plan, history);
+  }
+
+  /**
+   * --context visible: asks about the elements in the viewport, and about the whole page only when the answer says
+   * nothing listed serves. A page with few elements beyond the viewport is asked about whole at once.
+   */
+  private async chooseVisibleFirst(whole: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {
+    const first = visibleOnly(whole);
+    const hidden = first.hidden_elements ?? 0;
+    if (hidden < MIN_HIDDEN_ELEMENTS) {
+      this.events.push({
+        type: "context_visible",
+        fields: { hidden_elements: hidden, skipped: true, fallback: false },
+      });
+      return this.chooseFrom(whole, plan, history);
+    }
+    let decision = await this.chooseFrom(first, plan, history);
+    const reason = ASK_WHOLE.includes(decision.operation) ? decision.operation.toLowerCase() : null;
+    if (reason) decision = await this.chooseFrom(whole, plan, history);
+    this.events.push({
+      type: "context_visible",
+      fields: {
+        hidden_elements: hidden,
+        skipped: false,
+        fallback: Boolean(reason),
+        ...(reason ? { fallback_reason: reason } : {}),
+      },
+    });
+    return decision;
   }
 
   private async chooseScored(whole: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {
@@ -384,6 +436,7 @@ export class JevPolicy implements Policy {
         Boolean(page.tabs),
         files,
         Boolean(page.areas_map?.length),
+        Boolean(page.hidden_elements),
       );
       return {
         targets,

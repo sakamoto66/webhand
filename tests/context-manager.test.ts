@@ -774,7 +774,7 @@ test("CLI --context, WEBHAND_CONTEXT, browserView, describePlan, and report beha
 
   vi.stubEnv("WEBHAND_CONTEXT", "bogus");
   await expect(cliExit("start", "--goal", "g", "--url", "https://example.com")).resolves.toBe(
-    "WEBHAND_CONTEXT must be one of: default, scored",
+    "WEBHAND_CONTEXT must be one of: default, scored, visible",
   );
   vi.unstubAllEnvs();
 
@@ -1098,4 +1098,64 @@ test("act and info scoring payloads are separated and slimmed while preserving u
   expect(Array.isArray(actQ?.instructions.area.action_preview)).toBe(true);
   expect(String(infoQ?.instructions.area.text_preview ?? "").length).toBeLessThanOrEqual(280);
   expect(infoQ?.instructions.area.action_preview).toBeUndefined();
+});
+
+test("--context visible asks about the viewport first, and about the whole page only when nothing listed serves", async () => {
+  vi.stubEnv("TYPESAFE_API_KEY", "test");
+  const actions = (hidden: number) => [
+    ...makeClickActions([1, 2], "Near"),
+    ...makeClickActions(
+      Array.from({ length: hidden }, (_, i) => i + 10),
+      "Far",
+      { offscreen: true, at: "below 900px" },
+    ),
+    { id: "scroll_down", kind: "scroll", label: "Scroll down" },
+    { id: "wait", kind: "wait", label: "Wait" },
+  ];
+  const run = async (hidden: number, answers: [string, string | null][]) => {
+    // biome-ignore lint/suspicious/noExplicitAny: inspect mock request bodies.
+    const bodies: any[] = [];
+    const fetch: Fetch = async (_url, init) => {
+      const req = JSON.parse(init.body);
+      bodies.push(req);
+      const [operation, target] = answers[bodies.length - 1] as [string, string | null];
+      return { status: 200, json: async () => choiceResponse(req, operation, target) };
+    };
+    const policy = new JevPolicy({ fetch });
+    const page: Page = { url: "http://local/v", title: "V", text: "V", actions: actions(hidden) };
+    const plan: Plan = { goal: "g", steps: [], values: [], flow: "v2", context: "visible" };
+    const decision = await policy.choose(page, plan, []);
+    return { bodies, decision, fields: policy.events.at(-1)?.fields };
+  };
+
+  const near = await run(20, [["CLICK", "1"]]);
+  expect(near.bodies).toHaveLength(1);
+  expect(Object.keys(near.bodies[0].questions.click_target.criteria)).toEqual(["1", "2", "NOT_VISIBLE"]);
+  expect(near.bodies[0].state.page.hidden_elements).toBe(20);
+  expect(near.bodies[0].questions.operation.criteria).not.toHaveProperty("SCROLL_DOWN");
+  expect(near.bodies[0].questions.operation.instructions.rules).toContain("they are not listed now");
+  expect(near.bodies[0].questions.operation.instructions.rules).toContain("page.status.kind");
+  expect(near.fields).toMatchObject({ hidden_elements: 20, skipped: false, fallback: false });
+
+  for (const [operation, target] of [
+    ["CLICK", "NOT_VISIBLE"],
+    ["BLOCKED", null],
+    ["ESCALATE", null],
+  ] as [string, string | null][]) {
+    const far = await run(20, [
+      [operation, target],
+      ["CLICK", "3"],
+    ]);
+    expect(far.bodies).toHaveLength(2);
+    expect(Object.keys(far.bodies[1].questions.click_target.criteria)).toHaveLength(22 + 1);
+    expect(far.bodies[1].state.page).not.toHaveProperty("hidden_elements");
+    expect(far.bodies[1].questions.operation.criteria).toHaveProperty("SCROLL_DOWN");
+    expect(far.decision.action?.label).toBe("Far 10");
+    expect(far.fields).toMatchObject({ fallback: true });
+  }
+
+  const few = await run(19, [["CLICK", "3"]]);
+  expect(few.bodies).toHaveLength(1);
+  expect(Object.keys(few.bodies[0].questions.click_target.criteria)).toHaveLength(21 + 1);
+  expect(few.fields).toMatchObject({ hidden_elements: 19, skipped: true });
 });

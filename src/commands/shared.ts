@@ -122,7 +122,7 @@ export function browserView(state: session.State): ViewChoice | null {
 }
 
 export const FLOWS = ["v1", "v2"];
-export const CONTEXTS = ["default", "scored"] as const;
+export const CONTEXTS = ["default", "scored", "visible"] as const;
 
 /** Actions left for an exploring session as a whole; null when the session is not exploring. */
 export function exploreActionsLeft(state: session.State): number | null {
