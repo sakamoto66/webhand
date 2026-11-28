@@ -794,6 +794,7 @@ describe("research/webarena CLI integration", () => {
       sites: ["shopping"],
     });
 
+    const log = String(session.load()?.log);
     const finished = await wa(
       "finish",
       "--status",
@@ -801,11 +802,19 @@ describe("research/webarena CLI integration", () => {
       "--task-type",
       "NAVIGATE",
       "--wa-status",
-      "SUCCESS",
+      "UNKNOWN_ERROR",
+      "--error-details",
+      "The page stayed empty",
       "--reason",
       "Opened My Account",
     );
     expect(finished.code).toBe(0);
+    // The reason is logged; the submitted response holds only what the evaluator compares.
+    expect(JSON.parse(readFileSync(join(outDir, "47", "agent_response.json"), "utf8"))).toEqual({
+      task_type: "NAVIGATE",
+      status: "UNKNOWN_ERROR",
+    });
+    expect(readFileSync(log, "utf8")).toContain('"error_details":"The page stayed empty"');
 
     const harText = readFileSync(join(outDir, "47", "network.har"), "utf8");
     expect(harText).not.toContain("ShopPass!99");

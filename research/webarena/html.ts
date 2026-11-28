@@ -149,6 +149,7 @@ function eventText(x: Event): string | null {
   if (x.type === "not_visible") return `Jev: 必要な要素が一覧にない(${x.wanted})`;
   if (x.type === "repeat_refused") return `繰り返しのクリックを実行しなかった: ${x.target}`;
   if (x.type === "run_end") return `終了: ${x.status} — ${x.reason}`;
+  if (x.type === "webarena_error_details") return `エラーの申告理由(回答には含めない): ${x.error_details}`;
   return null;
 }
 

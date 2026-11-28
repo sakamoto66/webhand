@@ -8,6 +8,7 @@ import { UsageError } from "../../src/args.ts";
 import { type IO, main } from "../../src/cli.ts";
 import { CliExit, type Hooks, OK } from "../../src/commands/context.ts";
 import { stamp } from "../../src/core/format.ts";
+import { logOnce } from "../../src/core/metrics.ts";
 import * as workspace from "../../src/core/workspace.ts";
 import * as session from "../../src/storage/session.ts";
 import { preAuthenticate } from "./auth.ts";
@@ -395,9 +396,14 @@ async function commandFinish(args: string[], io: IO): Promise<number> {
   const code = await main(["finish", ...rest], io);
   if (code !== OK) return code;
 
+  // The reason for an error goes to the log, not the response: webarena-verified 1.2.3 never compares its value, yet
+  // fails a response that holds it ("Extra keys") when the task's expected response names the key.
+  const { error_details, ...submitted } = response;
+  if (error_details && state) logOnce(state.log, "webarena_error_details", { error_details });
+
   mkdirSync(meta.task_dir, { recursive: true });
   const responsePath = join(meta.task_dir, meta.agent_response_file_name);
-  writeFileSync(responsePath, `${JSON.stringify(response, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  writeFileSync(responsePath, `${JSON.stringify(submitted, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   io.out(`AGENT_RESPONSE: ${responsePath}\n`);
 
   if (flags.eval) {
