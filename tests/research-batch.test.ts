@@ -303,7 +303,9 @@ describe("research/batch.ts", () => {
     const herdr = fake({ hotel_filter: true });
     await batch(args(tmpPath()), herdr.deps);
     const created = herdr.calls.filter((call) => call[1] === "create");
-    expect(created.map((call) => call.slice(0, 4))).toEqual([["tab", "create", "--workspace", "w9"]]);
+    expect(created.map((call) => call.slice(0, 6))).toEqual([
+      ["tab", "create", "--workspace", "w9", "--label", "batch"],
+    ]);
     vi.unstubAllEnvs();
   });
 

@@ -12,7 +12,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join, relative, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { listTasks } from "./tasks.ts";
@@ -224,10 +224,10 @@ const paneId = (reply: string, key: "pane" | "root_pane"): string => JSON.parse(
  * A new herdr tab in the workspace the batch is started from (else herdr's current one): the progress board in its
  * first pane, and one shell pane per parallel run.
  */
-function openPanes(count: number, board: string[], out: string, deps: Deps) {
+function openPanes(count: number, board: string[], deps: Deps) {
   const cwd = ["--cwd", process.cwd(), "--no-focus"];
   const here = process.env.HERDR_WORKSPACE_ID;
-  const tab = ["tab", "create", ...(here ? ["--workspace", here] : []), "--label", `batch-${basename(out)}`, ...cwd];
+  const tab = ["tab", "create", ...(here ? ["--workspace", here] : []), "--label", "batch", ...cwd];
   const root = paneId(deps.herdr(tab), "root_pane");
   const split = (from: string, direction: string) =>
     paneId(deps.herdr(["pane", "split", from, "--direction", direction, ...cwd]), "pane");
@@ -348,7 +348,7 @@ export async function batch(argv: string[], deps: Deps = defaults): Promise<void
     const since = new Date(deps.now()).toISOString();
     const names = pending.map(({ job }) => job.task).join(",");
     const board = ["node", "research/progress.ts", "--tasks", names, "--since", since, "--dir", out];
-    const panes = openPanes(Math.min(parallel, pending.length), board, out, deps);
+    const panes = openPanes(Math.min(parallel, pending.length), board, deps);
     let failure: unknown = null;
     /** Takes the next run until the queue is empty, or until any slot has stopped the batch. */
     const work = async (queue: typeof queued, slot: number) => {
