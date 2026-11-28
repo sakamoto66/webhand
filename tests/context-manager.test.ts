@@ -796,3 +796,89 @@ test("CLI --context, WEBHAND_CONTEXT, browserView, describePlan, and report beha
   );
   expect(withAreasEscalate.text).toContain("AREAS: shown 5/14");
 });
+
+test("oversized parent_group sub-buckets in stage 1 and normalizes > breadcrumbs so late slices are never truncated", async () => {
+  vi.stubEnv("TYPESAFE_API_KEY", "test");
+  const stage1Groups: string[] = [];
+  const stage2AreaIds: string[] = [];
+  // biome-ignore lint/suspicious/noExplicitAny: inspect mock choose body.
+  const chooseBodies: any[] = [];
+
+  const fetch: Fetch = async (_url, init) => {
+    const req = JSON.parse(init.body);
+    if (req.questions.operation) {
+      chooseBodies.push(req);
+      return {
+        status: 200,
+        json: async () =>
+          choiceResponse(
+            req,
+            "CLICK",
+            Object.entries(req.questions.click_target.criteria as Record<string, { element?: string }>).find(([, c]) =>
+              String(c.element ?? "").includes("Target 85"),
+            )?.[0] ?? "NOT_VISIBLE",
+          ),
+      };
+    }
+    const qs = Object.values(req.questions as Record<string, { instructions: Record<string, unknown> }>);
+    if ("group" in qs[0].instructions) {
+      for (const q of qs) stage1Groups.push(String(q.instructions.group));
+      return {
+        status: 200,
+        json: async () => noulResponse(req, (_k, instr) => (JSON.stringify(instr).includes("Target 85") ? 0.95 : 0.05)),
+      };
+    }
+    for (const q of qs) {
+      if (q.instructions.axis === "act") stage2AreaIds.push(String((q.instructions.area as { id: string }).id));
+    }
+    return {
+      status: 200,
+      json: async () =>
+        noulResponse(req, (_k, instr) =>
+          instr.axis === "act" && JSON.stringify(instr.area ?? "").includes("Target 85") ? 0.95 : 0.05,
+        ),
+    };
+  };
+
+  const areas: AreaChunk[] = [
+    makeArea("hdr", {
+      kind: "header",
+      breadcrumb: "header > nav @ visible",
+      nodes: [1],
+      labels: ["Home"],
+      text: "Site Header",
+    }),
+  ];
+  const actions: Record<string, unknown>[] = [
+    { id: "e1", kind: "click", node: 1, role: "link", label: "Home", value: "" },
+  ];
+  for (let i = 1; i <= 96; i++) {
+    const node = i + 1;
+    const label = i === 85 ? "Target 85" : `Item ${i}`;
+    areas.push(
+      makeArea(`item_${i}`, {
+        parent_group: "list_1",
+        breadcrumb: `main > list_1 [slice ${i}/96] @ below ${i * 100}px`,
+        position: "below",
+        y: i * 100,
+        nodes: [node],
+        labels: [label],
+        text: `Description for ${label}`,
+      }),
+    );
+    actions.push({ id: `e${node}`, kind: "click", node, role: "button", label, value: "" });
+  }
+  actions.push({ id: "wait", kind: "wait", label: "Wait" });
+
+  const page: Page = { url: "http://local/list", title: "List", text: "List", actions, areas };
+  const policy = new JevPolicy({ fetch });
+  const decision = await policy.choose(page, SCORED_PLAN, []);
+
+  expect(stage1Groups).toContain("header");
+  expect(stage1Groups.filter((g) => g.startsWith("list_1 ["))).toHaveLength(12);
+  expect(stage1Groups).toContain("list_1 [81-88]");
+  expect(stage2AreaIds).toContain("item_85");
+  expect(chooseBodies).toHaveLength(1);
+  expect(decision.operation).toBe("CLICK");
+  expect(decision.action?.label).toBe("Target 85");
+});

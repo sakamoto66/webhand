@@ -2,10 +2,12 @@
 
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { Browser, type ViewChoice } from "../../src/browser/index.ts";
 import type { AreaChunk } from "../../src/browser/snapshot.ts";
-import { type Action, type Page, StalePage } from "../../src/core/types.ts";
+import { type Action, type Page, type Plan, StalePage } from "../../src/core/types.ts";
+import { type Fetch, JevPolicy } from "../../src/policies/jev.ts";
+import { verify as verifyCatalogDeep } from "../../tasks/catalog_deep.ts";
 import { ROOT } from "../helpers.ts";
 import { fixture } from "./support.ts";
 
@@ -261,4 +263,166 @@ test("omitting view.areas or setting areas=false preserves legacy output and cap
   expect(explicitFalse.areas).toBeUndefined();
   expect(explicitFalse.omitted_actions).toBe(191);
   expect(explicitFalse.actions.every((a: Action) => !("area" in a))).toBe(true);
+});
+
+function mockChoiceAnswer(
+  // biome-ignore lint/suspicious/noExplicitAny: mock Jev choice request payload.
+  req: any,
+  operation: string,
+  matchCriterion: (criterion: unknown) => boolean,
+) {
+  const opKeys = Object.keys(req.questions.operation.criteria);
+  const targetQuestion = `${operation.toLowerCase()}_target`;
+  const criteriaEntries = Object.entries(req.questions[targetQuestion].criteria as Record<string, unknown>);
+  const targetKey = criteriaEntries.find(([, criterion]) => matchCriterion(criterion))?.[0] ?? "NOT_VISIBLE";
+  return {
+    model: "jev-mock",
+    usage: { input_tokens: 120, output_tokens: 12 },
+    answers: {
+      operation: {
+        choice: operation,
+        confidence: 0.95,
+        probabilities: Object.fromEntries(opKeys.map((k) => [k, k === operation ? 1 : 0])),
+      },
+      [targetQuestion]: {
+        choice: targetKey,
+        confidence: 0.95,
+        probabilities: Object.fromEntries(criteriaEntries.map(([k]) => [k, k === targetKey ? 1 : 0])),
+      },
+    },
+  };
+}
+
+test("end-to-end scored context selects and executes deep card 420 on catalog_deep.html", async () => {
+  vi.stubEnv("TYPESAFE_API_KEY", "test-key");
+  const url = pathToFileURL(join(ROOT, "tasks", "fixtures", "catalog_deep.html")).href;
+  const instance = await open(url, { whole: true, areas: true });
+  const page = await instance.observe();
+
+  const areas = areasOf(page);
+  expect(areas.length).toBeGreaterThan(5);
+  const targetAction = page.actions.find((a: Action) => a.label === "Add Sage Cushion 420 to cart");
+  expect(targetAction).toBeDefined();
+  expect(targetAction.area).toBeTruthy();
+  expect(page.guards[String(targetAction.node)]).toBeTruthy();
+
+  // biome-ignore lint/suspicious/noExplicitAny: inspect packed choose request.
+  const chooseRequests: any[] = [];
+  const fetch: Fetch = async (_url, init) => {
+    const req = JSON.parse(init.body);
+    if (req.questions.operation) {
+      chooseRequests.push(req);
+      return {
+        status: 200,
+        json: async () =>
+          mockChoiceAnswer(req, "CLICK", (criterion) =>
+            JSON.stringify(criterion).includes("Add Sage Cushion 420 to cart"),
+          ),
+      };
+    }
+    const answers: Record<string, { noul: number }> = {};
+    for (const [key, q] of Object.entries(
+      req.questions as Record<string, { instructions: { axis?: string; area?: unknown; group?: string } }>,
+    )) {
+      if ("group" in q.instructions) {
+        const hasTarget = JSON.stringify(q.instructions).includes("Sage Cushion 420");
+        answers[key] = { noul: hasTarget ? 0.95 : 0.05 };
+      } else {
+        const hasTarget = JSON.stringify(q.instructions.area ?? "").includes("Sage Cushion 420");
+        answers[key] = { noul: q.instructions.axis === "act" && hasTarget ? 0.95 : 0.05 };
+      }
+    }
+    return {
+      status: 200,
+      json: async () => ({ model: "jev-mock", usage: { input_tokens: 60, output_tokens: 6 }, answers }),
+    };
+  };
+
+  const policy = new JevPolicy({ fetch });
+  const plan: Plan = {
+    goal: "Add Sage Cushion 420 to cart",
+    steps: [{ actor: "jev", instruction: "Click Add Sage Cushion 420 to cart" }],
+    values: [],
+    flow: "v2",
+    context: "scored",
+  };
+
+  const decision = await policy.choose(page, plan, []);
+  expect(policy.calls.some((c) => c.purpose === "context_score")).toBe(true);
+  expect(policy.calls.some((c) => c.purpose === "choose")).toBe(true);
+  expect(chooseRequests).toHaveLength(1);
+  expect(policy.events?.at(-1)?.fields).toMatchObject({ hierarchical: true, fallback: false });
+  expect(decision.context_areas).toBeDefined();
+  expect(decision.context_areas?.shown).toBeLessThan(decision.context_areas?.total ?? 0);
+  expect(decision.operation).toBe("CLICK");
+  expect(decision.action?.label).toBe("Add Sage Cushion 420 to cart");
+
+  await instance.act(decision.action as Action, page);
+  const verdict = await verifyCatalogDeep(instance);
+  expect(verdict.success).toBe(true);
+});
+
+test("end-to-end scored context packs bottom appendix text and top form separately on long_doc_answer.html", async () => {
+  vi.stubEnv("TYPESAFE_API_KEY", "test-key");
+  const url = pathToFileURL(join(ROOT, "tasks", "fixtures", "long_doc_answer.html")).href;
+  const instance = await open(url, { whole: true, areas: true });
+  const page = await instance.observe();
+
+  const areas = areasOf(page);
+  expect(areas.length).toBeGreaterThan(8);
+
+  // biome-ignore lint/suspicious/noExplicitAny: inspect packed choose request.
+  const chooseRequests: any[] = [];
+  const fetch: Fetch = async (_url, init) => {
+    const req = JSON.parse(init.body);
+    if (req.questions.operation) {
+      chooseRequests.push(req);
+      return {
+        status: 200,
+        json: async () => mockChoiceAnswer(req, "CLICK", (criterion) => JSON.stringify(criterion).includes("Submit")),
+      };
+    }
+    const answers: Record<string, { noul: number }> = {};
+    for (const [key, q] of Object.entries(
+      req.questions as Record<string, { instructions: { axis?: string; area?: { kind?: string }; group?: string } }>,
+    )) {
+      if ("group" in q.instructions) {
+        const raw = JSON.stringify(q.instructions);
+        const keep = q.instructions.group === "form" || raw.includes("AUD-7492-QM") || raw.includes("Table 20");
+        answers[key] = { noul: keep ? 0.95 : 0.05 };
+      } else {
+        const areaJson = JSON.stringify(q.instructions.area ?? "");
+        const isForm = q.instructions.area?.kind === "form" || areaJson.includes("Confirmation code");
+        const isAppendix = areaJson.includes("AUD-7492-QM");
+        let score = 0.05;
+        if (q.instructions.axis === "act" && isForm) score = 0.95;
+        if (q.instructions.axis === "info" && isAppendix) score = 0.95;
+        answers[key] = { noul: score };
+      }
+    }
+    return {
+      status: 200,
+      json: async () => ({ model: "jev-mock", usage: { input_tokens: 60, output_tokens: 6 }, answers }),
+    };
+  };
+
+  const policy = new JevPolicy({ fetch });
+  const plan: Plan = {
+    goal: "Read the final confirmation code from the appendix and submit it in the top form",
+    steps: [{ actor: "jev", instruction: "Enter confirmation code and submit" }],
+    values: [{ label: "code", value: "AUD-7492-QM" }],
+    flow: "v2",
+    context: "scored",
+  };
+
+  const decision = await policy.choose(page, plan, []);
+  expect(chooseRequests).toHaveLength(1);
+  const packedState = chooseRequests[0].state;
+  expect(String(packedState.page.text)).toContain("AUD-7492-QM");
+  expect(packedState.elements.some((el: { label: string }) => el.label === "Confirmation code")).toBe(true);
+  expect(Array.isArray(packedState.page.areas)).toBe(true);
+  expect(packedState.page.areas.length).toBe(areas.length);
+  expect(packedState.page.areas.some((a: { shown: boolean }) => !a.shown)).toBe(true);
+  expect(decision.operation).toBe("CLICK");
+  expect(decision.action?.label).toBe("Submit");
 });

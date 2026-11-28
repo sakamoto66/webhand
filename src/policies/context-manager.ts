@@ -20,7 +20,8 @@ const SMALL_PAGE_MAX_OFFSCREEN_CHARS = 1_000;
 const SMALL_PAGE_MAX_AREAS = 8;
 
 const CHUNKS_PER_BATCH = 25;
-const GROUP_BATCH_SIZE = 30;
+const GROUP_BATCH_SIZE = 20;
+const GROUP_MAX_CHUNKS = 8;
 const MAX_CONCURRENCY = 4;
 const HIERARCHICAL_THRESHOLD = 60;
 const TOP_GROUPS = 6;
@@ -66,6 +67,7 @@ export interface PreparedContext {
   areas: AreaChunk[];
   scores: Map<string, { act: number; info: number }>;
   groupScores: Map<string, number>;
+  chunkBuckets?: Map<string, string>;
   shownIds: Set<string>;
   elementShownIds: Set<string>;
   textShownIds: Set<string>;
@@ -95,10 +97,57 @@ function chunkArray<T>(items: T[], size: number): T[][] {
 
 function groupKeyOf(chunk: AreaChunk): string {
   if (chunk.parent_group?.trim()) return chunk.parent_group.trim();
-  const top = String(chunk.breadcrumb ?? "")
-    .split("/")[0]
+  const stripped = String(chunk.breadcrumb ?? "").replace(/\s+@\s+[^@]+$/, "");
+  const top = stripped
+    .split(/\s*>\s*|\//)
+    .find((part) => part.trim().length > 0)
     ?.trim();
   return top || chunk.kind || "page";
+}
+
+function pickSampleBreadcrumbs(chunks: AreaChunk[]): string[] {
+  if (chunks.length <= 6) {
+    return [...new Set(chunks.map((c) => c.breadcrumb).filter(Boolean))];
+  }
+  const indices = [0, 1, 2, 3, 4].map((i) => Math.floor((i * (chunks.length - 1)) / 5));
+  indices.push(chunks.length - 1);
+  return [...new Set(indices.map((i) => chunks[i]?.breadcrumb).filter(Boolean))].slice(0, 6);
+}
+
+function pickSampleActions(chunks: AreaChunk[]): string[] {
+  const labels: string[] = [];
+  const seen = new Set<string>();
+  for (const chunk of chunks) {
+    const sorted = [...(chunk.action_preview ?? [])]
+      .map((label) => String(label).replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .sort((a, b) => a.length - b.length);
+    let perChunk = 0;
+    for (const raw of sorted) {
+      if (perChunk >= 3) break;
+      const compact = raw.length > 48 ? `${raw.slice(0, 47)}…` : raw;
+      if (seen.has(compact)) continue;
+      seen.add(compact);
+      labels.push(compact);
+      perChunk += 1;
+      if (labels.length >= 24) return labels;
+    }
+  }
+  return labels;
+}
+
+function pickSampleText(chunks: AreaChunk[]): string {
+  if (!chunks.length) return "";
+  const perChunk = Math.max(40, Math.floor(720 / chunks.length));
+  const snippets: string[] = [];
+  for (const chunk of chunks) {
+    const clean = String(chunk.text ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!clean) continue;
+    snippets.push(clean.length > perChunk ? `${clean.slice(0, Math.max(1, perChunk - 1))}…` : clean);
+  }
+  return snippets.join(" | ").slice(0, 720);
 }
 
 function positionRank(position: string): number {
@@ -555,6 +604,7 @@ export class ContextManager {
     const state = scoringState(whole, plan, history);
     const scores = new Map<string, { act: number; info: number }>();
     const groupScores = new Map<string, number>();
+    const chunkBuckets = new Map<string, string>();
     let cacheHits = 0;
     let scoredAreas = 0;
     let noulCalls = 0;
@@ -570,10 +620,24 @@ export class ContextManager {
         grouped.set(key, list);
       }
 
-      if (grouped.size >= 2) {
+      const bucketEntries: [string, AreaChunk[]][] = [];
+      for (const [group, chunks] of grouped) {
+        if (chunks.length <= GROUP_MAX_CHUNKS) {
+          bucketEntries.push([group, chunks]);
+          for (const chunk of chunks) chunkBuckets.set(chunk.id, group);
+        } else {
+          for (let start = 0; start < chunks.length; start += GROUP_MAX_CHUNKS) {
+            const slice = chunks.slice(start, start + GROUP_MAX_CHUNKS);
+            const bucketName = `${group} [${start + 1}-${start + slice.length}]`;
+            bucketEntries.push([bucketName, slice]);
+            for (const chunk of slice) chunkBuckets.set(chunk.id, bucketName);
+          }
+        }
+      }
+
+      if (bucketEntries.length >= 2) {
         hierarchical = true;
-        const groupEntries = [...grouped.entries()];
-        const groupItems = groupEntries.map(([group, chunks], idx) => ({
+        const groupItems = bucketEntries.map(([group, chunks], idx) => ({
           key: `grp_${idx}`,
           instructions: {
             rules: CONTEXT_SCORE_GROUP_RULES,
@@ -582,20 +646,16 @@ export class ContextManager {
             has_pinned: chunks.some((c) => c.pinned),
             action_count: chunks.reduce((s, c) => s + (c.action_count ?? 0), 0),
             text_chars: chunks.reduce((s, c) => s + (c.text_chars ?? 0), 0),
-            sample_breadcrumbs: chunks.slice(0, 4).map((c) => c.breadcrumb),
-            sample_actions: chunks.flatMap((c) => c.action_preview ?? []).slice(0, 10),
-            sample_text: chunks
-              .map((c) => String(c.text ?? "").trim())
-              .filter(Boolean)
-              .join(" ")
-              .slice(0, 400),
+            sample_breadcrumbs: pickSampleBreadcrumbs(chunks),
+            sample_actions: pickSampleActions(chunks),
+            sample_text: pickSampleText(chunks),
           },
         }));
 
         const stage1 = await runBatchedNoul(scorer, state, groupItems, GROUP_BATCH_SIZE);
         noulCalls += stage1.calls;
 
-        const rankedGroups = groupEntries
+        const rankedGroups = bucketEntries
           .map(([group, chunks], idx) => {
             const score = stage1.scores.get(`grp_${idx}`) ?? 0;
             groupScores.set(group, score);
@@ -673,6 +733,7 @@ export class ContextManager {
       areas,
       scores,
       groupScores,
+      chunkBuckets,
       shownIds: packed.shownIds,
       elementShownIds: packed.elementShownIds,
       textShownIds: packed.textShownIds,
@@ -698,8 +759,8 @@ export class ContextManager {
       .sort((a, b) => {
         const sa = prepared.scores.get(a.id);
         const sb = prepared.scores.get(b.id);
-        const ga = prepared.groupScores.get(groupKeyOf(a)) ?? 0;
-        const gb = prepared.groupScores.get(groupKeyOf(b)) ?? 0;
+        const ga = prepared.groupScores.get(prepared.chunkBuckets?.get(a.id) ?? groupKeyOf(a)) ?? 0;
+        const gb = prepared.groupScores.get(prepared.chunkBuckets?.get(b.id) ?? groupKeyOf(b)) ?? 0;
         const scoreB = Math.max(sb?.act ?? 0, sb?.info ?? 0, gb * 0.5);
         const scoreA = Math.max(sa?.act ?? 0, sa?.info ?? 0, ga * 0.5);
         return scoreB - scoreA;
