@@ -117,6 +117,7 @@ export function report(state: session.State, result: agent.AgentResult): number 
       ? render(state.page, { elements: false })
       : render(state.page, { offscreenElements: false, maxOptions: REPORT_MAX_OPTIONS });
   print(`${recentActions(state)}\n${pageView}`);
+  if (result.context_areas) print(`AREAS: shown ${result.context_areas.shown}/${result.context_areas.total}`);
   if (state.plan.flow === "v2" && ANSWERABLE.includes(outcome)) {
     print(`WHY: ${diagnose(state, outcome, result.detail)}`);
     print(

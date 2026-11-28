@@ -113,13 +113,16 @@ export function jevDiagnostic(error: Error): { jev?: Record<string, unknown> } {
   return error instanceof PolicyError && error.diagnostic ? { jev: error.diagnostic } : {};
 }
 
-/** The snapshot's view: saved and Claude's regions, and with flow v2, the whole page. */
+/** The snapshot's view: saved and Claude's regions, and with flow v2 / context scored, whole / areas. */
 export function browserView(state: session.State): ViewChoice | null {
-  const view = (state.view ?? null) as ViewChoice | null;
-  return state.plan?.flow === "v2" ? { ...(view ?? {}), whole: true } : view;
+  let view = (state.view ?? null) as ViewChoice | null;
+  if (state.plan?.flow === "v2") view = { ...(view ?? {}), whole: true };
+  if (state.plan?.context === "scored") view = { ...(view ?? {}), areas: true };
+  return view;
 }
 
 export const FLOWS = ["v1", "v2"];
+export const CONTEXTS = ["default", "scored"] as const;
 
 /** Actions left for an exploring session as a whole; null when the session is not exploring. */
 export function exploreActionsLeft(state: session.State): number | null {

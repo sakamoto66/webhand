@@ -109,6 +109,7 @@ export async function runAgent(
   let decisions = options.decisions ?? 0;
   let verifyRejections = 0;
   let recoveries = 0;
+  let lastContextAreas: { shown: number; total: number } | undefined;
   const tacticalHints: string[] = [];
   const noEffect = new NoEffectClicks();
   const started = performance.now();
@@ -120,6 +121,10 @@ export async function runAgent(
   const flushCalls = () => {
     for (const call of policy.calls) recorder.call(call);
     policy.calls.length = 0;
+    if (policy.events?.length) {
+      for (const ev of policy.events) recorder.event(ev.type, { attempt, ...ev.fields });
+      policy.events.length = 0;
+    }
   };
 
   const finish = (outcome: string, detail: string | null = null, extra: Partial<AgentResult> = {}): AgentResult => ({
@@ -129,6 +134,7 @@ export async function runAgent(
     actions: actionsIn(history, attempt).length,
     decisions,
     elapsed_ms: Math.round(performance.now() - started),
+    ...(lastContextAreas ? { context_areas: lastContextAreas } : {}),
     ...extra,
   });
 
@@ -200,6 +206,7 @@ export async function runAgent(
       const known = options.memory?.hints(page.url) ?? [];
       if (known.length) recorder.event("known_offered", { attempt, count: known.length });
       decision = await policy.choose(known.length ? { ...page, known } : page, activePlan(), history);
+      if (decision.context_areas) lastContextAreas = decision.context_areas;
       flushCalls();
       if (decision.operation === "NOT_VISIBLE") {
         await noteNotVisible(browser, recorder, history, page, decision, attempt);

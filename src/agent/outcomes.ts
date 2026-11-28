@@ -63,4 +63,6 @@ export interface AgentResult {
   field?: Record<string, unknown>;
   /** Why Jev refused (JEV_FAILED), for the run log only. */
   jev?: Record<string, unknown>;
+  /** Scored context area summary from the last decision, when context === "scored". */
+  context_areas?: { shown: number; total: number };
 }
