@@ -190,10 +190,10 @@ networkingMode=mirrored
 | --- | --- | --- |
 | `webhand catalog [--chrome ...]` | エージェント / 人 | 覚えたサービス情報（`allowed_domains` 含む）、手順書、保存確認、保存プロファイル、実行中セッションを一覧する |
 | `webhand doctor [--chrome ...] [--json]` | 人 / エージェント | 読み取り専用の環境診断。Node.js（>= 22）、`TYPESAFE_API_KEY`（値は非表示）、Chrome/WSL、headless shell、ワークスペース状態を確認する |
-| `webhand start --goal G --url U --step S ... [--runbook NAME --param K=V \| --batch ID [--row N]] [--service S] [--value L=V ...] [--file L=PATH ...] [--download-dir DIR] [--har PATH] [--read-only] [--explore --allow-domain H --max-total-actions N] --session ...` | エージェント | 計画を記録し、選んだブラウザエンジンで開始 URL を開く |
+| `webhand start --goal G --url U --step S ... [--runbook NAME --param K=V \| --batch ID [--row N]] [--service S] [--value L=V ...] [--file L=PATH ...] [--context default\|scored] [--download-dir DIR] [--har PATH] [--read-only] [--explore --allow-domain H --max-total-actions N] --session ...` | エージェント | 計画を記録し、選んだブラウザエンジンで開始 URL を開く |
 | `webhand run [--value L=V] [--human-done]` | Jev | GOAL に届くか助けが要るまでページを操作する |
 | `webhand answer --note N [--value L=V] [--file L=PATH] [--url URL]` | エージェント | 同じ試行の中で Jev に答え、そのまま Jev を再開する（flow v2 のみ。後に `run` は不要）。履歴と予算を引き継ぎ、`--url` は `allowed_domains` に従う |
-| `webhand replan --reason R [--step ...] [--value ...] [--service S] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | エージェント | 計画を見直して次の試行を始める。`--url` は `allowed_domains` に従う。`--service` は、サービスなしで始めたセッションにサービス情報を加える |
+| `webhand replan --reason R [--step ...] [--value ...] [--service S] [--context default\|scored] [--focus ...] [--skip ...] [--read ...] [--restart \| --url URL]` | エージェント | 計画を見直して次の試行を始める。`--url` は `allowed_domains` に従う。`--service` は、サービスなしで始めたセッションにサービス情報を加える |
 | `webhand act OP [TARGET]` | エージェント | Jev の代わりに操作を 1 つ実行する（`CLICK`, `TYPE_TEXT`, `SELECT`, `UPLOAD_FILE`, `SCROLL_DOWN`, `SCROLL_UP`, `SCROLL_TO`, `WAIT`, `TAB_n`） |
 | `webhand observe [--read KIND ...]` | エージェント | 操作せずに現在のページを表示する |
 | `webhand check --expect KIND:ARGS ...` | エージェント | 期待を今のページと決定的に照合する（読み取り専用、モデルなし）。`text:`・`no-text:`・`field:`・`checked:`・`count:`・`url:`・`title:`。`--read` はその呼び出しのみ全文を読む |
@@ -209,7 +209,7 @@ networkingMode=mirrored
 | `webhand runs list\|prune [--older-than DAYS] [--yes]` | 人 | DAYS より古い実行フォルダを一覧する。`prune --yes` で削除する |
 | `webhand profile login\|list\|delete [NAME]` | 人 | webhand 専用の保存 Chrome プロファイルを管理する |
 
-手順の先頭に `[person]` を付けると、人が行う手順になります（`--headed` が必須です）。`start` と `replan` の `--focus REGION` / `--skip REGION` で、観測する領域を選べます（下の「ページの領域」）。`--read KIND` で、画面の外の内容を足せます（下の「画面の外を読む」）。`--runbook NAME --param k=v` を指定すると、手順書の GOAL、開始 URL、手順が既定値になり、params は入力値として Jev に渡されます。
+手順の先頭に `[person]` を付けると、人が行う手順になります（`--headed` が必須です）。`start` と `replan` の `--focus REGION` / `--skip REGION` で、観測する領域を選べます（下の「ページの領域」）。`--read KIND` で、画面の外の内容を足せます（下の「画面の外を読む」）。`--context scored`（または `WEBHAND_CONTEXT=scored`。既定は `default`）を指定すると、flow v2 の大きいページで 2 軸並列 `noul` エリア採点とコンテキスト絞り込みを有効にします。`--runbook NAME --param k=v` を指定すると、手順書の GOAL、開始 URL、手順が既定値になり、params は入力値として Jev に渡されます。
 
 `start` に `--har PATH` を付けると（Chrome または `headless-shell` のみ）、セッションのあいだ CDP サイドカーが通信を記録し、`finish` で Chrome を閉じる直前に HAR 1.2 ファイルを原子的に書き出します（権限 `0600`）。コマンドをまたぐ通信、リダイレクト、新しいタブも記録し、Jev に渡す観測内容は変えません。HAR には Cookie、マスクなしのクエリ文字列、POST 本文、テキスト／JSON のレスポンス本文が含まれるため、機密情報として扱い、コミットや共有をしないでください。
 
@@ -239,6 +239,7 @@ networkingMode=mirrored
 | `WEBHAND_CHROME` | `auto` | `--chrome` の既定値（`auto`, `linux`, `windows`） |
 | `WEBHAND_ENGINE` | `auto` | `--engine` の既定値（`auto`, `chrome`, `headless-shell`, `lightpanda`, `obscura`, `browser-run`, `kitesurf`） |
 | `WEBHAND_FLOW` | `v2` | `start --flow` の既定値（`v2` または `v1`） |
+| `WEBHAND_CONTEXT` | `default` | `start --context` の既定値（`default` または `scored`。大きいページで 2 軸並列 `noul` エリア採点とコンテキスト絞り込みを使う） |
 | `WEBHAND_MEMORY` | `1` | `0` で flow v2 のサイト記憶の記録と提示を停止（互換名: `WEBHAND_KNOWLEDGE`） |
 | `WEBHAND_MEMORY_USE` | `1` | `0` で記録は続けつつ Jev への提示だけを停止（互換名: `WEBHAND_KNOWLEDGE_USE`） |
 | `WEBHAND_SCREENSHOTS` | *(無効)* | `1` で実行ログの隣に PNG スクリーンショットを保存（入力値も写る。Jev には送らない） |

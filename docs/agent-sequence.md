@@ -1,6 +1,6 @@
 # 指示から完了までのシーケンス
 
-`webhand` の標準フロー（v2、ローカルのブラウザ）。コードと `skills/webhand/SKILL.md` に基づく（main `41d5cca` 時点）。
+`webhand` の標準フロー（v2、ローカルのブラウザ）。コードと `skills/webhand/SKILL.md` に基づく（feat/context-scored `6eb7efc` 時点）。
 
 アクター:
 
@@ -156,7 +156,8 @@ sequenceDiagram
 ## 図で省略したもの
 
 - `--compare` / `--collect` の一覧走査
-- `--two-stage`（領域を選んでから要素を選ぶ）の流れと、`--recover` の詳細
+- `--two-stage`（領域を選んでから要素を選ぶ）と `--recover` の詳細
+- `--context scored`（`WEBHAND_CONTEXT=scored`。4 段階 DOM 認識エリア分割＋2 軸並列 `noul` 採点によるコンテキスト絞り込み）の流れ
 - `act` による手動操作の詳細、バッチ実行、読み取り専用の `query` / `drilldown`
 - 他のエンジン（Lightpanda、Browser Run など）の接続方式
 
@@ -193,7 +194,7 @@ sequenceDiagram
 
 #### questions
 
-操作ループの質問の型は、すべて `choice`（選択肢から 1 つ）。`score` は使っておらず、`noul`（0〜1 の確率）は操作ループの外の、ブラウザを操作しない `catalog --match` と、読み取り専用の `drilldown`（詳細リンクの有無、`--fields` の語に合う項目名の有無）だけで使う。
+既定の操作ループで使う質問の型はすべて `choice`（選択肢から 1 つ）。`score` は使っておらず、`noul`（0〜1 の確率）は、操作ループの外の `catalog --match` と読み取り専用の `drilldown`（詳細リンクの有無、`--fields` の語に合う項目名の有無）のほか、`--context scored`（`WEBHAND_CONTEXT=scored`）指定時の操作ループ内での並列エリア採点（`context_score`）で使う。
 
 | 質問 | 型 | 聞くこと | 選択肢 |
 | --- | --- | --- | --- |
@@ -202,13 +203,14 @@ sequenceDiagram
 | `type_text_value` | `choice` | 入力する値 | ホストが書いた値の番号、`NONE` |
 | `upload_file_file` | `choice` | アップロードするファイル | ラベルの番号、`NONE` |
 
-条件付きで操作ループ中に送る次の質問も `choice`。
+条件付きで操作ループ中に送る次の質問もある。
 
 | 質問 | 型 | 聞くこと | 条件 |
 | --- | --- | --- | --- |
 | `region` | `choice` | 次の手順の要素がある領域 | `--two-stage`（`WEBHAND_TWO_STAGE=1`）で、要素が 16 以上、領域が 2 つ以上 |
 | `claim_<n>` | `choice` | 完了条件を画面が満たすか（`MET` / `NOT_MET` / `UNKNOWN`） | `--expect` 指定で `DONE` が選ばれたとき。差し戻しは 1 試行 2 回まで |
 | `recovery` | `choice` | 停滞からの回復策 | `--recover`（`WEBHAND_RECOVER=1`）指定で停滞したとき。1 試行 2 回まで。見えない部分が原因の停滞は除く |
+| `grp_<n>` / `act_<n>` / `info_<n>`（`context_score`） | `noul`（0〜1） | 2 軸採点（`act`: 次の操作に関係するエリア、`info`: 必要情報・根拠があるエリア。60 エリア超は 8 チャンク単位の親バケット `grp_<n>` → 子エリアの 2 段階層化） | `--context scored`（`WEBHAND_CONTEXT=scored`）で小ページスキップ条件に当てはまらないとき（25 チャンク/バッチ・最大 4 並列、キャッシュ未ヒット分のみ） |
 
 パスは Jev に送らない。この質問の選択肢はラベルだけで、アップロード後の `action_history` でも `modelState()` が履歴の `text`（パス）をラベルに置き換える。
 
@@ -241,6 +243,7 @@ sequenceDiagram
 - `COMPARED_RULES`: 比較結果があるとき
 - `INSTRUCTION_RULES`: `claude_instructions` があるとき（手順と食い違う場合は最新の指示を優先）
 - `ESCALATE_RULES`: v2。依頼していない削除、支払い、送信、取り消せない操作や、想定外のページはホストに戻す
+- `SCORED_CONTEXT_RULES`: `--context scored` でエリア採点・絞り込みが働いたとき（`page.areas` に採用・除外の地図があり、必要な要素が除外エリアにありそうなら `NOT_VISIBLE` を選ぶよう指示する）
 
 対象の質問（`TARGET`）は上の rules に追加する。すでに目的の値が入っている欄や、効果がなかった要素は選ばず、該当がなければ `NOT_VISIBLE` を選ぶ。
 
@@ -264,6 +267,8 @@ CLI 側の処理:
 4. 番号を観測済みの要素と値に対応づける。不正な回答は補正せず、何も実行しない。
 
 `--two-stage` 指定時で要素が 16 以上、領域が 2 つ以上のページでは、この前に領域を選ぶ質問が 1 回加わる。領域に絞った回答が `NOT_VISIBLE` か確信度 0.55 未満のときは、ページ全体でもう一度聞く。
+
+`--context scored`（`WEBHAND_CONTEXT=scored`）指定時は、`view.areas=true` で 4 段階の DOM 認識エリア分割を行い、スナップショット事前切り詰め上限を画面内 2,000・画面外 2,000（`AREAS_MAX_ACTIONS=2000` / `AREAS_MAX_BEYOND=2000`）へ緩和する。エリア数が 8 以下（かつ切り詰めなし、要素 40 以下、本文 3,500 文字以下、画面外テキスト 1,000 文字以下）の小ページでは採点をスキップしそのまま操作選択（`choose`）へ進む。大きいページでは `ContextManager` が 2 軸（`act` / `info`）の並列 `noul` 採点（25 チャンク/バッチ・最大 4 並列。60 エリア超は 8 チャンク単位の親バケットを絞る Stage 1 → 子エリアの Stage 2）を実行し、目標・URL・関連履歴（`NOT_VISIBLE` やスクロール等は除外）と `@ ...` 位置表記を除いたエリア内容ダイジェストでステップ間キャッシュを再利用する。dialog / alert / error / フォーカス中のエリアはピン留め保護したうえで、`elements`（ピン留め＋`act` 上位）と `page.text`（ピン留め＋`info` 上位、画面外テキストも含め上限 6,000 文字かつ 4,000 トークン）を別軸で詰めて `choose` へ渡す。`choose` が `NOT_VISIBLE` または確信度 0.55 未満を返したときは、直近未採用の上位エリア等を足して最大 1 回だけ再選択し、結果レポートに `AREAS: shown K/N` を出す。
 
 ## Jev に送る state
 
@@ -306,11 +311,12 @@ noul を除き、`src/policies/base.ts` の `modelState()` が組み立てる内
 | --- | --- |
 | `url` | URL（クエリもそのまま） |
 | `title` | タイトル |
-| `text` | 画面内の本文（上限 6,000 文字。`--focus` / `--skip` 指定時は領域ごとに並ぶ）。v2 では iframe の本文が `[frame N] …` として追加される（最大 8 フレーム、各 1,500 文字） |
+| `text` | 画面内の本文（上限 6,000 文字。`--focus` / `--skip` 指定時は領域ごとに並ぶ）。`--context scored` では画面外エリアの本文もピン留め＋`info` 上位から上限 6,000 文字かつ 4,000 トークンまで詰める。v2 では iframe の本文が `[frame N] …` として追加される（最大 8 フレーム、各 1,500 文字） |
 | `offscreen` | `above_px`、`below_px` |
 | `status` | `kind`（`ready` / `error` / `check` / `sign_in` / `dialog`）、`http_status`、`signs`（CAPTCHA の種類）、`unseen`（`frames`、`canvases`、`objects` の数）。v2 のみ |
 | `tabs` | `count`、`current`。タブが複数のとき |
 | `regions` | 最大 40 領域。`key`、`position`、`text_chars`、`shown_chars`、`actions`、`shown_actions`、`offscreen_actions`、`view` |
+| `areas` | 最大 24 件のエリア地図（ピン留め → 採用 → 除外上位の順）＋省略件数を示す `_omitted` 1 件（`id`、`breadcrumb`、`position`、`action_count`、`text_chars`、`act`、`info`、`shown`、`pinned`）。`--context scored` で絞り込みが働いたときのみ含める |
 | `read` | `text`、`chars`（上限 12,000 文字）。`--read` 指定時 |
 
 ### elements（要素ごと）
@@ -351,7 +357,8 @@ password、hidden の入力欄は要素にならず、値も読まない。
 
 | 質問 | state |
 | --- | --- |
-| 操作選択（`choose`） | 上記の全体。観測の時点で画面内 250、v2 の画面外 200（近い順）が上限。さらに要素はトークン予算（約 24,000）や 1 質問 255 選択肢の上限で削られることがある。`--two-stage` では選んだ領域に絞る |
+| 操作選択（`choose`） | 上記の全体。観測の時点で画面内 250、v2 の画面外 200（近い順）が上限。さらに要素はトークン予算（約 24,000）や 1 質問 255 選択肢の上限で削られることがある。`--two-stage` では選んだ領域に絞り、`--context scored` では観測上限を 2,000 に緩めたうえで `elements`（ピン留め＋`act` 上位）と `page.text`（ピン留め＋`info` 上位）を別々に詰め、`page.areas` を添える |
+| エリア採点（`context_score`、`--context scored`） | `{ "plan", "page": { "url", "title" }, "recent_actions", "act_criteria", "info_criteria", "group_criteria", "rules" }` のみ（`elements` なし）。各 `noul` 質問の `instructions` に 1 エリア要約（`act` は最大 8 件の短い `action_preview` と最大 120 文字の `text_preview`、`info` は `action_preview` なしで最大 280 文字の `text_preview`）または Stage 1 の親バケット要約を入れる |
 | `more` | `action_history` が空 |
 | `region`、`recovery` | `elements` なし |
 | `verify` | `elements` なし、`action_history` は空 |
