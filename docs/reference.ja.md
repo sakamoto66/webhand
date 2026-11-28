@@ -209,7 +209,7 @@ networkingMode=mirrored
 | `webhand runs list\|prune [--older-than DAYS] [--yes]` | 人 | DAYS より古い実行フォルダを一覧する。`prune --yes` で削除する |
 | `webhand profile login\|list\|delete [NAME]` | 人 | webhand 専用の保存 Chrome プロファイルを管理する |
 
-手順の先頭に `[person]` を付けると、人が行う手順になります（`--headed` が必須です）。`start` と `replan` の `--focus REGION` / `--skip REGION` で、観測する領域を選べます（下の「ページの領域」）。`--read KIND` で、画面の外の内容を足せます（下の「画面の外を読む」）。`--context scored`（または `WEBHAND_CONTEXT=scored`。既定は `default`）を指定すると、flow v2 の大きいページで 2 軸並列 `noul` エリア採点とコンテキスト絞り込みを有効にします。`--context visible` は、flow v2 で画面外の要素が 20 以上あるページについて、まず画面内の要素だけで Jev に尋ね、答えが `NOT_VISIBLE`・`BLOCKED`・`ESCALATE` のときだけページ全体で 1 回尋ね直します。`--runbook NAME --param k=v` を指定すると、手順書の GOAL、開始 URL、手順が既定値になり、params は入力値として Jev に渡されます。
+手順の先頭に `[person]` を付けると、人が行う手順になります（`--headed` が必須です）。`start` と `replan` の `--focus REGION` / `--skip REGION` で、観測する領域を選べます（下の「ページの領域」）。`--read KIND` で、画面の外の内容を足せます（下の「画面の外を読む」）。`--context scored`（または `WEBHAND_CONTEXT=scored`。既定は `default`）を指定すると、flow v2 の大きいページで 2 軸並列 `noul` エリア採点とコンテキスト絞り込みを有効にします。`--context visible` は、flow v2 で画面外の要素が 20 以上あるページについて、まず画面内の要素だけで Jev に尋ね、答えが `NOT_VISIBLE`・`BLOCKED`・`ESCALATE` のときだけページ全体で 1 回尋ね直します。尋ね直した URL では、そのコマンドの間は最初からページ全体で尋ねます。`--runbook NAME --param k=v` を指定すると、手順書の GOAL、開始 URL、手順が既定値になり、params は入力値として Jev に渡されます。
 
 `start` に `--har PATH` を付けると（Chrome または `headless-shell` のみ）、セッションのあいだ CDP サイドカーが通信を記録し、`finish` で Chrome を閉じる直前に HAR 1.2 ファイルを原子的に書き出します（権限 `0600`）。コマンドをまたぐ通信、リダイレクト、新しいタブも記録し、Jev に渡す観測内容は変えません。HAR には Cookie、マスクなしのクエリ文字列、POST 本文、テキスト／JSON のレスポンス本文が含まれるため、機密情報として扱い、コミットや共有をしないでください。
 

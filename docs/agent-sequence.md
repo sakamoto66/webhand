@@ -271,7 +271,7 @@ CLI 側の処理:
 
 `--context scored`（`WEBHAND_CONTEXT=scored`）指定時は、`view.areas=true` で 4 段階の DOM 認識エリア分割を行い、スナップショット事前切り詰め上限を画面内 2,000・画面外 2,000（`AREAS_MAX_ACTIONS=2000` / `AREAS_MAX_BEYOND=2000`）へ緩和する。エリア数が 8 以下（かつ切り詰めなし、要素 40 以下、本文 3,500 文字以下、画面外テキスト 1,000 文字以下）の小ページでは採点をスキップしそのまま操作選択（`choose`）へ進む。大きいページでは `ContextManager` が 2 軸（`act` / `info`）の並列 `noul` 採点（25 チャンク/バッチ・最大 4 並列。60 エリア超は 8 チャンク単位の親バケットを絞る Stage 1 → 子エリアの Stage 2）を実行し、目標・URL・関連履歴（`NOT_VISIBLE` やスクロール等は除外）と `@ ...` 位置表記を除いたエリア内容ダイジェストでステップ間キャッシュを再利用する。dialog / alert / error / フォーカス中のエリアはピン留め保護したうえで、`elements`（ピン留め＋`act` 上位）と `page.text`（ピン留め＋`info` 上位、画面外テキストも含め上限 6,000 文字かつ 4,000 トークン）を別軸で詰めて `choose` へ渡す。`choose` が `NOT_VISIBLE` を返したときは既定（`default`）と同じページ全体で、確信度 0.55 未満のときは直近未採用の上位エリア等を足して、最大 1 回だけ再選択し、結果レポートに `AREAS: shown K/N` を出す。
 
-`--context visible`（`WEBHAND_CONTEXT=visible`）指定時は、画面外の要素（flow v2）が 20 以上あるページで、まず画面内の要素だけを送る（スクロールと待機の操作は出さず、`page.hidden_elements` に外した要素数を入れ、ルールは「一覧になければ `NOT_VISIBLE`」に替える）。答えが `NOT_VISIBLE`・`BLOCKED`・`ESCALATE` のときだけ、既定と同じページ全体で 1 回尋ね直す。確信度による再選択はしない。ログには `context_visible` を残す。
+`--context visible`（`WEBHAND_CONTEXT=visible`）指定時は、画面外の要素（flow v2）が 20 以上あるページで、まず画面内の要素だけを送る（スクロールと待機の操作は出さず、`page.hidden_elements` に外した要素数を入れ、ルールは「一覧になければ `NOT_VISIBLE`」に替える）。答えが `NOT_VISIBLE`・`BLOCKED`・`ESCALATE` のときだけ、既定と同じページ全体で 1 回尋ね直す。尋ね直しが起きた URL では、以後（同じプロセス内）は最初からページ全体で尋ねる。確信度による再選択はしない。ログには `context_visible` を残す。
 
 ## Jev に送る state
 

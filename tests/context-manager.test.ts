@@ -1125,7 +1125,7 @@ test("--context visible asks about the viewport first, and about the whole page 
     const page: Page = { url: "http://local/v", title: "V", text: "V", actions: actions(hidden) };
     const plan: Plan = { goal: "g", steps: [], values: [], flow: "v2", context: "visible" };
     const decision = await policy.choose(page, plan, []);
-    return { bodies, decision, fields: policy.events.at(-1)?.fields };
+    return { bodies, decision, fields: policy.events.at(-1)?.fields, policy, page, plan };
   };
 
   const near = await run(20, [["CLICK", "1"]]);
@@ -1155,6 +1155,21 @@ test("--context visible asks about the viewport first, and about the whole page 
     expect(far.decision.action?.label).toBe("Far 10");
     expect(far.fields).toMatchObject({ fallback: true });
   }
+
+  // After a miss, the same address is asked about whole at once; another address starts from the viewport again.
+  const missed = await run(20, [
+    ["CLICK", "NOT_VISIBLE"],
+    ["CLICK", "3"],
+    ["CLICK", "3"],
+    ["CLICK", "1"],
+  ]);
+  await missed.policy.choose(missed.page, missed.plan, []);
+  expect(missed.bodies).toHaveLength(3);
+  expect(missed.bodies[2].state.page).not.toHaveProperty("hidden_elements");
+  expect(missed.policy.events.at(-1)?.fields).toMatchObject({ skipped: true, skip_reason: "missed_before" });
+  await missed.policy.choose({ ...missed.page, url: "http://local/other" }, missed.plan, []);
+  expect(missed.bodies).toHaveLength(4);
+  expect(missed.bodies[3].state.page.hidden_elements).toBe(20);
 
   const few = await run(19, [["CLICK", "3"]]);
   expect(few.bodies).toHaveLength(1);

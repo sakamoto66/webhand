@@ -124,6 +124,8 @@ export class JevPolicy implements Policy {
   private readonly fetchJson: Fetch;
   private readonly agent: Agent | null;
   private readonly contextManager = new ContextManager();
+  /** --context visible: addresses where the viewport alone did not serve, asked about whole from then on. */
+  private readonly missedViewport = new Set<unknown>();
   /** Lowered for the rest of the run when Jev refuses a request over its limit. */
   private budget = TOKEN_BUDGET;
 
@@ -323,21 +325,28 @@ export class JevPolicy implements Policy {
 
   /**
    * --context visible: asks about the elements in the viewport, and about the whole page only when the answer says
-   * nothing listed serves. A page with few elements beyond the viewport is asked about whole at once.
+   * nothing listed serves. A page with few elements beyond the viewport, or one at an address where that happened
+   * before, is asked about whole at once.
    */
   private async chooseVisibleFirst(whole: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {
     const first = visibleOnly(whole);
     const hidden = first.hidden_elements ?? 0;
-    if (hidden < MIN_HIDDEN_ELEMENTS) {
+    let skipReason: string | null = null;
+    if (hidden < MIN_HIDDEN_ELEMENTS) skipReason = "few_hidden";
+    else if (this.missedViewport.has(whole.url)) skipReason = "missed_before";
+    if (skipReason) {
       this.events.push({
         type: "context_visible",
-        fields: { hidden_elements: hidden, skipped: true, fallback: false },
+        fields: { hidden_elements: hidden, skipped: true, skip_reason: skipReason, fallback: false },
       });
       return this.chooseFrom(whole, plan, history);
     }
     let decision = await this.chooseFrom(first, plan, history);
     const reason = ASK_WHOLE.includes(decision.operation) ? decision.operation.toLowerCase() : null;
-    if (reason) decision = await this.chooseFrom(whole, plan, history);
+    if (reason) {
+      this.missedViewport.add(whole.url);
+      decision = await this.chooseFrom(whole, plan, history);
+    }
     this.events.push({
       type: "context_visible",
       fields: {
