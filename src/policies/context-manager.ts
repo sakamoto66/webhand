@@ -10,8 +10,9 @@
 import { createHash } from "node:crypto";
 import { toJson } from "../core/format.ts";
 import type { Action, AreaChunk, HistoryEntry, Page, Plan } from "../core/types.ts";
-import { actionSpace, jevGoal, planText } from "./base.ts";
+import { actionSpace, compactOptions, fileChoices, jevGoal, modelState, planText, valueChoices } from "./base.ts";
 import { estimateTokens } from "./jev-fit.ts";
+import { buildQuestions, targetCriterion } from "./jev-questions.ts";
 import { CONTEXT_SCORE_ACT_RULES, CONTEXT_SCORE_GROUP_RULES, CONTEXT_SCORE_INFO_RULES, OPERATIONS } from "./prompts.ts";
 
 const SMALL_PAGE_MAX_ELEMENTS = 40;
@@ -35,7 +36,7 @@ const MIN_ACT_CHUNKS = 1;
 const MIN_INFO_CHUNKS = 1;
 const TEXT_CHAR_LIMIT = 6_000;
 const TEXT_TOKEN_LIMIT = 4_000;
-const STAGE2_OVERHEAD_RESERVE = 2_400;
+const PACK_MARGIN_TOKENS = 500;
 const MAX_TARGET_CHOICES = 254; // Leaves 1 slot for NOT_VISIBLE to stay <= 255 choices per question.
 const MAX_CACHE_ENTRIES = 500;
 const FALLBACK_EXPAND_CHUNKS = 8;
@@ -87,7 +88,11 @@ export interface PreparedContext {
   scoredAreas: number;
   noulCalls: number;
   hierarchical: boolean;
-  baseOverheadTokens: number;
+  /** Elements of areas chosen for the request that did not fit its limits. */
+  omittedNodes: number;
+  /** What the request was packed for, so that expand() can pack it again. */
+  plan: Plan;
+  history: HistoryEntry[];
 }
 
 function sha256Short(value: string): string {
@@ -469,13 +474,42 @@ function opAdditions(nodeActions: Action[]): Map<string, number> {
   return counts;
 }
 
+/** The tokens one node adds to the choose request: its element in the state and its choices in the target questions. */
+function nodeRequestTokens(nodeActions: Action[]): number {
+  const [elements, targets] = actionSpace(nodeActions);
+  const criteria = [...targets].map(([operation, choices]) =>
+    Object.fromEntries([...choices].map(([index, action]) => [index, targetCriterion(operation, index, action)])),
+  );
+  return estimateTokens(toJson({ elements: elements.map(compactOptions), criteria }));
+}
+
+/**
+ * The tokens of the choose request before any element is packed: the state without elements, and the questions with
+ * one choice for each operation the page offers (their rules do not grow with the elements).
+ */
+function requestOverheadTokens(page: Page, plan: Plan, history: HistoryEntry[]): number {
+  const oneOfEach = [...new Map(((page.actions ?? []) as Action[]).map((a) => [a.kind, a])).values()];
+  const [, targets, controls] = actionSpace(oneOfEach);
+  const [questions] = buildQuestions(
+    plan,
+    targets,
+    controls,
+    valueChoices(plan),
+    Boolean(page.read),
+    Boolean(page.tabs),
+    fileChoices(plan),
+    Boolean(page.areas_map?.length),
+  );
+  return estimateTokens(toJson({ state: modelState({ ...page, actions: [] }, history, plan), questions }));
+}
+
 function packElements(
   whole: Page,
   areas: AreaChunk[],
   scores: Map<string, { act: number; info: number }>,
   elementTokenBudget: number,
   extraIds: Set<string> | null,
-): { actions: Action[]; elementShownIds: Set<string> } {
+): { actions: Action[]; elementShownIds: Set<string>; omittedNodes: number } {
   const allActions = (whole.actions ?? []) as Action[];
   const controls: Action[] = [];
   const byNode = new Map<number, Action[]>();
@@ -512,6 +546,7 @@ function packElements(
   const includedNodes = new Set<number>();
   const opCounts = new Map<string, number>();
   const elementShownIds = new Set<string>();
+  const omittedNodes = new Set<number>();
   let usedTokens = 0;
 
   const tryAddNode = (node: number, isPinned: boolean): boolean => {
@@ -540,7 +575,7 @@ function packElements(
       if ((opCounts.get(op) ?? 0) + add > MAX_TARGET_CHOICES) return false;
     }
 
-    const nodeTokens = Math.ceil(estimateTokens(toJson(nodeActions)) * 2.5) + 50;
+    const nodeTokens = nodeRequestTokens(nodeActions);
     if (!isPinned && usedTokens + nodeTokens > elementTokenBudget) return false;
 
     includedNodes.add(node);
@@ -554,6 +589,7 @@ function packElements(
     let addedAny = false;
     for (const node of chunk.action_nodes ?? []) {
       if (tryAddNode(node, true)) addedAny = true;
+      else if (byNode.has(node)) omittedNodes.add(node);
     }
     if (addedAny) elementShownIds.add(chunk.id);
   }
@@ -567,6 +603,7 @@ function packElements(
     let addedAny = false;
     for (const node of chunk.action_nodes ?? []) {
       if (tryAddNode(node, false)) addedAny = true;
+      else if (byNode.has(node)) omittedNodes.add(node);
     }
     if (addedAny) {
       elementShownIds.add(chunk.id);
@@ -575,7 +612,8 @@ function packElements(
   }
 
   selectedActions.sort((a, b) => (actionOrder.get(a) ?? 0) - (actionOrder.get(b) ?? 0));
-  return { actions: [...selectedActions, ...controls], elementShownIds };
+  for (const node of includedNodes) omittedNodes.delete(node);
+  return { actions: [...selectedActions, ...controls], elementShownIds, omittedNodes: omittedNodes.size };
 }
 
 function toAreaMapEntry(chunk: AreaChunk, score: { act: number; info: number }, shownIds: Set<string>): AreaMapEntry {
@@ -667,23 +705,23 @@ function packPage(
   areas: AreaChunk[],
   scores: Map<string, { act: number; info: number }>,
   budget: number,
-  baseOverheadTokens: number,
+  plan: Plan,
+  history: HistoryEntry[],
   extraIds: Set<string> | null = null,
 ): {
   page: Page;
   shownIds: Set<string>;
   elementShownIds: Set<string>;
   textShownIds: Set<string>;
+  omittedNodes: number;
 } {
   const textTokenLimit = Math.min(TEXT_TOKEN_LIMIT, Math.floor(budget * 0.2));
   const { text, textShownIds } = packText(whole, areas, scores, extraIds, textTokenLimit);
   const preliminaryMap = buildAreaMap(areas, scores, textShownIds);
   const nonElementTokens =
-    baseOverheadTokens +
-    estimateTokens(toJson({ url: whole.url, title: whole.title, text, areas: preliminaryMap })) +
-    STAGE2_OVERHEAD_RESERVE;
+    requestOverheadTokens({ ...whole, text, areas_map: preliminaryMap }, plan, history) + PACK_MARGIN_TOKENS;
   const elementTokenBudget = Math.max(800, budget - nonElementTokens);
-  const { actions, elementShownIds } = packElements(whole, areas, scores, elementTokenBudget, extraIds);
+  const { actions, elementShownIds, omittedNodes } = packElements(whole, areas, scores, elementTokenBudget, extraIds);
 
   const shownIds = new Set<string>([...elementShownIds, ...textShownIds]);
   const areasMap = buildAreaMap(areas, scores, shownIds);
@@ -698,6 +736,7 @@ function packPage(
     shownIds,
     elementShownIds,
     textShownIds,
+    omittedNodes,
   };
 }
 
@@ -723,18 +762,6 @@ export class ContextManager {
   ): Promise<PreparedContext> {
     const areas = readAreas(whole);
     const pinnedAreas = areas.filter((a) => a.pinned).length;
-    const baseOverheadTokens = estimateTokens(
-      toJson({
-        plan: {
-          goal: jevGoal(plan),
-          steps: planText(plan),
-          notes: plan.notes ?? [],
-          instructions: plan.instructions ?? [],
-        },
-        history: history.slice(-40),
-      }),
-    );
-
     const skipReason = shouldSkip(whole, areas);
     if (skipReason) {
       return {
@@ -754,7 +781,9 @@ export class ContextManager {
         scoredAreas: 0,
         noulCalls: 0,
         hierarchical: false,
-        baseOverheadTokens,
+        omittedNodes: 0,
+        plan,
+        history,
       };
     }
 
@@ -900,7 +929,7 @@ export class ContextManager {
       });
     }
 
-    const packed = packPage(whole, areas, scores, budget, baseOverheadTokens);
+    const packed = packPage(whole, areas, scores, budget, plan, history);
     return {
       skipped: false,
       page: packed.page,
@@ -918,7 +947,9 @@ export class ContextManager {
       scoredAreas,
       noulCalls,
       hierarchical,
-      baseOverheadTokens,
+      omittedNodes: packed.omittedNodes,
+      plan,
+      history,
     };
   }
 
@@ -927,7 +958,7 @@ export class ContextManager {
     prepared: PreparedContext,
     whole: Page,
     budget: number,
-  ): { page: Page; shownAreas: number; totalAreas: number } {
+  ): { page: Page; shownAreas: number; totalAreas: number; omittedNodes: number } {
     const unshown = prepared.areas
       .filter((a) => !prepared.shownIds.has(a.id))
       .sort((a, b) => {
@@ -941,20 +972,22 @@ export class ContextManager {
       });
 
     if (unshown.length === 0) {
-      return { page: whole, shownAreas: prepared.totalAreas, totalAreas: prepared.totalAreas };
+      return { page: whole, shownAreas: prepared.totalAreas, totalAreas: prepared.totalAreas, omittedNodes: 0 };
     }
 
     const extraIds = new Set<string>(unshown.slice(0, FALLBACK_EXPAND_CHUNKS).map((a) => a.id));
-    const packed = packPage(whole, prepared.areas, prepared.scores, budget, prepared.baseOverheadTokens, extraIds);
+    const { plan, history } = prepared;
+    const packed = packPage(whole, prepared.areas, prepared.scores, budget, plan, history, extraIds);
 
     if (packed.shownIds.size <= prepared.shownAreas) {
-      return { page: whole, shownAreas: prepared.totalAreas, totalAreas: prepared.totalAreas };
+      return { page: whole, shownAreas: prepared.totalAreas, totalAreas: prepared.totalAreas, omittedNodes: 0 };
     }
 
     return {
       page: packed.page,
       shownAreas: packed.shownIds.size,
       totalAreas: prepared.totalAreas,
+      omittedNodes: packed.omittedNodes,
     };
   }
 }

@@ -59,7 +59,7 @@ function taskBrief(plan: Plan): Record<string, unknown> {
 }
 
 /** A dropdown option is only its label: the dropdown's current value is in the state's elements. */
-function targetCriterion(operation: string, index: string, action: Action): unknown {
+export function targetCriterion(operation: string, index: string, action: Action): unknown {
   if (operation === "SELECT") return `[${index}] ${action.label}`;
   const criterion: Record<string, unknown> = {
     element: `[${index}] ${action.label}`,

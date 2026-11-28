@@ -539,6 +539,56 @@ test("packing enforces 255-choice cap, 6000-char text cap, and token budget", as
   expect(Object.keys(body.questions.select_target.criteria).length).toBeLessThanOrEqual(255);
   expect(body.state.page.text.length).toBeLessThanOrEqual(6_000);
   expect(estimateTokens(JSON.stringify(body))).toBeLessThanOrEqual(24_000);
+  expect(policy.calls.find((c) => c.purpose === "choose")?.dropped_elements ?? 0).toBe(0);
+});
+
+test("packing keeps every long dropdown of one form, and logs the elements that do not fit", async () => {
+  vi.stubEnv("TYPESAFE_API_KEY", "test");
+  // biome-ignore lint/suspicious/noExplicitAny: inspect mock choose body.
+  const chooseBodies: any[] = [];
+  const fetch: Fetch = async (_url, init) => {
+    const req = JSON.parse(init.body);
+    if (req.questions.operation) {
+      chooseBodies.push(req);
+      return { status: 200, json: async () => choiceResponse(req, "SELECT", "1:1") };
+    }
+    return { status: 200, json: async () => noulResponse(req, () => 0.95) };
+  };
+  const selects = (nodes: number[], options: number) =>
+    nodes.flatMap((node) =>
+      Array.from({ length: options }, (_, o) => ({
+        id: `s${node}-${o}`,
+        kind: "select",
+        node,
+        role: "combobox",
+        label: `Field${node} → option ${o}`,
+        value: String(o),
+        current_value: "option 0",
+        rect: { x: 45.34375, y: 560.03125, w: 77, h: 19 },
+        region: "main:Booking/form:Booking",
+      })),
+    );
+  const run = async (nodes: number[], options: number) => {
+    const other = nodes.length + 1;
+    const areas = [
+      makeArea("form", { nodes, text: "Booking" }),
+      makeArea("links", { nodes: [other], text: "x".repeat(4_000) }),
+    ];
+    const actions = [...selects(nodes, options), ...makeClickActions([other])];
+    const page: Page = { url: "http://local/form", title: "Form", text: "Form", actions, areas };
+    const policy = new JevPolicy({ fetch });
+    await policy.choose(page, SCORED_PLAN, []);
+    const event = policy.events.find((e) => e.type === "context_score");
+    return { body: chooseBodies.at(-1), fields: event?.fields, call: policy.calls.find((c) => c.purpose === "choose") };
+  };
+
+  const fitting = await run([1, 2, 3], 46);
+  expect(Object.keys(fitting.body.questions.select_target.criteria)).toHaveLength(3 * 46 + 1); // + NOT_VISIBLE
+  expect(fitting.fields).not.toHaveProperty("omitted_nodes");
+  expect(fitting.call).not.toHaveProperty("dropped_elements");
+
+  const over = await run([1, 2, 3], 100); // 300 options pass the 255-choice limit
+  expect(over.fields).toMatchObject({ omitted_nodes: 1 });
 });
 
 test("pages with > 60 areas use 2-stage hierarchical scoring with <=25 chunks/batch and <=4 concurrency", async () => {
