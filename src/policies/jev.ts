@@ -100,13 +100,13 @@ function filterPageToRegion(page: Page, region: string): Page {
 }
 
 /**
- * The page with the elements in the viewport only, and how many were left out. Scrolling is not offered: an element
- * that is not listed is asked for with the whole page instead.
+ * The page with the elements in the viewport only, and how many were left out. Scrolling and waiting are not offered:
+ * an element that is not listed is asked for with the whole page, which offers both.
  */
 function visibleOnly(page: Page): Page {
   const hidden = new Set<unknown>();
   const actions = (page.actions ?? []).filter((action: Action) => {
-    if (action.kind === "scroll") return false;
+    if (action.kind === "scroll" || action.kind === "wait") return false;
     if (!(action.kind in OPERATIONS) || !action.offscreen) return true;
     hidden.add(action.node);
     return false;

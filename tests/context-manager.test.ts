@@ -1133,6 +1133,7 @@ test("--context visible asks about the viewport first, and about the whole page 
   expect(Object.keys(near.bodies[0].questions.click_target.criteria)).toEqual(["1", "2", "NOT_VISIBLE"]);
   expect(near.bodies[0].state.page.hidden_elements).toBe(20);
   expect(near.bodies[0].questions.operation.criteria).not.toHaveProperty("SCROLL_DOWN");
+  expect(near.bodies[0].questions.operation.criteria).not.toHaveProperty("WAIT");
   expect(near.bodies[0].questions.operation.instructions.rules).toContain("they are not listed now");
   expect(near.bodies[0].questions.operation.instructions.rules).toContain("page.status.kind");
   expect(near.fields).toMatchObject({ hidden_elements: 20, skipped: false, fallback: false });
@@ -1150,6 +1151,7 @@ test("--context visible asks about the viewport first, and about the whole page 
     expect(Object.keys(far.bodies[1].questions.click_target.criteria)).toHaveLength(22 + 1);
     expect(far.bodies[1].state.page).not.toHaveProperty("hidden_elements");
     expect(far.bodies[1].questions.operation.criteria).toHaveProperty("SCROLL_DOWN");
+    expect(far.bodies[1].questions.operation.criteria).toHaveProperty("WAIT");
     expect(far.decision.action?.label).toBe("Far 10");
     expect(far.fields).toMatchObject({ fallback: true });
   }
