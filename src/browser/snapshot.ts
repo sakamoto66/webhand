@@ -19,6 +19,7 @@ const SNAPSHOT_MODULES: [string, string][] = [
   ["regions", "snapshot/regions.js"],
   ["readLayer", "snapshot/read-layer.js"],
   ["actions", "snapshot/actions.js"],
+  ["areas", "snapshot/areas.js"],
 ];
 
 function assembleSnapshot(): string {
@@ -30,12 +31,33 @@ function assembleSnapshot(): string {
 
 export const SNAPSHOT = assembleSnapshot();
 
+export interface AreaChunk {
+  id: string;
+  kind: string;
+  name: string;
+  breadcrumb: string;
+  position: "above" | "visible" | "below";
+  y: number;
+  pinned: boolean;
+  pin_reason?: string;
+  text: string;
+  text_chars: number;
+  action_nodes: number[];
+  action_count: number;
+  action_preview: string[];
+  parent_group?: string;
+  columns?: string[];
+  slice?: { index: number; total: number };
+}
+
 export interface ViewChoice {
   focus?: string[];
   skip?: string[];
   read?: string[];
   /** v2: offer elements beyond the viewport with their own operations. */
   whole?: boolean;
+  /** --context scored: 4-stage DOM-aware area chunking (returns snapshot.areas and action.area). */
+  areas?: boolean;
 }
 
 /** The snapshot expression for a view ({focus, skip} region patterns). The view never changes freshness. */

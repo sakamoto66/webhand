@@ -54,6 +54,15 @@
     REGION_NAME_LIMIT: 40,
     FORMAT_HINT_LIMIT: 60,
     READ_LIMIT: 12000,
+    AREAS_MAX_ACTIONS: 2000,
+    AREAS_MAX_BEYOND: 2000,
+    AREA_TARGET_CHARS: 1200,
+    AREA_TARGET_ACTIONS: 28,
+    AREA_MIN_CHARS: 60,
+    AREA_MIN_ACTIONS: 2,
+    AREA_TEXT_CAP: 4000,
+    AREA_PREVIEW_LIMIT: 8,
+    AREA_NAME_LIMIT: 50,
     INTERACTIVE_ROLES,
     INTERACTIVE_SELECTOR:
       'a[href],button,input,textarea,select,summary,[contenteditable="true"],' +
