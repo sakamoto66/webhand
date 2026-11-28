@@ -15,6 +15,7 @@ import {
   autonomyOptions,
   collectOption,
   compareOption,
+  contextOption,
   fileOption,
   idOption,
   moreOption,
@@ -22,7 +23,16 @@ import {
   viewOptions,
 } from "./options.ts";
 import { commandRun } from "./run.ts";
-import { mergeValues, openPage, parseFiles, parseSteps, parseValues, requireSession, resolveCliUrl } from "./shared.ts";
+import {
+  CONTEXTS,
+  mergeValues,
+  openPage,
+  parseFiles,
+  parseSteps,
+  parseValues,
+  requireSession,
+  resolveCliUrl,
+} from "./shared.ts";
 import type { CommandDef } from "./types.ts";
 
 /** A `replan` that cannot be taken: the message after "REJECTED: ". Nothing has been saved yet. */
@@ -111,6 +121,12 @@ function applyReplanPlan(args: Args, state: session.State): void {
   }
   if (args.two_stage) plan.two_stage = true;
   if (args.recover) plan.recover = true;
+  if (args.context) {
+    if (!CONTEXTS.includes(args.context)) {
+      throw new ReplanRejected(`--context must be one of: ${CONTEXTS.join(", ")}`);
+    }
+    plan.context = args.context === "scored" ? "scored" : undefined;
+  }
   if (plan.compare && plan.collect) {
     throw new ReplanRejected("use --compare or --collect, not both (turn one off with none)");
   }
@@ -192,9 +208,10 @@ async function commandReplan(args: Args): Promise<number> {
   try {
     if (args.url && args.restart) throw new ReplanRejected("use --url or --restart, not both");
     const added = applyReplanService(args, state); // Before --url, which must be inside its allowed_domains.
+    const prevContext = plan.context;
     url = replanUrl(args, state);
     applyReplanPlan(args, state);
-    viewChanged = applyReplanView(args, state) || added;
+    viewChanged = applyReplanView(args, state) || added || plan.context !== prevContext;
   } catch (error) {
     if (!(error instanceof ReplanRejected)) throw error;
     print(`REJECTED: ${error.message}`);
@@ -233,6 +250,7 @@ export const replanCommand: CommandDef = {
       collectOption(),
       moreOption(),
       ...autonomyOptions(),
+      contextOption(false),
       allowControlOption(),
       { name: "run", type: "boolean", help: "Hand to Jev right away for the next attempt in the same command" },
     ],

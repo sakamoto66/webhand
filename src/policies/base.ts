@@ -158,6 +158,7 @@ export function modelState(page: Page, history: HistoryEntry[], plan: Plan | nul
   if (page.tabs) shown.tabs = page.tabs;
   if (page.regions?.length) shown.regions = page.regions;
   if (page.read) shown.read = { text: page.read.text, chars: page.read.chars };
+  if (page.areas_map?.length) shown.areas = page.areas_map;
   state.page = shown;
   if (page.known?.length) {
     state.known_from_earlier_runs = {

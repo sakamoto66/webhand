@@ -5,6 +5,7 @@ import { CHROMES } from "../engines/chrome.ts";
 import { ENGINE_CHOICES } from "../engines/index.ts";
 import * as runbook from "../storage/runbook/index.ts";
 import * as session from "../storage/session.ts";
+import { CONTEXTS } from "./shared.ts";
 
 export function idOption(): OptionSpec {
   return {
@@ -127,4 +128,14 @@ export function autonomyOptions(): OptionSpec[] {
       help: "Let Jev choose a non-destructive tactical recovery strategy before stopping as STUCK",
     },
   ];
+}
+
+export function contextOption(withDefault = true): OptionSpec {
+  return {
+    name: "context",
+    type: "string",
+    choices: [...CONTEXTS],
+    ...(withDefault ? { default: process.env.WEBHAND_CONTEXT || "default" } : {}),
+    help: "Context selection: default (standard view) or scored (2-axis noul area scoring). Default: WEBHAND_CONTEXT, else default",
+  };
 }

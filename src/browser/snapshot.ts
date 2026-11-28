@@ -36,6 +36,8 @@ export interface ViewChoice {
   read?: string[];
   /** v2: offer elements beyond the viewport with their own operations. */
   whole?: boolean;
+  /** Scored context mode: include area chunks in the snapshot. */
+  areas?: boolean;
 }
 
 /** The snapshot expression for a view ({focus, skip} region patterns). The view never changes freshness. */

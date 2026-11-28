@@ -79,6 +79,25 @@ export function modelCall(
   return { provider, model, purpose, latency_ms, input_tokens, output_tokens };
 }
 
+export interface AreaChunk {
+  id: string;
+  kind: string;
+  name: string;
+  breadcrumb: string;
+  position: string;
+  y: number;
+  pinned: boolean;
+  pin_reason?: string;
+  text: string;
+  text_chars: number;
+  action_nodes: number[];
+  action_count: number;
+  action_preview: string[];
+  parent_group?: string;
+  columns?: string[];
+  slice?: { index: number; total: number } | string;
+}
+
 export class Decision {
   operation: string;
   /** null only for DONE, NEEDS_HUMAN, BLOCKED, and NOT_VISIBLE */
@@ -89,17 +108,25 @@ export class Decision {
   text: string | null;
   /** For NOT_VISIBLE: the operation whose target was not observed */
   wanted: string | null;
+  /** Scored context area summary (shown/total), attached only when context === "scored". */
+  context_areas?: { shown: number; total: number };
 
   constructor(
     operation: string,
     action: Action | null = null,
-    options: { confidence?: number | null; text?: string | null; wanted?: string | null } = {},
+    options: {
+      confidence?: number | null;
+      text?: string | null;
+      wanted?: string | null;
+      context_areas?: { shown: number; total: number };
+    } = {},
   ) {
     this.operation = operation;
     this.action = action;
     this.confidence = options.confidence ?? null;
     this.text = options.text ?? null;
     this.wanted = options.wanted ?? null;
+    if (options.context_areas) this.context_areas = options.context_areas;
   }
 }
 
@@ -138,6 +165,8 @@ export interface Plan {
   expects?: string[];
   /** Coarse-to-fine 2-stage Jev selection (region first, then elements in that region). */
   two_stage?: boolean;
+  /** Context selection mode: "default" (standard viewport/whole view) or "scored" (2-axis noul area scoring). */
+  context?: "default" | "scored";
   /** Allow Jev to pick a non-destructive tactical recovery strategy before stopping as STUCK. */
   recover?: boolean;
 }
@@ -163,6 +192,8 @@ export interface Policy {
   name: string;
   /** Appended before validation, so rejected responses are still logged. */
   calls: ModelCall[];
+  /** Structured policy events flushed to the run recorder alongside model calls. */
+  events?: { type: string; fields: Record<string, unknown> }[];
   config(): Record<string, unknown>;
   choose(page: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision>;
   /** Parallel self-verification of completion claims before DONE returns to Claude. */
@@ -175,5 +206,6 @@ export interface Policy {
   scoreNoul?(
     state: Record<string, unknown>,
     items: { key: string; instructions: unknown }[],
+    purpose?: string,
   ): Promise<Map<string, number>>;
 }
