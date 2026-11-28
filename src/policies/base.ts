@@ -112,7 +112,7 @@ export function offscreen(page: Page): { above_px: number; below_px: number } {
 }
 
 /** A dropdown's options once each, as index -> option label. The element's label is not repeated. */
-function compactOptions(element: Element): Element {
+export function compactOptions(element: Element): Element {
   if (!("options" in element)) return element;
   const options: Record<string, string> = {};
   for (const option of element.options) options[option.index] = String(option.label).split(" → ").at(-1) as string;

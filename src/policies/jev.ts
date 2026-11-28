@@ -325,6 +325,7 @@ export class JevPolicy implements Policy {
 
     let decision = await this.chooseFrom(prepared.page, plan, history);
     let shownAreas = prepared.shownAreas;
+    let omittedNodes = prepared.omittedNodes;
     let fallback = false;
     let fallbackReason: string | undefined;
 
@@ -339,6 +340,7 @@ export class JevPolicy implements Policy {
       if (decision.operation === NOT_VISIBLE || (retry.confidence ?? 0) >= (decision.confidence ?? 0)) {
         decision = retry;
         shownAreas = expanded.shownAreas;
+        omittedNodes = expanded.omittedNodes;
       }
     }
 
@@ -356,6 +358,7 @@ export class JevPolicy implements Policy {
         hierarchical: prepared.hierarchical,
         fallback,
         skipped: false,
+        ...(omittedNodes ? { omitted_nodes: omittedNodes } : {}),
         ...(fallbackReason ? { fallback_reason: fallbackReason } : {}),
       },
     });
