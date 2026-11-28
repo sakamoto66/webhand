@@ -334,6 +334,19 @@ describe("research/batch.ts", () => {
     vi.unstubAllEnvs();
   });
 
+  it("passes WEBHAND_CONTEXT to the session only when the caller set it", async () => {
+    vi.stubEnv("WEBHAND_CONTEXT", "");
+    const off = fake({ hotel_filter: true });
+    await batch(args(tmpPath()), off.deps);
+    expect(off.commands()[0]).not.toContain("WEBHAND_CONTEXT");
+    vi.stubEnv("WEBHAND_CONTEXT", "scored");
+    const on = fake({ hotel_filter: true });
+    await batch(args(tmpPath()), on.deps);
+    expect(on.commands()[0]).toContain("'WEBHAND_CONTEXT=scored'");
+    expect(on.commands()[0]).toContain('"WEBHAND_CONTEXT":"scored"');
+    vi.unstubAllEnvs();
+  });
+
   it("refuses a missing model, an unknown task, and an --out that git would track", async () => {
     const { deps, calls } = fake({});
     await expect(batch(["--tasks", "hotel_filter", "--out", tmpPath()], deps)).rejects.toThrow("usage:");
