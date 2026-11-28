@@ -146,6 +146,7 @@ export function describePlan(plan: Plan, view: runbook.View | null = null): stri
   if (plan.more) lines.push(`MORE: ${plan.more}`);
   if (plan.expects?.length) lines.push(`EXPECTS: ${plan.expects.join(" | ")}`);
   if (plan.two_stage) lines.push("TWO-STAGE: on");
+  if (plan.context === "scored") lines.push("CONTEXT: scored");
   if (plan.recover) lines.push("RECOVER: on");
   if (plan.flow) lines.push(`FLOW: ${plan.flow}`);
   return lines.join("\n");

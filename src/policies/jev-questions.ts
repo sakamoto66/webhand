@@ -39,6 +39,7 @@ import {
   RECOVERY_STRATEGIES,
   REGION_ALL,
   REGION_RULES,
+  SCORED_CONTEXT_RULES,
   TAB_RULES,
   TARGET,
   TERMINAL_HELP,
@@ -83,6 +84,7 @@ export function buildQuestions(
   reading = false,
   tabbed = false,
   files: Map<string, Value> = new Map(),
+  scoredContext = false,
 ): [Record<string, unknown>, Record<string, string>] {
   const brief = taskBrief(plan);
   const next = plan.flow === "v2" ? NEXT_ACTION_WHOLE : NEXT_ACTION;
@@ -91,6 +93,7 @@ export function buildQuestions(
     next,
     ...(reading ? [readRules] : []),
     ...(tabbed ? [TAB_RULES] : []),
+    ...(scoredContext ? [SCORED_CONTEXT_RULES] : []),
     ...(plan.compared ? [COMPARED_RULES] : []),
     ...(plan.instructions?.length ? [INSTRUCTION_RULES] : []),
     ...(plan.flow === "v2" ? [ESCALATE_RULES] : []),

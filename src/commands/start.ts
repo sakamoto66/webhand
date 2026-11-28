@@ -25,6 +25,7 @@ import {
   chromeOption,
   collectOption,
   compareOption,
+  contextOption,
   engineOption,
   fileOption,
   idOption,
@@ -34,7 +35,17 @@ import {
 } from "./options.ts";
 import { commandRun } from "./run.ts";
 import { openLogs } from "./runs.ts";
-import { attach, browserView, defaultLog, FLOWS, mergeValues, parseFiles, parseSteps, parseValues } from "./shared.ts";
+import {
+  attach,
+  browserView,
+  CONTEXTS,
+  defaultLog,
+  FLOWS,
+  mergeValues,
+  parseFiles,
+  parseSteps,
+  parseValues,
+} from "./shared.ts";
 import type { CommandDef } from "./types.ts";
 
 const DEFAULT_ATTEMPTS = 3;
@@ -185,6 +196,8 @@ function planStart(args: Args, target: StartTarget): { plan: Plan; goal: string;
     throw new CliExit("This plan has [person] steps. Add --headed so the person can see the window");
   }
   if (!FLOWS.includes(args.flow)) throw new CliExit(`WEBHAND_FLOW must be one of: ${FLOWS.join(", ")}`);
+  const context = args.context || process.env.WEBHAND_CONTEXT || "default";
+  if (!CONTEXTS.includes(context)) throw new CliExit(`WEBHAND_CONTEXT must be one of: ${CONTEXTS.join(", ")}`);
   if (!process.env.TYPESAFE_API_KEY) {
     throw new CliExit("TYPESAFE_API_KEY is not set. Set it as an environment variable");
   }
@@ -204,6 +217,7 @@ function planStart(args: Args, target: StartTarget): { plan: Plan; goal: string;
     ...(args.more ? { more: args.more } : {}),
     ...(expects.length ? { expects } : {}),
     ...(twoStage ? { two_stage: true } : {}),
+    ...(context === "scored" ? { context: "scored" as const } : {}),
     ...(recover ? { recover: true } : {}),
     ...(args.flow === "v2" ? { flow: "v2" as const } : {}),
   };
@@ -300,6 +314,7 @@ async function openStartPage(
       service: serviceName,
       view: state.view,
       ...(plan.flow ? { flow: plan.flow } : {}),
+      ...(plan.context ? { context: plan.context } : {}),
       max_attempts: args.max_attempts,
       started_at: new Date().toISOString(),
     });
@@ -487,6 +502,7 @@ export const startCommand: CommandDef = {
       collectOption(),
       moreOption(),
       ...autonomyOptions(),
+      contextOption(),
       {
         name: "flow",
         type: "string",

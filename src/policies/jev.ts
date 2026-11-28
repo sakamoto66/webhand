@@ -23,6 +23,7 @@ import { MATCH, NO, type Row } from "../scans/collect.ts";
 import { type Best, type Candidate, KEEP, NONE } from "../scans/compare.ts";
 import type { FieldMatch, LabelView, LinkView } from "../scans/drilldown.ts";
 import { actionSpace, fileChoices, modelState, resolve, valueChoices } from "./base.ts";
+import { ContextManager } from "./context-manager.ts";
 import { type Fetch, type Json, postJson, validateChoice, validateNoul } from "./jev-client.ts";
 import { estimateTokens, FIT_TRIES, fitChoose, OVER_LIMIT, requestSize, SHRINK, TOKEN_BUDGET } from "./jev-fit.ts";
 import {
@@ -96,11 +97,13 @@ function filterPageToRegion(page: Page, region: string): Page {
 export class JevPolicy implements Policy {
   name = "jev";
   calls: ModelCall[] = [];
+  events: { type: string; fields: Record<string, unknown> }[] = [];
   servedModel: string | null = null;
   readonly key: string;
   readonly model: string;
   private readonly fetchJson: Fetch;
   private readonly agent: Agent | null;
+  private readonly contextManager = new ContextManager();
   /** Lowered for the rest of the run when Jev refuses a request over its limit. */
   private budget = TOKEN_BUDGET;
 
@@ -225,10 +228,11 @@ export class JevPolicy implements Policy {
   async scoreNoul(
     state: Record<string, unknown>,
     items: { key: string; instructions: unknown }[],
+    purpose = "noul",
   ): Promise<Map<string, number>> {
     if (!items.length) return new Map();
     const body = { model: this.model, state, questions: buildNoulQuestions(items) };
-    const answers = (await this.post(body, "noul")).answers ?? {};
+    const answers = (await this.post(body, purpose)).answers ?? {};
     const scores = new Map<string, number>();
     for (const item of items) {
       scores.set(item.key, validateNoul(answers[item.key]));
@@ -271,6 +275,9 @@ export class JevPolicy implements Policy {
   }
 
   async choose(whole: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {
+    if (plan.context === "scored") {
+      return this.chooseScored(whole, plan, history);
+    }
     if (plan.two_stage && actionSpace(whole.actions ?? [])[0].length >= TWO_STAGE_MIN_ELEMENTS) {
       const region = await this.pickRegion(whole, plan, history);
       if (region) {
@@ -291,6 +298,71 @@ export class JevPolicy implements Policy {
     return this.chooseFrom(whole, plan, history);
   }
 
+  private async chooseScored(whole: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {
+    const prepared = await this.contextManager.prepare(this, whole, plan, history, this.budget);
+    if (prepared.skipped) {
+      this.events.push({
+        type: "context_score",
+        fields: {
+          total_areas: prepared.totalAreas,
+          shown_areas: prepared.totalAreas,
+          pinned_areas: prepared.pinnedAreas,
+          cache_hits: 0,
+          scored_areas: 0,
+          noul_calls: 0,
+          hierarchical: false,
+          fallback: false,
+          skipped: true,
+          skip_reason: prepared.skipReason ?? "small_page",
+        },
+      });
+      const decision = await this.chooseFrom(whole, plan, history);
+      if (prepared.totalAreas > 0) {
+        decision.context_areas = { shown: prepared.totalAreas, total: prepared.totalAreas };
+      }
+      return decision;
+    }
+
+    let decision = await this.chooseFrom(prepared.page, plan, history);
+    let shownAreas = prepared.shownAreas;
+    let fallback = false;
+    let fallbackReason: string | undefined;
+
+    if (
+      decision.operation === NOT_VISIBLE ||
+      (decision.confidence !== null && decision.confidence < LOW_CONFIDENCE_THRESHOLD)
+    ) {
+      fallback = true;
+      fallbackReason = decision.operation === NOT_VISIBLE ? "not_visible" : "low_confidence";
+      const expanded = this.contextManager.expand(prepared, whole, this.budget);
+      const retry = await this.chooseFrom(expanded.page, plan, history);
+      if (decision.operation === NOT_VISIBLE || (retry.confidence ?? 0) >= (decision.confidence ?? 0)) {
+        decision = retry;
+        shownAreas = expanded.shownAreas;
+      }
+    }
+
+    this.events.push({
+      type: "context_score",
+      fields: {
+        total_areas: prepared.totalAreas,
+        shown_areas: shownAreas,
+        element_areas: prepared.elementShownIds.size,
+        text_areas: prepared.textShownIds.size,
+        pinned_areas: prepared.pinnedAreas,
+        cache_hits: prepared.cacheHits,
+        scored_areas: prepared.scoredAreas,
+        noul_calls: prepared.noulCalls,
+        hierarchical: prepared.hierarchical,
+        fallback,
+        skipped: false,
+        ...(fallbackReason ? { fallback_reason: fallbackReason } : {}),
+      },
+    });
+    decision.context_areas = { shown: shownAreas, total: prepared.totalAreas };
+    return decision;
+  }
+
   private async chooseFrom(whole: Page, plan: Plan, history: HistoryEntry[]): Promise<Decision> {
     const values = valueChoices(plan);
     const files = fileChoices(plan);
@@ -304,6 +376,7 @@ export class JevPolicy implements Policy {
         Boolean(page.read),
         Boolean(page.tabs),
         files,
+        Boolean(page.areas_map?.length),
       );
       return {
         targets,

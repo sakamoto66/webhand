@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fieldnote · Operations &amp; Audit Handbook</title>
+<style>
+  body { font: 15px/1.6 system-ui, sans-serif; margin: 0 auto; max-width: 860px; padding: 0 24px 48px; color: #222; }
+  #result { position: fixed; top: 0; right: 24px; background: #ffe; padding: 4px 12px; pointer-events: none; z-index: 10; }
+  form#answer { background: #f6f7f9; border: 1px solid #d5d9e0; border-radius: 6px; padding: 12px 16px; margin: 16px 0 28px; }
+  section { border-top: 1px solid #e5e7eb; padding: 16px 0 8px; }
+  h2 { margin: 0 0 8px; font-size: 20px; }
+  h3 { margin: 14px 0 6px; font-size: 16px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 6px 0 12px; padding-left: 22px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 14px; font-size: 14px; }
+  caption { text-align: left; font-weight: 600; margin-bottom: 4px; }
+  th, td { border: 1px solid #d5d9e0; padding: 6px 10px; text-align: left; }
+  th { background: #f3f4f6; }
+  aside.note { background: #fffbeb; border-left: 4px solid #d97706; padding: 8px 12px; margin: 10px 0 14px; font-size: 14px; }
+</style></head>
+<body>
+  <div id="result" role="status"></div>
+  <h1>Fieldnote Operations &amp; Audit Handbook</h1>
+  <p>Review this handbook carefully. Find the final audit confirmation code in the Final Audit Verification appendix at the bottom of this document, enter it into the form below, and press Submit.</p>
+  <form id="answer">
+    <label>Confirmation code <input name="code" autocomplete="off" size="28"></label>
+    <button type="submit">Submit</button>
+  </form>
+  <main id="handbook"></main>
+<script>
+  const EXPECTED_CODE = "AUD-7492-QM";
+  window.EXPECTED_CODE = EXPECTED_CODE;
+
+  document.getElementById("answer").addEventListener("submit", event => {
+    event.preventDefault();
+    const value = event.currentTarget.elements.code.value.trim();
+    document.body.dataset.answer = value;
+    document.getElementById("result").textContent = "Answer submitted";
+  });
+
+  const TOPICS = [
+    ["Governance Charter", "Board Oversight", "REF-1042-AA", "30 days", "Tier-1"],
+    ["Identity & Access Control", "Least Privilege Review", "REF-1184-BC", "14 days", "Tier-1"],
+    ["Data Retention Schedule", "Archival Storage", "REF-1290-CD", "365 days", "Tier-2"],
+    ["Incident Response Protocol", "Escalation Windows", "REF-1375-DE", "15 minutes", "Tier-1"],
+    ["Change Management", "Production Rollouts", "REF-1460-EF", "48 hours", "Tier-2"],
+    ["Vendor Risk Review", "Subprocessor Audits", "REF-1522-FG", "90 days", "Tier-2"],
+    ["Backup Verification", "Restore Drills", "REF-1608-GH", "7 days", "Tier-1"],
+    ["Regional Failover", "Traffic Shifting", "REF-1719-HI", "5 minutes", "Tier-1"],
+    ["Key Rotation Standards", "Envelope Encryption", "REF-1833-IJ", "90 days", "Tier-1"],
+    ["Network Segmentation", "Egress Filtering", "REF-1904-JK", "24 hours", "Tier-2"],
+    ["Endpoint Hardening", "Patch Compliance", "REF-2015-KL", "72 hours", "Tier-2"],
+    ["Logging & Telemetry", "Audit Trail Integrity", "REF-2148-LM", "180 days", "Tier-1"],
+    ["Capacity Planning", "Headroom Thresholds", "REF-2263-MN", "30 days", "Tier-3"],
+    ["Release Readiness", "Canary Sign-off", "REF-2391-NO", "12 hours", "Tier-2"],
+    ["Physical Security", "Facility Badging", "REF-2470-OP", "60 days", "Tier-3"],
+    ["Business Continuity", "Alternate Workspaces", "REF-2588-PQ", "180 days", "Tier-2"],
+    ["Privacy Operations", "Subject Requests", "REF-2644-QR", "30 days", "Tier-1"],
+    ["Billing Reconciliation", "Ledger Controls", "REF-2710-RS", "5 days", "Tier-2"],
+    ["Training & Awareness", "Annual Attestation", "REF-2895-ST", "365 days", "Tier-3"],
+  ];
+
+  const main = document.getElementById("handbook");
+  TOPICS.forEach(([title, subtitle, refCode, cadence, tier], idx) => {
+    const num = idx + 1;
+    const sec = document.createElement("section");
+    const includeTable = idx % 2 === 0;
+    sec.innerHTML = `
+      <h2>Section ${num}: ${title}</h2>
+      <h3>${num}.1 ${subtitle} and Operational Scope</h3>
+      <p>All Fieldnote engineering, support, and compliance teams follow the ${title.toLowerCase()} standards defined under internal reference ${refCode}. Each team lead must confirm that written procedures match actual production behavior during every ${cadence} cycle, and record exceptions in the compliance ledger before the end of the review window. Automated checks alone do not replace signed operator verification when customer-facing services or regulated audit records are affected.</p>
+      <p>Operational owners classified under ${tier} controls must maintain current runbooks, verify owner handoffs during staff transitions, and retain signed evidence artifacts for external assessors. Whenever a threshold changes or a temporary waiver is granted, the responsible manager logs the justification, expiration timestamp, and rollback owner so subsequent reviewers can trace every deviation without ambiguity.</p>
+      <h3>${num}.2 Verification Checklist and Control Notes</h3>
+      <ul>
+        <li>Confirm the primary and secondary owners for ${title.toLowerCase()} are active in the directory and reachable within the ${cadence} SLA.</li>
+        <li>Validate that automated alerts route to the designated on-call rotation and that historical records carry reference tag ${refCode}.</li>
+        <li>Cross-check quarterly sampling results against prior baseline metrics and archive remediation tickets upon closure.</li>
+      </ul>
+      ${includeTable ? `
+      <table>
+        <caption>Table ${num}: ${title} Control Parameters</caption>
+        <thead><tr><th>Control Attribute</th><th>Configured Standard</th><th>Reference Tag</th></tr></thead>
+        <tbody>
+          <tr><td>Primary review cadence</td><td>${cadence}</td><td>${refCode}</td></tr>
+          <tr><td>Control tier classification</td><td>${tier}</td><td>CTL-${num}01</td></tr>
+          <tr><td>Evidence retention window</td><td>7 years</td><td>ARC-${num}09</td></tr>
+        </tbody>
+      </table>` : ""}
+      <aside class="note"><strong>Note (${refCode}):</strong> Reference tags listed in Section ${num} apply only to routine ${title.toLowerCase()} tracking and are not the final audit confirmation code required at the top of this page.</aside>
+      <p>During external walkthroughs, assessors inspect representative samples from the past four quarters to verify that ${subtitle.toLowerCase()} reviews were completed on schedule under ${tier} governance. Discrepancies exceeding two business days require a documented root-cause note, corrective milestone, and follow-up sign-off from operations leadership.</p>
+    `;
+    main.append(sec);
+  });
+
+  const appendix = document.createElement("section");
+  appendix.id = "final-audit-appendix";
+  appendix.innerHTML = `
+    <h2>Section 20: Appendix — Final Audit Verification</h2>
+    <h3>20.1 Submission Instructions for Reviewers</h3>
+    <p>Once you have reviewed Sections 1 through 19 of the Fieldnote Operations &amp; Audit Handbook, use the verification record below to complete the attestation form at the top of this page. Do not submit any section reference tag such as REF-1042-AA; submit only the final audit confirmation code issued for this edition.</p>
+    <table>
+      <caption>Table 20: Final Audit Attestation Values</caption>
+      <thead><tr><th>Field</th><th>Issued Value</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>Handbook edition</td><td>2026-Q4</td><td>Active</td></tr>
+        <tr><td>Final audit confirmation code</td><td>${EXPECTED_CODE}</td><td>Required for submission</td></tr>
+      </tbody>
+    </table>
+    <aside class="note"><strong>Final Audit Verification:</strong> Final audit confirmation code: <strong>${EXPECTED_CODE}</strong>. Enter this exact code into the Confirmation code input at the top of the page and press Submit.</aside>
+  `;
+  main.append(appendix);
+</script>
+</body>
+</html>
